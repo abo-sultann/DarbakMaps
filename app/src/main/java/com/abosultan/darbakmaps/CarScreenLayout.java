@@ -121,8 +121,7 @@ final class CarScreenLayout {
         empty.setGravity(Gravity.CENTER);
         empty.setPadding(dp(activity, 28), dp(activity, 22), dp(activity, 28), dp(activity, 22));
         empty.setBackground(round(Color.argb(247, 255, 249, 235), dp(activity, 24), Color.argb(70, 8, 62, 45)));
-        empty.addView(label(activity, "ابدأ بخريطة الخليج", DEEP_GREEN, 21f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 34)));
-        empty.addView(label(activity, "تنزيل مرة واحدة ثم تعمل الخريطة بدون إنترنت", MUTED, 14f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 42)));
+        empty.addView(label(activity, "لا توجد خريطة", DEEP_GREEN, 21f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 42)));
         Button download = button(activity, "تنزيل خريطة الخليج الموصى بها", R.id.download_map, GOLD, DEEP_GREEN);
         empty.addView(download, new LinearLayout.LayoutParams(dp(activity, 290), dp(activity, 52)));
         Button importMap = button(activity, "إضافة خريطة من USB أو الذاكرة", R.id.import_map, DEEP_GREEN, Color.WHITE);
