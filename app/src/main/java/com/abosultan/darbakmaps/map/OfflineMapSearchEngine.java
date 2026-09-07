@@ -211,7 +211,7 @@ public final class OfflineMapSearchEngine {
                 if (output.size() >= MAX_INDEX_ITEMS) {
                     break;
                 }
-                Tile tile = new Tile(tileRef.x, tileRef.y, zoom, tileSize);
+                Tile tile = new Tile((int) tileRef.x, (int) tileRef.y, zoom, tileSize);
                 boolean nearby = Math.abs(tileRef.x - focusX) <= NEARBY_RADIUS_TILES
                         && Math.abs(tileRef.y - focusY) <= NEARBY_RADIUS_TILES;
                 MapReadResult data;
