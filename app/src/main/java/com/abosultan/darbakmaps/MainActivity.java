@@ -68,6 +68,7 @@ public final class MainActivity extends Activity implements LocationController.C
     private boolean initialized;
     private volatile boolean mapDownloadCancelled;
     private volatile boolean searchRunning;
+    private String startupPhase = "بدء التشغيل";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -87,7 +88,7 @@ public final class MainActivity extends Activity implements LocationController.C
         } catch (Throwable error) {
             initialized = false;
             saveStartupFailure(error);
-            showStartupRecovery();
+            showStartupRecovery(error);
         }
     }
 
@@ -96,8 +97,10 @@ public final class MainActivity extends Activity implements LocationController.C
             return;
         }
         initialized = true;
-        setContentView(R.layout.activity_main);
+        startupPhase = "إنشاء واجهة شاشة السيارة";
+        setContentView(CarScreenLayout.create(this));
 
+        startupPhase = "ربط عناصر الواجهة";
         mapContainer = findViewById(R.id.map_container);
         noMapPanel = findViewById(R.id.no_map_panel);
         gpsStatus = findViewById(R.id.gps_status);
@@ -106,18 +109,23 @@ public final class MainActivity extends Activity implements LocationController.C
         modeDesert = findViewById(R.id.mode_desert);
         modeCity = findViewById(R.id.mode_city);
 
+        startupPhase = "فتح البيانات المحلية";
         placeRepository = new PlaceRepository(this);
         locationController = new LocationController(this, this);
+        startupPhase = "ربط الأزرار";
         bindActions();
+        startupPhase = "تجهيز شاشة الخريطة";
         loadActiveMap();
+        startupPhase = "تشغيل GPS";
         try {
             ensureLocationPermission();
         } catch (RuntimeException error) {
             gpsStatus.setText("GPS متاح بعد منح الصلاحية من إعدادات الجهاز");
         }
+        startupPhase = "اكتمل";
     }
 
-    private void showStartupRecovery() {
+    private void showStartupRecovery(Throwable error) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setGravity(Gravity.CENTER);
@@ -134,7 +142,11 @@ public final class MainActivity extends Activity implements LocationController.C
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView message = new TextView(this);
-        message.setText("تم منع انهيار التطبيق. اضغط إعادة المحاولة لفتح الواجهة دون تحميل محرك الخرائط مبكرًا.");
+        String detail = error.getClass().getSimpleName();
+        if (error.getMessage() != null && !error.getMessage().trim().isEmpty()) {
+            detail += ": " + error.getMessage();
+        }
+        message.setText("تم منع انهيار التطبيق.\nالمرحلة: " + startupPhase + "\nالسبب: " + detail);
         message.setTextColor(Color.rgb(92, 110, 103));
         message.setTextSize(17f);
         message.setGravity(Gravity.CENTER);
@@ -389,8 +401,8 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void selectMapMode(boolean desert) {
-        modeDesert.setBackgroundResource(desert ? R.drawable.bg_chip_gold : android.R.color.transparent);
-        modeCity.setBackgroundResource(desert ? android.R.color.transparent : R.drawable.bg_chip_gold);
+        modeDesert.setBackgroundColor(desert ? getColor(R.color.darbak_gold) : Color.TRANSPARENT);
+        modeCity.setBackgroundColor(desert ? Color.TRANSPARENT : getColor(R.color.darbak_gold));
         modeDesert.setTextColor(getColor(desert ? R.color.darbak_green_deep : R.color.darbak_muted));
         modeCity.setTextColor(getColor(desert ? R.color.darbak_muted : R.color.darbak_green_deep));
         if (mapController != null) {
