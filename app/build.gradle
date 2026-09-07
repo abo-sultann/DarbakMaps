@@ -2,6 +2,13 @@ plugins {
     id 'com.android.application'
 }
 
+def stableTestKeystore = file("$buildDir/signing/darbak-test-signing.jks")
+def encodedStableTestKeystore = file('darbak-test-signing.jks.b64')
+if (!stableTestKeystore.exists()) {
+    stableTestKeystore.parentFile.mkdirs()
+    stableTestKeystore.bytes = java.util.Base64.getDecoder().decode(encodedStableTestKeystore.text.trim())
+}
+
 android {
     namespace 'com.abosultan.darbakmaps'
     compileSdk 35
@@ -10,8 +17,8 @@ android {
         applicationId 'com.abosultan.darbakmaps'
         minSdk 24
         targetSdk 35
-        versionCode 5
-        versionName '0.2.3'
+        versionCode 6
+        versionName '0.2.4'
 
         buildConfigField 'String', 'ACTIVATION_URL', '""'
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
@@ -21,11 +28,21 @@ android {
         buildConfig true
     }
 
+    signingConfigs {
+        stableTest {
+            storeFile stableTestKeystore
+            storePassword 'android'
+            keyAlias 'darbaktest'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix '.debug'
             versionNameSuffix '-debug'
             buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'true'
+            signingConfig signingConfigs.stableTest
         }
         release {
             minifyEnabled true
