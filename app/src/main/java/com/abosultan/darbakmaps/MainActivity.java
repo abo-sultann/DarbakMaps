@@ -9,11 +9,15 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.net.Uri;
 import android.os.Bundle;
+import android.graphics.Color;
+import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,6 +36,8 @@ import com.abosultan.darbakmaps.map.RecommendedMapDownloader;
 import com.abosultan.darbakmaps.update.UpdateManager;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -72,7 +78,17 @@ public final class MainActivity extends Activity implements LocationController.C
             startActivityForResult(new Intent(this, ActivationActivity.class), REQUEST_ACTIVATION);
             return;
         }
-        initializeApp();
+        initializeSafely();
+    }
+
+    private void initializeSafely() {
+        try {
+            initializeApp();
+        } catch (Throwable error) {
+            initialized = false;
+            saveStartupFailure(error);
+            showStartupRecovery();
+        }
     }
 
     private void initializeApp() {
@@ -94,7 +110,54 @@ public final class MainActivity extends Activity implements LocationController.C
         locationController = new LocationController(this, this);
         bindActions();
         loadActiveMap();
-        ensureLocationPermission();
+        try {
+            ensureLocationPermission();
+        } catch (RuntimeException error) {
+            gpsStatus.setText("GPS متاح بعد منح الصلاحية من إعدادات الجهاز");
+        }
+    }
+
+    private void showStartupRecovery() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(48, 32, 48, 32);
+        panel.setBackgroundColor(Color.rgb(255, 249, 235));
+
+        TextView title = new TextView(this);
+        title.setText("دربك — وضع التشغيل الآمن");
+        title.setTextColor(Color.rgb(3, 39, 30));
+        title.setTextSize(24f);
+        title.setGravity(Gravity.CENTER);
+        panel.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView message = new TextView(this);
+        message.setText("تم منع انهيار التطبيق. اضغط إعادة المحاولة لفتح الواجهة دون تحميل محرك الخرائط مبكرًا.");
+        message.setTextColor(Color.rgb(92, 110, 103));
+        message.setTextSize(17f);
+        message.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        messageParams.setMargins(0, 20, 0, 24);
+        panel.addView(message, messageParams);
+
+        Button retry = new Button(this);
+        retry.setText("إعادة المحاولة");
+        retry.setOnClickListener(view -> initializeSafely());
+        panel.addView(retry, new LinearLayout.LayoutParams(280, 64));
+        setContentView(panel);
+    }
+
+    private void saveStartupFailure(Throwable error) {
+        File report = new File(getFilesDir(), "last_startup_failure.txt");
+        try (PrintWriter writer = new PrintWriter(new FileOutputStream(report, false))) {
+            error.printStackTrace(writer);
+        } catch (Exception ignored) {
+            // The recovery screen is still useful when the vendor ROM blocks file writes.
+        }
     }
 
     private void bindActions() {
@@ -655,7 +718,7 @@ public final class MainActivity extends Activity implements LocationController.C
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_ACTIVATION) {
             if (licenseManager.isLicensed()) {
-                initializeApp();
+                initializeSafely();
             } else {
                 finishAffinity();
             }
