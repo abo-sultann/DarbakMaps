@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/darbak_ivory"
+    android:layoutDirection="rtl">
+
+    <FrameLayout
+        android:id="@+id/map_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/search_box"
+        android:layout_width="470dp"
+        android:layout_height="54dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/bg_search"
+        android:elevation="7dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_search" />
+
+        <EditText
+            android:id="@+id/search_input"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:background="@null"
+            android:hint="@string/search_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:padding="0dp"
+            android:textColor="@color/darbak_ink"
+            android:textColorHint="@color/darbak_muted"
+            android:textSize="17sp" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/brand_logo"
+        android:layout_width="62dp"
+        android:layout_height="62dp"
+        android:layout_gravity="top|right"
+        android:layout_marginTop="12dp"
+        android:layout_marginRight="16dp"
+        android:contentDescription="@string/app_name"
+        android:elevation="7dp"
+        android:src="@drawable/darbak_brand" />
+
+    <LinearLayout
+        android:id="@+id/mode_switch"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_gravity="top|left"
+        android:layout_marginTop="18dp"
+        android:layout_marginLeft="18dp"
+        android:background="@drawable/bg_search"
+        android:elevation="6dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:padding="4dp">
+
+        <TextView
+            android:id="@+id/mode_desert"
+            android:layout_width="80dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_chip_gold"
+            android:gravity="center"
+            android:text="@string/mode_desert"
+            android:textColor="@color/darbak_green_deep"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/mode_city"
+            android:layout_width="80dp"
+            android:layout_height="40dp"
+            android:gravity="center"
+            android:text="@string/mode_city"
+            android:textColor="@color/darbak_muted"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/zoom_controls"
+        android:layout_width="58dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="left|center_vertical"
+        android:layout_marginLeft="18dp"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/zoom_in"
+            android:layout_width="58dp"
+            android:layout_height="54dp"
+            android:background="@drawable/bg_round_control"
+            android:elevation="5dp"
+            android:gravity="center"
+            android:text="+"
+            android:textColor="@color/darbak_green"
+            android:textSize="30sp" />
+
+        <TextView
+            android:id="@+id/zoom_out"
+            android:layout_width="58dp"
+            android:layout_height="54dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_round_control"
+            android:elevation="5dp"
+            android:gravity="center"
+            android:text="−"
+            android:textColor="@color/darbak_green"
+            android:textSize="30sp" />
+
+        <ImageButton
+            android:id="@+id/center_location"
+            android:layout_width="58dp"
+            android:layout_height="58dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_round_control"
+            android:contentDescription="موقعي"
+            android:elevation="5dp"
+            android:padding="15dp"
+            android:src="@drawable/ic_crosshair" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/status_panel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="right|center_vertical"
+        android:layout_marginRight="18dp"
+        android:gravity="end"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/gps_status"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:background="@drawable/bg_chip_dark"
+            android:gravity="center"
+            android:text="@string/gps_waiting"
+            android:textColor="@color/darbak_white"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_chip_dark"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/speed_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="@color/darbak_gold_light"
+                android:textSize="38sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/kmh"
+                android:textColor="@color/darbak_white"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/no_map_panel"
+        android:layout_width="390dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_empty_panel"
+        android:elevation="7dp"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/no_map_title"
+            android:textColor="@color/darbak_green_deep"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="@string/no_map_body"
+            android:textColor="@color/darbak_muted"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/import_map"
+            android:layout_width="250dp"
+            android:layout_height="52dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_chip_gold"
+            android:text="@string/import_map"
+            android:textAllCaps="false"
+            android:textColor="@color/darbak_green_deep"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottom_dock"
+        android:layout_width="600dp"
+        android:layout_height="74dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="14dp"
+        android:background="@drawable/bg_dock"
+        android:elevation="10dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/action_map"
+            style="@style/DarbakDockAction"
+            android:drawableTop="@drawable/ic_map"
+            android:text="@string/map" />
+
+        <TextView
+            android:id="@+id/action_save"
+            style="@style/DarbakDockAction"
+            android:drawableTop="@drawable/ic_pin"
+            android:text="@string/save_place" />
+
+        <TextView
+            android:id="@+id/action_record"
+            style="@style/DarbakDockAction"
+            android:drawableTop="@drawable/ic_route"
+            android:text="@string/record_track" />
+
+        <TextView
+            android:id="@+id/action_saved"
+            style="@style/DarbakDockAction"
+            android:drawableTop="@drawable/ic_star"
+            android:text="@string/saved" />
+
+        <TextView
+            android:id="@+id/action_more"
+            style="@style/DarbakDockAction"
+            android:drawableTop="@drawable/ic_grid"
+            android:text="@string/more" />
+    </LinearLayout>
+
+</FrameLayout>
+

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/darbak_green_deep"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="42dp"
+    android:layoutDirection="rtl">
+
+    <ImageView
+        android:layout_width="230dp"
+        android:layout_height="230dp"
+        android:contentDescription="@string/app_name"
+        android:src="@drawable/darbak_brand" />
+
+    <LinearLayout
+        android:layout_width="430dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="46dp"
+        android:background="@drawable/bg_empty_panel"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/activation_title"
+            android:textColor="@color/darbak_green_deep"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/activation_body"
+            android:textColor="@color/darbak_muted"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/device_code"
+            android:textColor="@color/darbak_muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/device_code"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:textColor="@color/darbak_green_deep"
+            android:textIsSelectable="true"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/activation_code"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_search"
+            android:hint="@string/activation_code"
+            android:inputType="textCapCharacters"
+            android:maxLines="1"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:textColor="@color/darbak_ink"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/activation_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#B3261E"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/activate_button"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_chip_gold"
+            android:text="@string/activate"
+            android:textAllCaps="false"
+            android:textColor="@color/darbak_green_deep"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>
+

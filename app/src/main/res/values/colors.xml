@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="darbak_green">#083E2D</color>
+    <color name="darbak_green_deep">#03271E</color>
+    <color name="darbak_green_soft">#DDEBE4</color>
+    <color name="darbak_gold">#D9AE55</color>
+    <color name="darbak_gold_light">#F1D793</color>
+    <color name="darbak_orange">#EC7A25</color>
+    <color name="darbak_ink">#10251E</color>
+    <color name="darbak_muted">#5C6E67</color>
+    <color name="darbak_ivory">#FFF9EB</color>
+    <color name="darbak_white">#FFFFFFFF</color>
+    <color name="darbak_transparent">#00000000</color>
+</resources>
+

@@ -1,0 +1,67 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.abosultan.darbakmaps'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.abosultan.darbakmaps'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+
+        buildConfigField 'String', 'ACTIVATION_URL', '""'
+        buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+            buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'true'
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'false'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE']
+        }
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.15.0'
+
+    def mapsforgeVersion = '0.30.0'
+    implementation "com.github.mapsforge.mapsforge:mapsforge-core:${mapsforgeVersion}@jar"
+    implementation "com.github.mapsforge.mapsforge:mapsforge-map:${mapsforgeVersion}@jar"
+    implementation "com.github.mapsforge.mapsforge:mapsforge-map-reader:${mapsforgeVersion}@jar"
+    implementation "com.github.mapsforge.mapsforge:mapsforge-map-android:${mapsforgeVersion}@jar"
+    implementation "com.github.mapsforge.mapsforge:mapsforge-themes:${mapsforgeVersion}@jar"
+    implementation 'com.caverock:androidsvg:1.4'
+
+    testImplementation 'junit:junit:4.13.2'
+}
