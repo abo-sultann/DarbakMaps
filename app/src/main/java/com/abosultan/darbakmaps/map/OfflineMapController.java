@@ -38,6 +38,7 @@ public final class OfflineMapController {
     private boolean centeredOnFirstFix;
 
     public OfflineMapController(Context context, File file) {
+        MapsforgeRuntime.ensureInitialized(context);
         mapView = new MapView(context);
         mapView.setClickable(true);
         mapView.setBuiltInZoomControls(false);
