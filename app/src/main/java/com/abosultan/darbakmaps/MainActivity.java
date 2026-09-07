@@ -3,6 +3,7 @@ package com.abosultan.darbakmaps;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -12,6 +13,8 @@ import android.os.Bundle;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -99,6 +102,7 @@ public final class MainActivity extends Activity implements LocationController.C
         initialized = true;
         startupPhase = "إنشاء واجهة شاشة السيارة";
         setContentView(CarScreenLayout.create(this));
+        immersive();
 
         startupPhase = "ربط عناصر الواجهة";
         mapContainer = findViewById(R.id.map_container);
@@ -243,7 +247,12 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void importMap(Uri uri) {
-        ProgressDialog progress = ProgressDialog.show(this, "خرائط دربك", "جارٍ تجهيز الخريطة…", true, false);
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("الخرائط");
+        progress.setMessage("جارٍ التجهيز…");
+        progress.setIndeterminate(true);
+        progress.setCancelable(false);
+        showImmersive(progress);
         ioExecutor.execute(() -> {
             try {
                 MapStorage.importMap(this, uri);
@@ -262,14 +271,12 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void confirmRecommendedMapDownload() {
-        new AlertDialog.Builder(this)
-                .setTitle("خريطة الخليج الأوفلاين")
-                .setMessage("تشمل السعودية ودول الخليج وتعمل بعد تنزيلها دون إنترنت. "
-                        + "حجم التنزيل " + RecommendedMapDownloader.DISPLAY_SIZE
-                        + ". يُفضّل استخدام Wi‑Fi.")
+        showImmersive(new AlertDialog.Builder(this)
+                .setTitle("خريطة الخليج")
+                .setMessage(RecommendedMapDownloader.DISPLAY_SIZE + " • Wi‑Fi")
                 .setNegativeButton("إلغاء", null)
                 .setPositiveButton("تنزيل", (dialog, which) -> downloadRecommendedMap())
-                .show();
+                .create());
     }
 
     private void downloadRecommendedMap() {
@@ -283,7 +290,7 @@ public final class MainActivity extends Activity implements LocationController.C
         progress.setCancelable(true);
         progress.setCanceledOnTouchOutside(false);
         progress.setOnCancelListener(dialog -> mapDownloadCancelled = true);
-        progress.show();
+        showImmersive(progress);
 
         ioExecutor.execute(() -> {
             try {
@@ -340,13 +347,12 @@ public final class MainActivity extends Activity implements LocationController.C
             return;
         }
         searchRunning = true;
-        ProgressDialog progress = ProgressDialog.show(
-                this,
-                "بحث أوفلاين",
-                "جارٍ البحث داخل الخريطة والمواقع المحفوظة…",
-                true,
-                false
-        );
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("بحث");
+        progress.setMessage("جارٍ البحث…");
+        progress.setIndeterminate(true);
+        progress.setCancelable(false);
+        showImmersive(progress);
         File activeMap = MapStorage.activeMap(this);
         Location current = locationController == null ? null : locationController.getLastLocation();
         Double latitude = current == null ? null : current.getLatitude();
@@ -385,7 +391,7 @@ public final class MainActivity extends Activity implements LocationController.C
             String distance = formatDistance(result.distanceMeters);
             labels[index] = result.name + "\n" + result.source + (distance.isEmpty() ? "" : " • " + distance);
         }
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("نتائج البحث")
                 .setItems(labels, (dialog, which) -> {
                     OfflineMapSearchEngine.Result result = results.get(which);
@@ -397,7 +403,7 @@ public final class MainActivity extends Activity implements LocationController.C
                     toast(result.name);
                 })
                 .setNegativeButton("إغلاق", null)
-                .show();
+                .create());
     }
 
     private void selectMapMode(boolean desert) {
@@ -431,7 +437,7 @@ public final class MainActivity extends Activity implements LocationController.C
         input.setHint("مثال: المخيم أو مدخل الشِعْب");
         input.setSingleLine(true);
         input.setPadding(28, 8, 28, 8);
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("حفظ الموقع الحالي")
                 .setView(input)
                 .setNegativeButton("إلغاء", null)
@@ -443,7 +449,7 @@ public final class MainActivity extends Activity implements LocationController.C
                     placeRepository.add(name, location.getLatitude(), location.getLongitude());
                     toast("تم حفظ الموقع داخل الجهاز");
                 })
-                .show();
+                .create());
     }
 
     private void toggleTrackRecording() {
@@ -467,7 +473,7 @@ public final class MainActivity extends Activity implements LocationController.C
         input.setSingleLine(true);
         input.setText("مسار " + new SimpleDateFormat("dd-MM HH:mm", Locale.US).format(new Date()));
         input.selectAll();
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("اسم المسار")
                 .setView(input)
                 .setNegativeButton("إلغاء", null)
@@ -482,7 +488,7 @@ public final class MainActivity extends Activity implements LocationController.C
                         }
                     });
                 })
-                .show();
+                .create());
     }
 
     private void showSavedHub() {
@@ -490,7 +496,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 "المواقع المحفوظة (" + placeRepository.all().size() + ")",
                 "المسارات السابقة (" + TrackStorage.list(this).length + ")"
         };
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("محفوظاتي")
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
@@ -500,7 +506,7 @@ public final class MainActivity extends Activity implements LocationController.C
                     }
                 })
                 .setNegativeButton("إغلاق", null)
-                .show();
+                .create());
     }
 
     private void showPlaces(List<PlaceRepository.Place> places, String title) {
@@ -513,7 +519,7 @@ public final class MainActivity extends Activity implements LocationController.C
             PlaceRepository.Place place = places.get(i);
             labels[i] = place.name + "\n" + coordinates(place.latitude, place.longitude);
         }
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setItems(labels, (dialog, which) -> {
                     PlaceRepository.Place selected = places.get(which);
@@ -524,7 +530,7 @@ public final class MainActivity extends Activity implements LocationController.C
                     }
                 })
                 .setNegativeButton("إغلاق", null)
-                .show();
+                .create());
     }
 
     private void showTracks() {
@@ -537,11 +543,11 @@ public final class MainActivity extends Activity implements LocationController.C
         for (int i = 0; i < tracks.length; i++) {
             labels[i] = tracks[i].getName().replace(".gpx", "").replace('_', ' ');
         }
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("المسارات السابقة")
                 .setItems(labels, (dialog, which) -> loadStoredTrack(tracks[which]))
                 .setNegativeButton("إغلاق", null)
-                .show();
+                .create());
     }
 
     private void loadStoredTrack(File track) {
@@ -549,8 +555,12 @@ public final class MainActivity extends Activity implements LocationController.C
             toast("أضف حزمة خريطة لعرض المسار");
             return;
         }
-        ProgressDialog progress = ProgressDialog.show(
-                this, "المسارات", "جارٍ فتح المسار…", true, false);
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("المسارات");
+        progress.setMessage("جارٍ الفتح…");
+        progress.setIndeterminate(true);
+        progress.setCancelable(false);
+        showImmersive(progress);
         ioExecutor.execute(() -> {
             try {
                 List<GeoPoint> points = TrackStorage.load(track);
@@ -575,26 +585,30 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void showMore() {
         String[] items = {
-                "إدارة الخرائط الأوفلاين",
-                "عرض الإحداثيات",
-                "التحقق من التحديث",
-                "ترخيص هذا الجهاز",
+                "الإعدادات",
+                "الخرائط",
+                "الإحداثيات",
+                "التحديث",
+                "الترخيص",
                 "حول دربك"
         };
-        new AlertDialog.Builder(this)
-                .setTitle("أدوات دربك")
+        showImmersive(new AlertDialog.Builder(this)
+                .setTitle("المزيد")
                 .setItems(items, (dialog, which) -> {
                     switch (which) {
                         case 0:
-                            showMapManager();
+                            showStartupSettings();
                             break;
                         case 1:
-                            showCoordinates();
+                            showMapManager();
                             break;
                         case 2:
-                            checkForUpdates();
+                            showCoordinates();
                             break;
                         case 3:
+                            checkForUpdates();
+                            break;
+                        case 4:
                             showDeviceLicense();
                             break;
                         default:
@@ -602,7 +616,19 @@ public final class MainActivity extends Activity implements LocationController.C
                     }
                 })
                 .setNegativeButton("إغلاق", null)
-                .show();
+                .create());
+    }
+
+    private void showStartupSettings() {
+        boolean enabled = StartupPreferences.isEnabled(this);
+        showImmersive(new AlertDialog.Builder(this)
+                .setTitle("الإعدادات")
+                .setMultiChoiceItems(
+                        new String[]{"التشغيل مع الشاشة"},
+                        new boolean[]{enabled},
+                        (dialog, which, checked) -> StartupPreferences.setEnabled(this, checked))
+                .setPositiveButton("تم", null)
+                .create());
     }
 
     private void showMapManager() {
@@ -614,7 +640,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 "تنزيل خريطة الخليج الموصى بها (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
                 "إضافة خريطة من USB أو الذاكرة"
         };
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("الخرائط الأوفلاين")
                 .setMessage(status)
                 .setItems(actions, (dialog, which) -> {
@@ -625,7 +651,7 @@ public final class MainActivity extends Activity implements LocationController.C
                     }
                 })
                 .setNegativeButton("إغلاق", null)
-                .show();
+                .create());
     }
 
     private void showCoordinates() {
@@ -633,24 +659,24 @@ public final class MainActivity extends Activity implements LocationController.C
         String message = location == null
                 ? "بانتظار إشارة GPS"
                 : coordinates(location.getLatitude(), location.getLongitude());
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("الإحداثيات الحالية")
                 .setMessage(message)
                 .setPositiveButton("حسنًا", null)
-                .show();
+                .create());
     }
 
     private void showDeviceLicense() {
         String state = licenseManager.isLicensed() ? "مفعّل" : "غير مفعّل";
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("ترخيص الجهاز")
                 .setMessage("الحالة: " + state + "\nرمز الجهاز: " + licenseManager.deviceCode())
                 .setPositiveButton("حسنًا", null)
-                .show();
+                .create());
     }
 
     private void showAbout() {
-        new AlertDialog.Builder(this)
+        showImmersive(new AlertDialog.Builder(this)
                 .setTitle("دربك " + BuildConfig.VERSION_NAME)
                 .setMessage("خرائط متجهية أوفلاين للبر والمدن\n"
                         + "بدون صور أقمار صناعية\n\n"
@@ -658,7 +684,7 @@ public final class MainActivity extends Activity implements LocationController.C
                         + "تقنية العرض Mapsforge\n\n"
                         + "جميع الحقوق محفوظة لأبوسلطان")
                 .setPositiveButton("حسنًا", null)
-                .show();
+                .create());
     }
 
     private void checkForUpdates() {
@@ -671,7 +697,7 @@ public final class MainActivity extends Activity implements LocationController.C
 
             @Override
             public void onUpdate(UpdateManager.UpdateInfo update) {
-                runOnUiThread(() -> new AlertDialog.Builder(MainActivity.this)
+                runOnUiThread(() -> showImmersive(new AlertDialog.Builder(MainActivity.this)
                         .setTitle("تحديث " + update.versionName)
                         .setMessage("نسخة جديدة من دربك جاهزة للتثبيت")
                         .setNegativeButton("لاحقًا", null)
@@ -679,7 +705,7 @@ public final class MainActivity extends Activity implements LocationController.C
                             toast("بدأ تنزيل التحديث");
                             UpdateManager.downloadAndInstall(MainActivity.this, update, this);
                         })
-                        .show());
+                        .create()));
             }
         });
     }
@@ -748,6 +774,7 @@ public final class MainActivity extends Activity implements LocationController.C
     @Override
     protected void onResume() {
         super.onResume();
+        immersive();
         if (initialized && locationController != null && locationController.hasPermission()) {
             locationController.start();
         }
@@ -780,14 +807,42 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void immersive() {
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        View decor = getWindow().getDecorView();
+        decor.setSystemUiVisibility(immersiveFlags());
+        decor.setOnSystemUiVisibilityChangeListener(visibility -> {
+            if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0
+                    || (visibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0) {
+                decor.postDelayed(() -> decor.setSystemUiVisibility(immersiveFlags()), 250L);
+            }
+        });
+    }
+
+    private int immersiveFlags() {
+        return View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                         | View.SYSTEM_UI_FLAG_FULLSCREEN
                         | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LOW_PROFILE
                         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                         | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
+    }
+
+    private <T extends Dialog> T showImmersive(T dialog) {
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setFlags(
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        }
+        dialog.show();
+        window = dialog.getWindow();
+        if (window != null) {
+            window.getDecorView().setSystemUiVisibility(immersiveFlags());
+            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        }
+        return dialog;
     }
 
     private void hideKeyboard(View view) {
