@@ -17,14 +17,17 @@ public final class MapStorage {
     }
 
     public static File activeMap(Context context) {
+        return new File(mapDirectory(context), ACTIVE_MAP);
+    }
+
+    static File mapDirectory(Context context) {
         File external = context.getExternalFilesDir("maps");
-        File directory = external != null ? external : new File(context.getFilesDir(), "maps");
-        return new File(directory, ACTIVE_MAP);
+        return external != null ? external : new File(context.getFilesDir(), "maps");
     }
 
     public static File importMap(Context context, Uri source) throws IOException {
         File target = activeMap(context);
-        File directory = target.getParentFile();
+        File directory = mapDirectory(context);
         if (directory == null || (!directory.exists() && !directory.mkdirs())) {
             throw new IOException("Unable to create map directory");
         }
@@ -74,4 +77,3 @@ public final class MapStorage {
         return target;
     }
 }
-

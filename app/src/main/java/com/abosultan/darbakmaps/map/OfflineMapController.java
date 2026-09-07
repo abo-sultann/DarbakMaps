@@ -7,6 +7,8 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 
+import com.abosultan.darbakmaps.data.GeoPoint;
+
 import org.mapsforge.core.graphics.Style;
 import org.mapsforge.core.model.LatLong;
 import org.mapsforge.core.model.MapPosition;
@@ -22,14 +24,18 @@ import org.mapsforge.map.reader.MapFile;
 import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
 
 import java.io.File;
+import java.util.List;
 
 public final class OfflineMapController {
     private final MapView mapView;
     private final TileCache tileCache;
     private final TileRendererLayer rendererLayer;
     private Marker locationMarker;
+    private Marker selectedMarker;
     private Polyline activeTrack;
+    private Polyline storedTrack;
     private int lastBearingBucket = Integer.MIN_VALUE;
+    private boolean centeredOnFirstFix;
 
     public OfflineMapController(Context context, File file) {
         mapView = new MapView(context);
@@ -45,7 +51,7 @@ public final class OfflineMapController {
                 mapView.getModel().frameBufferModel.getOverdrawFactor()
         );
 
-        MapFile mapFile = new MapFile(file);
+        MapFile mapFile = new MapFile(file, "ar");
         rendererLayer = AndroidUtil.createTileRendererLayer(
                 tileCache,
                 mapView.getModel().mapViewPosition,
@@ -102,6 +108,49 @@ public final class OfflineMapController {
                 lastBearingBucket = bucket;
             }
         }
+        if (!centeredOnFirstFix) {
+            centeredOnFirstFix = true;
+            centerOn(latitude, longitude);
+        }
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    public void showPoint(double latitude, double longitude) {
+        LatLong position = new LatLong(latitude, longitude);
+        if (selectedMarker == null) {
+            selectedMarker = new Marker(position, createPin(), 0, -24);
+            mapView.getLayerManager().getLayers().add(selectedMarker);
+        } else {
+            selectedMarker.setLatLong(position);
+        }
+        centerOn(latitude, longitude);
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    public void showStoredTrack(List<GeoPoint> points) {
+        if (storedTrack != null) {
+            mapView.getLayerManager().getLayers().remove(storedTrack);
+        }
+        org.mapsforge.core.graphics.Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
+        paint.setColor(AndroidGraphicFactory.INSTANCE.createColor(230, 8, 62, 45));
+        paint.setStrokeWidth(8f);
+        paint.setStyle(Style.STROKE);
+        storedTrack = new Polyline(paint, AndroidGraphicFactory.INSTANCE);
+
+        int step = Math.max(1, points.size() / 10_000);
+        for (int index = 0; index < points.size(); index += step) {
+            GeoPoint point = points.get(index);
+            storedTrack.addPoint(new LatLong(point.latitude, point.longitude));
+        }
+        if (!points.isEmpty() && (points.size() - 1) % step != 0) {
+            GeoPoint last = points.get(points.size() - 1);
+            storedTrack.addPoint(new LatLong(last.latitude, last.longitude));
+        }
+        mapView.getLayerManager().getLayers().add(storedTrack);
+        if (!points.isEmpty()) {
+            GeoPoint last = points.get(points.size() - 1);
+            centerOn(last.latitude, last.longitude);
+        }
         mapView.getLayerManager().redrawLayers();
     }
 
@@ -156,5 +205,37 @@ public final class OfflineMapController {
         canvas.restore();
         return new AndroidBitmap(bitmap);
     }
-}
 
+    private org.mapsforge.core.graphics.Bitmap createPin() {
+        int width = 52;
+        int height = 64;
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
+        outline.setColor(Color.WHITE);
+        outline.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(width / 2f, 23f, 21f, outline);
+        Path outerTip = new Path();
+        outerTip.moveTo(8f, 27f);
+        outerTip.lineTo(width / 2f, 63f);
+        outerTip.lineTo(width - 8f, 27f);
+        outerTip.close();
+        canvas.drawPath(outerTip, outline);
+
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(217, 174, 85));
+        canvas.drawCircle(width / 2f, 23f, 16f, fill);
+        Path tip = new Path();
+        tip.moveTo(12f, 27f);
+        tip.lineTo(width / 2f, 57f);
+        tip.lineTo(width - 12f, 27f);
+        tip.close();
+        canvas.drawPath(tip, fill);
+
+        Paint center = new Paint(Paint.ANTI_ALIAS_FLAG);
+        center.setColor(Color.rgb(8, 62, 45));
+        canvas.drawCircle(width / 2f, 22f, 7f, center);
+        return new AndroidBitmap(bitmap);
+    }
+}

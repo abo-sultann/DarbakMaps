@@ -208,17 +208,44 @@
             android:textSize="14sp" />
 
         <Button
-            android:id="@+id/import_map"
-            android:layout_width="250dp"
+            android:id="@+id/download_map"
+            android:layout_width="280dp"
             android:layout_height="52dp"
             android:layout_marginTop="14dp"
             android:background="@drawable/bg_chip_gold"
-            android:text="@string/import_map"
+            android:text="@string/download_gcc_map"
             android:textAllCaps="false"
             android:textColor="@color/darbak_green_deep"
             android:textSize="16sp"
             android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/import_map"
+            android:layout_width="280dp"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_chip_dark"
+            android:text="@string/import_map"
+            android:textAllCaps="false"
+            android:textColor="@color/darbak_white"
+            android:textSize="15sp" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/map_attribution"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|left"
+        android:layout_marginLeft="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_search"
+        android:paddingLeft="8dp"
+        android:paddingTop="3dp"
+        android:paddingRight="8dp"
+        android:paddingBottom="3dp"
+        android:text="© OpenStreetMap contributors"
+        android:textColor="@color/darbak_muted"
+        android:textSize="10sp" />
 
     <LinearLayout
         android:id="@+id/bottom_dock"
@@ -263,4 +290,3 @@
     </LinearLayout>
 
 </FrameLayout>
-

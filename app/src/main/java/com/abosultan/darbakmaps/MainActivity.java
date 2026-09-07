@@ -26,7 +26,9 @@ import com.abosultan.darbakmaps.data.TrackStorage;
 import com.abosultan.darbakmaps.location.LocationController;
 import com.abosultan.darbakmaps.map.DarbakPreviewMapView;
 import com.abosultan.darbakmaps.map.MapStorage;
+import com.abosultan.darbakmaps.map.OfflineMapSearchEngine;
 import com.abosultan.darbakmaps.map.OfflineMapController;
+import com.abosultan.darbakmaps.map.RecommendedMapDownloader;
 import com.abosultan.darbakmaps.update.UpdateManager;
 
 import java.io.File;
@@ -44,6 +46,7 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final TrackRecorder trackRecorder = new TrackRecorder();
+    private final OfflineMapSearchEngine searchEngine = new OfflineMapSearchEngine();
 
     private LicenseManager licenseManager;
     private LocationController locationController;
@@ -57,6 +60,8 @@ public final class MainActivity extends Activity implements LocationController.C
     private TextView modeDesert;
     private TextView modeCity;
     private boolean initialized;
+    private volatile boolean mapDownloadCancelled;
+    private volatile boolean searchRunning;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,6 +110,7 @@ public final class MainActivity extends Activity implements LocationController.C
         });
         findViewById(R.id.center_location).setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.import_map).setOnClickListener(view -> chooseMapFile());
+        findViewById(R.id.download_map).setOnClickListener(view -> confirmRecommendedMapDownload());
         findViewById(R.id.action_map).setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.action_save).setOnClickListener(view -> saveCurrentPlace());
         actionRecord.setOnClickListener(view -> toggleTrackRecording());
@@ -118,7 +124,7 @@ public final class MainActivity extends Activity implements LocationController.C
         search.setOnEditorActionListener((view, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                 hideKeyboard(search);
-                showPlaces(placeRepository.search(search.getText().toString()), "نتائج البحث");
+                performSearch(search.getText().toString());
                 return true;
             }
             return false;
@@ -126,6 +132,7 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void loadActiveMap() {
+        searchEngine.clear();
         if (mapController != null) {
             mapController.destroy();
             mapController = null;
@@ -155,7 +162,8 @@ public final class MainActivity extends Activity implements LocationController.C
     private void chooseMapFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/octet-stream");
+        intent.setType("*/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(intent, REQUEST_MAP_FILE);
     }
 
@@ -176,6 +184,145 @@ public final class MainActivity extends Activity implements LocationController.C
                 });
             }
         });
+    }
+
+    private void confirmRecommendedMapDownload() {
+        new AlertDialog.Builder(this)
+                .setTitle("خريطة الخليج الأوفلاين")
+                .setMessage("تشمل السعودية ودول الخليج وتعمل بعد تنزيلها دون إنترنت. "
+                        + "حجم التنزيل " + RecommendedMapDownloader.DISPLAY_SIZE
+                        + ". يُفضّل استخدام Wi‑Fi.")
+                .setNegativeButton("إلغاء", null)
+                .setPositiveButton("تنزيل", (dialog, which) -> downloadRecommendedMap())
+                .show();
+    }
+
+    private void downloadRecommendedMap() {
+        mapDownloadCancelled = false;
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("خرائط دربك");
+        progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        progress.setMax(100);
+        progress.setProgress(0);
+        progress.setMessage("بدء تنزيل خريطة الخليج…");
+        progress.setCancelable(true);
+        progress.setCanceledOnTouchOutside(false);
+        progress.setOnCancelListener(dialog -> mapDownloadCancelled = true);
+        progress.show();
+
+        ioExecutor.execute(() -> {
+            try {
+                RecommendedMapDownloader.download(this, new RecommendedMapDownloader.Listener() {
+                    @Override
+                    public void onProgress(int percent, String message) {
+                        runOnUiThread(() -> {
+                            if (!isActivityUnavailable()) {
+                                progress.setProgress(percent);
+                                progress.setMessage(message);
+                            }
+                        });
+                    }
+
+                    @Override
+                    public boolean isCancelled() {
+                        return mapDownloadCancelled || Thread.currentThread().isInterrupted();
+                    }
+                });
+                runOnUiThread(() -> {
+                    if (isActivityUnavailable()) {
+                        return;
+                    }
+                    progress.dismiss();
+                    toast("تمت إضافة خريطة الخليج وأصبحت جاهزة أوفلاين");
+                    loadActiveMap();
+                });
+            } catch (RecommendedMapDownloader.CancelledException cancelled) {
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        progress.dismiss();
+                        toast(cancelled.getMessage());
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        progress.dismiss();
+                        toast(error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage());
+                    }
+                });
+            }
+        });
+    }
+
+    private void performSearch(String rawQuery) {
+        String query = rawQuery == null ? "" : rawQuery.trim();
+        if (query.isEmpty()) {
+            toast("اكتب اسم مدينة أو مكان للبحث");
+            return;
+        }
+        if (searchRunning) {
+            toast("البحث السابق ما زال جاريًا");
+            return;
+        }
+        searchRunning = true;
+        ProgressDialog progress = ProgressDialog.show(
+                this,
+                "بحث أوفلاين",
+                "جارٍ البحث داخل الخريطة والمواقع المحفوظة…",
+                true,
+                false
+        );
+        File activeMap = MapStorage.activeMap(this);
+        Location current = locationController == null ? null : locationController.getLastLocation();
+        Double latitude = current == null ? null : current.getLatitude();
+        Double longitude = current == null ? null : current.getLongitude();
+
+        ioExecutor.execute(() -> {
+            List<OfflineMapSearchEngine.Result> results = searchEngine.search(
+                    query,
+                    activeMap.isFile() ? activeMap : null,
+                    placeRepository.all(),
+                    latitude,
+                    longitude,
+                    40
+            );
+            runOnUiThread(() -> {
+                searchRunning = false;
+                if (isActivityUnavailable()) {
+                    return;
+                }
+                progress.dismiss();
+                showSearchResults(results);
+            });
+        });
+    }
+
+    private void showSearchResults(List<OfflineMapSearchEngine.Result> results) {
+        if (results.isEmpty()) {
+            toast(MapStorage.activeMap(this).isFile()
+                    ? "لا توجد نتائج مطابقة داخل الخريطة"
+                    : "لا توجد نتائج؛ أضف خريطة الخليج للبحث في المدن والمعالم");
+            return;
+        }
+        String[] labels = new String[results.size()];
+        for (int index = 0; index < results.size(); index++) {
+            OfflineMapSearchEngine.Result result = results.get(index);
+            String distance = formatDistance(result.distanceMeters);
+            labels[index] = result.name + "\n" + result.source + (distance.isEmpty() ? "" : " • " + distance);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("نتائج البحث")
+                .setItems(labels, (dialog, which) -> {
+                    OfflineMapSearchEngine.Result result = results.get(which);
+                    if (mapController == null) {
+                        toast("أضف حزمة خريطة لعرض الموقع");
+                        return;
+                    }
+                    mapController.showPoint(result.latitude, result.longitude);
+                    toast(result.name);
+                })
+                .setNegativeButton("إغلاق", null)
+                .show();
     }
 
     private void selectMapMode(boolean desert) {
@@ -296,7 +443,9 @@ public final class MainActivity extends Activity implements LocationController.C
                 .setItems(labels, (dialog, which) -> {
                     PlaceRepository.Place selected = places.get(which);
                     if (mapController != null) {
-                        mapController.centerOn(selected.latitude, selected.longitude);
+                        mapController.showPoint(selected.latitude, selected.longitude);
+                    } else {
+                        toast("أضف حزمة خريطة لعرض الموقع");
                     }
                 })
                 .setNegativeButton("إغلاق", null)
@@ -315,9 +464,38 @@ public final class MainActivity extends Activity implements LocationController.C
         }
         new AlertDialog.Builder(this)
                 .setTitle("المسارات السابقة")
-                .setItems(labels, (dialog, which) -> toast("المسار محفوظ داخل الجهاز"))
+                .setItems(labels, (dialog, which) -> loadStoredTrack(tracks[which]))
                 .setNegativeButton("إغلاق", null)
                 .show();
+    }
+
+    private void loadStoredTrack(File track) {
+        if (mapController == null) {
+            toast("أضف حزمة خريطة لعرض المسار");
+            return;
+        }
+        ProgressDialog progress = ProgressDialog.show(
+                this, "المسارات", "جارٍ فتح المسار…", true, false);
+        ioExecutor.execute(() -> {
+            try {
+                List<GeoPoint> points = TrackStorage.load(track);
+                runOnUiThread(() -> {
+                    if (isActivityUnavailable()) {
+                        return;
+                    }
+                    progress.dismiss();
+                    mapController.showStoredTrack(points);
+                    toast("تم عرض المسار على الخريطة");
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        progress.dismiss();
+                        toast(error.getMessage() == null ? "تعذر فتح المسار" : error.getMessage());
+                    }
+                });
+            }
+        });
     }
 
     private void showMore() {
@@ -357,10 +535,20 @@ public final class MainActivity extends Activity implements LocationController.C
         String status = file.isFile()
                 ? "الخريطة الحالية: " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب\nجاهزة للعمل بدون إنترنت"
                 : "لا توجد حزمة خريطة مضافة";
+        String[] actions = {
+                "تنزيل خريطة الخليج الموصى بها (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
+                "إضافة خريطة من USB أو الذاكرة"
+        };
         new AlertDialog.Builder(this)
                 .setTitle("الخرائط الأوفلاين")
                 .setMessage(status)
-                .setPositiveButton("إضافة أو استبدال", (dialog, which) -> chooseMapFile())
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) {
+                        confirmRecommendedMapDownload();
+                    } else {
+                        chooseMapFile();
+                    }
+                })
                 .setNegativeButton("إغلاق", null)
                 .show();
     }
@@ -389,7 +577,11 @@ public final class MainActivity extends Activity implements LocationController.C
     private void showAbout() {
         new AlertDialog.Builder(this)
                 .setTitle("دربك " + BuildConfig.VERSION_NAME)
-                .setMessage("خرائط متجهية أوفلاين للبر والمدن\nبدون صور أقمار صناعية\n\nجميع الحقوق محفوظة لأبوسلطان")
+                .setMessage("خرائط متجهية أوفلاين للبر والمدن\n"
+                        + "بدون صور أقمار صناعية\n\n"
+                        + "بيانات الخريطة © مساهمو OpenStreetMap\n"
+                        + "تقنية العرض Mapsforge\n\n"
+                        + "جميع الحقوق محفوظة لأبوسلطان")
                 .setPositiveButton("حسنًا", null)
                 .show();
     }
@@ -496,6 +688,7 @@ public final class MainActivity extends Activity implements LocationController.C
 
     @Override
     protected void onDestroy() {
+        mapDownloadCancelled = true;
         if (mapController != null) {
             mapController.destroy();
         }
@@ -533,8 +726,21 @@ public final class MainActivity extends Activity implements LocationController.C
         return String.format(Locale.US, "%.6f, %.6f", latitude, longitude);
     }
 
+    private String formatDistance(Float distanceMeters) {
+        if (distanceMeters == null) {
+            return "";
+        }
+        if (distanceMeters < 1000f) {
+            return Math.round(distanceMeters) + " م";
+        }
+        return String.format(Locale.US, "%.1f كم", distanceMeters / 1000f);
+    }
+
+    private boolean isActivityUnavailable() {
+        return isFinishing() || isDestroyed();
+    }
+
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 }
-
