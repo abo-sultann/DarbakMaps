@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, darbak-platform-v1]
+    branches: [main, darbak-platform-v1, production-hardening-v1]
   pull_request:
     branches: [main]
   workflow_dispatch:
