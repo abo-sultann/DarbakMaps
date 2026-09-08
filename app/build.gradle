@@ -10,8 +10,8 @@ android {
         applicationId 'com.abosultan.darbakmaps'
         minSdk 24
         targetSdk 35
-        versionCode 7
-        versionName '0.2.5'
+        versionCode 8
+        versionName '0.3.0'
 
         buildConfigField 'String', 'ACTIVATION_URL', '""'
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://docs.google.com/document/d/1H8Rg6wBe3XJTZhxuoBH67n_1GlHX8X2WwJij9bsus9s/export?format=txt"'
@@ -43,7 +43,6 @@ android {
             minifyEnabled true
             shrinkResources true
             signingConfig signingConfigs.production
-            // DarbakMaps is the owner's private sideload build; production must never block on a remote activation server.
             buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'true'
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

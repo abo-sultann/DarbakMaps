@@ -7,11 +7,14 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 
+import com.abosultan.darbakmaps.MapRuntimeBridge;
+import com.abosultan.darbakmaps.MapUiPreferences;
 import com.abosultan.darbakmaps.data.GeoPoint;
 
 import org.mapsforge.core.graphics.Style;
 import org.mapsforge.core.model.LatLong;
 import org.mapsforge.core.model.MapPosition;
+import org.mapsforge.core.model.Rotation;
 import org.mapsforge.map.android.graphics.AndroidBitmap;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
 import org.mapsforge.map.android.util.AndroidUtil;
@@ -34,8 +37,12 @@ public final class OfflineMapController {
     private Marker selectedMarker;
     private Polyline activeTrack;
     private Polyline storedTrack;
-    private int lastBearingBucket = Integer.MIN_VALUE;
+    private int lastArrowBucket = Integer.MIN_VALUE;
+    private int lastMapBearingBucket = Integer.MIN_VALUE;
     private boolean centeredOnFirstFix;
+    private int orientationMode;
+    private LatLong lastLocation;
+    private float lastBearing;
 
     public OfflineMapController(Context context, File file) {
         MapsforgeRuntime.ensureInitialized(context);
@@ -66,6 +73,10 @@ public final class OfflineMapController {
         mapView.getModel().mapViewPosition.setMapPosition(
                 new MapPosition(mapFile.boundingBox().getCenterPoint(), (byte) 7)
         );
+
+        orientationMode = MapUiPreferences.orientation(context);
+        applyOrientationBehavior();
+        MapRuntimeBridge.attach(this);
     }
 
     public MapView view() {
@@ -89,26 +100,46 @@ public final class OfflineMapController {
         }
     }
 
-    public void setDesertMode(boolean desert) {
-        rendererLayer.setXmlRenderTheme(desert ? MapsforgeThemes.MOTORIDER : MapsforgeThemes.DEFAULT);
+    /** DarbakMaps is now a single-purpose off-road map. Legacy mode calls keep the same theme. */
+    public void setDesertMode(boolean ignored) {
+        rendererLayer.setXmlRenderTheme(MapsforgeThemes.MOTORIDER);
         tileCache.purge();
         mapView.getLayerManager().redrawLayers();
     }
 
+    public void setOrientationMode(int mode) {
+        if (mode < MapUiPreferences.ORIENTATION_NORTH || mode > MapUiPreferences.ORIENTATION_FREE) {
+            mode = MapUiPreferences.ORIENTATION_NORTH;
+        }
+        orientationMode = mode;
+        lastMapBearingBucket = Integer.MIN_VALUE;
+        applyOrientationBehavior();
+        refreshOrientationFromLastFix();
+    }
+
+    private void applyOrientationBehavior() {
+        boolean manualRotation = orientationMode == MapUiPreferences.ORIENTATION_FREE;
+        mapView.getTouchGestureHandler().setRotationEnabled(manualRotation);
+        mapView.setMapViewCenterY(orientationMode == MapUiPreferences.ORIENTATION_HEADING ? 0.62f : 0.5f);
+        if (orientationMode == MapUiPreferences.ORIENTATION_NORTH) {
+            rotateMapTo(0f);
+        }
+    }
+
     public void updateLocation(double latitude, double longitude, float bearing) {
-        LatLong position = new LatLong(latitude, longitude);
-        int bucket = Math.round(bearing / 10f) * 10;
-        if (locationMarker == null) {
-            locationMarker = new Marker(position, createArrow(bucket), 0, 0);
-            mapView.getLayerManager().getLayers().add(locationMarker);
-            lastBearingBucket = bucket;
-        } else {
-            locationMarker.setLatLong(position);
-            if (bucket != lastBearingBucket) {
-                locationMarker.setBitmap(createArrow(bucket));
-                lastBearingBucket = bucket;
+        lastLocation = new LatLong(latitude, longitude);
+        lastBearing = normalize(bearing);
+
+        if (orientationMode == MapUiPreferences.ORIENTATION_HEADING) {
+            int bearingBucket = Math.round(lastBearing / 10f) * 10;
+            if (bearingBucket != lastMapBearingBucket) {
+                lastMapBearingBucket = bearingBucket;
+                rotateMapTo(-bearingBucket);
             }
         }
+
+        updateLocationMarker(lastLocation, lastBearing);
+
         if (!centeredOnFirstFix) {
             centeredOnFirstFix = true;
             centerOn(latitude, longitude);
@@ -116,10 +147,54 @@ public final class OfflineMapController {
         mapView.getLayerManager().redrawLayers();
     }
 
+    private void refreshOrientationFromLastFix() {
+        if (orientationMode == MapUiPreferences.ORIENTATION_HEADING && lastLocation != null) {
+            rotateMapTo(-lastBearing);
+        } else if (orientationMode == MapUiPreferences.ORIENTATION_NORTH) {
+            rotateMapTo(0f);
+        }
+        if (lastLocation != null) {
+            updateLocationMarker(lastLocation, lastBearing);
+        }
+    }
+
+    private void updateLocationMarker(LatLong position, float bearing) {
+        float screenBearing = normalize(bearing + mapView.getMapRotation().degrees);
+        int bucket = Math.round(screenBearing / 10f) * 10;
+        if (locationMarker == null) {
+            locationMarker = new Marker(position, createArrow(bucket), 0, 0);
+            locationMarker.setBillboard(true);
+            mapView.getLayerManager().getLayers().add(locationMarker);
+            lastArrowBucket = bucket;
+        } else {
+            locationMarker.setLatLong(position);
+            if (bucket != lastArrowBucket) {
+                locationMarker.setBitmap(createArrow(bucket));
+                lastArrowBucket = bucket;
+            }
+        }
+    }
+
+    private void rotateMapTo(float degrees) {
+        final float normalized = normalizeSigned(degrees);
+        Runnable action = () -> {
+            float px = mapView.getWidth() > 0 ? mapView.getWidth() * 0.5f : 0f;
+            float py = mapView.getHeight() > 0 ? mapView.getHeight() * 0.5f : 0f;
+            mapView.rotate(new Rotation(normalized, px, py));
+            mapView.getLayerManager().redrawLayers();
+        };
+        if (mapView.getWidth() == 0 || mapView.getHeight() == 0) {
+            mapView.post(action);
+        } else {
+            action.run();
+        }
+    }
+
     public void showPoint(double latitude, double longitude) {
         LatLong position = new LatLong(latitude, longitude);
         if (selectedMarker == null) {
             selectedMarker = new Marker(position, createPin(), 0, -24);
+            selectedMarker.setBillboard(true);
             mapView.getLayerManager().getLayers().add(selectedMarker);
         } else {
             selectedMarker.setLatLong(position);
@@ -175,6 +250,7 @@ public final class OfflineMapController {
     }
 
     public void destroy() {
+        MapRuntimeBridge.detach(this);
         mapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
     }
@@ -201,7 +277,7 @@ public final class OfflineMapController {
         canvas.scale(0.72f, 0.72f, size / 2f, size / 2f);
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         fill.setStyle(Paint.Style.FILL);
-        fill.setColor(Color.rgb(236, 122, 37));
+        fill.setColor(Color.rgb(57, 169, 255));
         canvas.drawPath(arrow, fill);
         canvas.restore();
         return new AndroidBitmap(bitmap);
@@ -225,7 +301,7 @@ public final class OfflineMapController {
         canvas.drawPath(outerTip, outline);
 
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fill.setColor(Color.rgb(217, 174, 85));
+        fill.setColor(Color.rgb(215, 173, 85));
         canvas.drawCircle(width / 2f, 23f, 16f, fill);
         Path tip = new Path();
         tip.moveTo(12f, 27f);
@@ -235,8 +311,19 @@ public final class OfflineMapController {
         canvas.drawPath(tip, fill);
 
         Paint center = new Paint(Paint.ANTI_ALIAS_FLAG);
-        center.setColor(Color.rgb(8, 62, 45));
+        center.setColor(Color.rgb(7, 17, 29));
         canvas.drawCircle(width / 2f, 22f, 7f, center);
         return new AndroidBitmap(bitmap);
+    }
+
+    private float normalize(float value) {
+        float normalized = value % 360f;
+        if (normalized < 0f) normalized += 360f;
+        return normalized;
+    }
+
+    private float normalizeSigned(float value) {
+        float normalized = normalize(value);
+        return normalized > 180f ? normalized - 360f : normalized;
     }
 }
