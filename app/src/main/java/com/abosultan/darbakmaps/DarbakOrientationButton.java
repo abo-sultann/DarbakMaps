@@ -4,14 +4,12 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
 /** One-button orientation control inspired by off-road and navigation apps. */
 final class DarbakOrientationButton extends TextView {
     private static final int PRIMARY = Color.rgb(57, 169, 255);
-    private static final int SURFACE = Color.rgb(17, 29, 43);
 
     DarbakOrientationButton(Activity activity) {
         super(activity);
@@ -28,9 +26,7 @@ final class DarbakOrientationButton extends TextView {
             Toast.makeText(getContext(), description(mode), Toast.LENGTH_SHORT).show();
         });
         setOnLongClickListener(view -> {
-            MapUiPreferences.setOrientation(getContext(), MapUiPreferences.ORIENTATION_NORTH);
-            MapRuntimeBridge.cycleOrientation(getContext());
-            MapUiPreferences.setOrientation(getContext(), MapUiPreferences.ORIENTATION_NORTH);
+            MapRuntimeBridge.setOrientation(getContext(), MapUiPreferences.ORIENTATION_NORTH);
             refresh();
             Toast.makeText(getContext(), "الشمال أعلى الخريطة", Toast.LENGTH_SHORT).show();
             return true;
