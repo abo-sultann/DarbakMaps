@@ -2,13 +2,17 @@ name: Android Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, darbak-platform-v1]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: darbak-maps-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -28,7 +32,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build and lint
+      - name: Build, lint, and unit tests
         run: ./gradlew --no-daemon clean lintDebug testDebugUnitTest assembleDebug
 
       - name: Upload APK
