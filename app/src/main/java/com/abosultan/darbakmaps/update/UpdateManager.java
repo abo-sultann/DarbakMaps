@@ -2,6 +2,9 @@ package com.abosultan.darbakmaps.update;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -22,14 +25,15 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class UpdateManager {
     public interface Callback {
         void onStatus(String message);
-
         void onUpdate(UpdateInfo update);
     }
 
@@ -53,28 +57,41 @@ public final class UpdateManager {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8));
                 StringBuilder body = new StringBuilder();
                 String line;
-                while ((line = reader.readLine()) != null) {
-                    body.append(line);
-                }
+                while ((line = reader.readLine()) != null) body.append(line);
                 reader.close();
-                JSONObject manifest = new JSONObject(body.toString());
+
+                JSONObject manifest = new JSONObject(body.toString().trim());
                 int versionCode = manifest.getInt("versionCode");
                 if (versionCode <= BuildConfig.VERSION_CODE) {
                     callback.onStatus("لديك أحدث نسخة من دربك");
                     return;
                 }
+
+                String packageName = manifest.optString("packageName", BuildConfig.APPLICATION_ID);
+                int minSdk = manifest.optInt("minSdk", 24);
+                String apkUrl = manifest.optString("apkUrl", "");
+                String expectedSha = manifest.optString("sha256", "").toLowerCase(Locale.US);
+                if (!BuildConfig.APPLICATION_ID.equals(packageName)
+                        || minSdk > Build.VERSION.SDK_INT
+                        || apkUrl.isEmpty()
+                        || expectedSha.length() != 64) {
+                    callback.onStatus("بيانات التحديث غير مكتملة أو غير متوافقة");
+                    return;
+                }
+                secureUrl(apkUrl);
+
                 callback.onUpdate(new UpdateInfo(
                         versionCode,
                         manifest.getString("versionName"),
-                        manifest.getString("apkUrl"),
-                        manifest.getString("sha256").toLowerCase(Locale.US)
+                        apkUrl,
+                        expectedSha,
+                        packageName,
+                        minSdk
                 ));
             } catch (Exception error) {
                 callback.onStatus("تعذر التحقق من التحديث الآن");
             } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
+                if (connection != null) connection.disconnect();
             }
         });
     }
@@ -91,16 +108,17 @@ public final class UpdateManager {
 
         EXECUTOR.execute(() -> {
             HttpURLConnection connection = null;
+            File apk = null;
             try {
                 File base = activity.getExternalCacheDir();
-                if (base == null) {
-                    base = activity.getCacheDir();
-                }
+                if (base == null) base = activity.getCacheDir();
                 File directory = new File(base, "updates");
                 if (!directory.exists() && !directory.mkdirs()) {
                     throw new IllegalStateException("Update directory unavailable");
                 }
-                File apk = new File(directory, "DarbakMaps-" + update.versionName + ".apk");
+                apk = new File(directory, "DarbakMaps-" + update.versionName + ".apk");
+                if (apk.exists() && !apk.delete()) throw new IllegalStateException("Old update file unavailable");
+
                 connection = (HttpURLConnection) secureUrl(update.apkUrl).openConnection();
                 connection.setConnectTimeout(15000);
                 connection.setReadTimeout(30000);
@@ -108,28 +126,77 @@ public final class UpdateManager {
                 FileOutputStream output = new FileOutputStream(apk);
                 byte[] buffer = new byte[64 * 1024];
                 int read;
-                while ((read = input.read(buffer)) != -1) {
-                    output.write(buffer, 0, read);
-                }
+                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
                 output.getFD().sync();
                 output.close();
                 input.close();
 
-                if (!sha256(apk).equals(update.sha256)) {
+                String verificationError = verifyDownloadedApk(activity, apk, update);
+                if (verificationError != null) {
                     apk.delete();
-                    callback.onStatus("فشل التحقق من سلامة ملف التحديث");
+                    callback.onStatus(verificationError);
                     return;
                 }
                 File finalApk = apk;
                 activity.runOnUiThread(() -> install(activity, finalApk));
             } catch (Exception error) {
-                callback.onStatus("تعذر تنزيل التحديث");
+                if (apk != null) apk.delete();
+                callback.onStatus("تعذر تنزيل أو التحقق من التحديث");
             } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
+                if (connection != null) connection.disconnect();
             }
         });
+    }
+
+    @SuppressWarnings("deprecation")
+    private static String verifyDownloadedApk(Activity activity, File apk, UpdateInfo update) throws Exception {
+        if (!apk.isFile() || apk.length() <= 0) return "ملف التحديث فارغ أو غير صالح";
+        if (!sha256(apk).equalsIgnoreCase(update.sha256)) return "فشل التحقق من سلامة ملف التحديث (SHA-256)";
+
+        PackageManager pm = activity.getPackageManager();
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? PackageManager.GET_SIGNING_CERTIFICATES
+                : PackageManager.GET_SIGNATURES;
+        PackageInfo archive = pm.getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+        if (archive == null) return "تعذر قراءة هوية ملف التحديث";
+        if (!update.packageName.equals(archive.packageName) || !activity.getPackageName().equals(archive.packageName)) {
+            return "حزمة ملف التحديث لا تطابق تطبيق دربك Maps";
+        }
+
+        long archiveVersion = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? archive.getLongVersionCode()
+                : archive.versionCode;
+        if (archiveVersion != update.versionCode || archiveVersion <= BuildConfig.VERSION_CODE) {
+            return "رقم إصدار ملف التحديث غير صحيح";
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+                && archive.applicationInfo != null
+                && archive.applicationInfo.minSdkVersion > Build.VERSION.SDK_INT) {
+            return "ملف التحديث غير متوافق مع نسخة أندرويد في الشاشة";
+        }
+
+        PackageInfo installed = pm.getPackageInfo(activity.getPackageName(), flags);
+        if (!signatureDigests(installed).equals(signatureDigests(archive)) || signatureDigests(archive).isEmpty()) {
+            return "توقيع ملف التحديث مختلف. يلزم تثبيت نسخة Production المعتمدة يدويًا مرة واحدة";
+        }
+        return null;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<String> signatureDigests(PackageInfo info) throws Exception {
+        Signature[] signatures;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null) {
+            signatures = info.signingInfo.getApkContentsSigners();
+        } else {
+            signatures = info.signatures;
+        }
+        Set<String> values = new HashSet<>();
+        if (signatures == null) return values;
+        for (Signature signature : signatures) {
+            values.add(hex(MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())));
+        }
+        return values;
     }
 
     private static void install(Activity activity, File apk) {
@@ -154,16 +221,16 @@ public final class UpdateManager {
         try {
             byte[] buffer = new byte[64 * 1024];
             int read;
-            while ((read = input.read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
-            }
+            while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
         } finally {
             input.close();
         }
+        return hex(digest.digest());
+    }
+
+    private static String hex(byte[] bytes) {
         StringBuilder value = new StringBuilder();
-        for (byte item : digest.digest()) {
-            value.append(String.format(Locale.US, "%02x", item & 0xff));
-        }
+        for (byte item : bytes) value.append(String.format(Locale.US, "%02x", item & 0xff));
         return value.toString();
     }
 
@@ -172,12 +239,16 @@ public final class UpdateManager {
         public final String versionName;
         public final String apkUrl;
         public final String sha256;
+        public final String packageName;
+        public final int minSdk;
 
-        UpdateInfo(int versionCode, String versionName, String apkUrl, String sha256) {
+        UpdateInfo(int versionCode, String versionName, String apkUrl, String sha256, String packageName, int minSdk) {
             this.versionCode = versionCode;
             this.versionName = versionName;
             this.apkUrl = apkUrl;
             this.sha256 = sha256;
+            this.packageName = packageName;
+            this.minSdk = minSdk;
         }
     }
 }
