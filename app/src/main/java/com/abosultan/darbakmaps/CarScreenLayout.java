@@ -15,16 +15,17 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * Builds the first screen without XML inflation. Several old Allwinner Android 7 ROMs contain
- * modified resource inflaters, so the car-screen path deliberately uses only platform views.
+ * Lightweight 1024x600 car-screen layout using platform Views only.
+ * Darbak UI V1: night surfaces, calm electric blue, large touch targets, no heavy effects.
  */
 final class CarScreenLayout {
-    private static final int GREEN = Color.rgb(8, 62, 45);
-    private static final int DEEP_GREEN = Color.rgb(3, 39, 30);
-    private static final int GOLD = Color.rgb(217, 174, 85);
-    private static final int LIGHT_GOLD = Color.rgb(241, 215, 147);
-    private static final int IVORY = Color.rgb(255, 249, 235);
-    private static final int MUTED = Color.rgb(92, 110, 103);
+    private static final int NIGHT = Color.rgb(7, 17, 29);
+    private static final int SURFACE = Color.rgb(17, 29, 43);
+    private static final int SURFACE_ALT = Color.rgb(16, 30, 44);
+    private static final int PRIMARY = Color.rgb(57, 169, 255);
+    private static final int GOLD = Color.rgb(215, 173, 85);
+    private static final int TEXT = Color.rgb(244, 247, 250);
+    private static final int MUTED = Color.rgb(159, 176, 194);
 
     private CarScreenLayout() {
     }
@@ -32,7 +33,7 @@ final class CarScreenLayout {
     static View create(Activity activity) {
         FrameLayout root = new FrameLayout(activity);
         root.setId(R.id.root);
-        root.setBackgroundColor(IVORY);
+        root.setBackgroundColor(NIGHT);
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
         FrameLayout map = new FrameLayout(activity);
@@ -43,35 +44,37 @@ final class CarScreenLayout {
         searchBox.setGravity(Gravity.CENTER_VERTICAL);
         searchBox.setOrientation(LinearLayout.HORIZONTAL);
         searchBox.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
-        searchBox.setBackground(round(Color.argb(244, 255, 255, 255), dp(activity, 24), Color.argb(45, 8, 62, 45)));
+        searchBox.setBackground(round(Color.argb(244, 17, 29, 43), dp(activity, 24), Color.argb(105, 57, 169, 255)));
         EditText search = new EditText(activity);
         search.setId(R.id.search_input);
         search.setSingleLine(true);
         search.setHint("ابحث عن مدينة، وادٍ أو محطة وقود");
-        search.setTextColor(DEEP_GREEN);
+        search.setTextColor(TEXT);
         search.setHintTextColor(MUTED);
         search.setTextSize(17f);
         search.setBackgroundColor(Color.TRANSPARENT);
         search.setInputType(InputType.TYPE_CLASS_TEXT);
         search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         searchBox.addView(search, new LinearLayout.LayoutParams(0, -1, 1f));
-        TextView searchMark = label(activity, "⌕", GREEN, 28f, Gravity.CENTER);
+        TextView searchMark = label(activity, "⌕", PRIMARY, 28f, Gravity.CENTER);
         searchBox.addView(searchMark, new LinearLayout.LayoutParams(dp(activity, 36), -1));
         root.addView(searchBox, frame(dp(activity, 470), dp(activity, 54), Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, dp(activity, 16), 0, 0));
 
         ImageView logo = new ImageView(activity);
         logo.setImageResource(R.drawable.darbak_brand);
         logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        root.addView(logo, frame(dp(activity, 68), dp(activity, 68), Gravity.TOP | Gravity.RIGHT, dp(activity, 14), dp(activity, 10), 0, 0));
+        logo.setContentDescription("دربك");
+        logo.setOnClickListener(view -> DarbakPanels.showAbout(activity));
+        root.addView(logo, frame(dp(activity, 76), dp(activity, 76), Gravity.TOP | Gravity.RIGHT, dp(activity, 14), dp(activity, 8), 0, 0));
 
         LinearLayout modes = new LinearLayout(activity);
         modes.setOrientation(LinearLayout.HORIZONTAL);
         modes.setGravity(Gravity.CENTER);
         modes.setPadding(dp(activity, 4), dp(activity, 4), dp(activity, 4), dp(activity, 4));
-        modes.setBackground(round(Color.argb(244, 255, 255, 255), dp(activity, 22), Color.argb(45, 8, 62, 45)));
-        TextView desert = label(activity, "البر", DEEP_GREEN, 16f, Gravity.CENTER);
+        modes.setBackground(round(Color.argb(244, 17, 29, 43), dp(activity, 22), Color.argb(75, 57, 169, 255)));
+        TextView desert = label(activity, "البر", NIGHT, 16f, Gravity.CENTER);
         desert.setId(R.id.mode_desert);
-        desert.setBackground(round(GOLD, dp(activity, 18), Color.TRANSPARENT));
+        desert.setBackground(round(PRIMARY, dp(activity, 18), Color.TRANSPARENT));
         TextView city = label(activity, "المدينة", MUTED, 16f, Gravity.CENTER);
         city.setId(R.id.mode_city);
         modes.addView(desert, new LinearLayout.LayoutParams(dp(activity, 80), dp(activity, 40)));
@@ -96,19 +99,19 @@ final class CarScreenLayout {
         LinearLayout status = new LinearLayout(activity);
         status.setOrientation(LinearLayout.VERTICAL);
         status.setGravity(Gravity.RIGHT);
-        TextView gps = label(activity, "GPS بانتظار الإشارة", Color.WHITE, 14f, Gravity.CENTER);
+        TextView gps = label(activity, "GPS بانتظار الإشارة", TEXT, 14f, Gravity.CENTER);
         gps.setId(R.id.gps_status);
         gps.setPadding(dp(activity, 14), 0, dp(activity, 14), 0);
-        gps.setBackground(round(Color.argb(242, 3, 39, 30), dp(activity, 18), Color.TRANSPARENT));
+        gps.setBackground(round(Color.argb(244, 17, 29, 43), dp(activity, 18), Color.argb(70, 57, 169, 255)));
         status.addView(gps, new LinearLayout.LayoutParams(-2, dp(activity, 38)));
         LinearLayout speedCard = new LinearLayout(activity);
         speedCard.setOrientation(LinearLayout.VERTICAL);
         speedCard.setGravity(Gravity.CENTER);
-        speedCard.setBackground(round(Color.argb(242, 3, 39, 30), dp(activity, 22), Color.TRANSPARENT));
-        TextView speed = label(activity, "0", LIGHT_GOLD, 38f, Gravity.CENTER);
+        speedCard.setBackground(round(Color.argb(244, 17, 29, 43), dp(activity, 22), Color.argb(80, 57, 169, 255)));
+        TextView speed = label(activity, "0", PRIMARY, 38f, Gravity.CENTER);
         speed.setId(R.id.speed_value);
         speedCard.addView(speed, new LinearLayout.LayoutParams(-1, 0, 1f));
-        TextView km = label(activity, "كم/س", Color.WHITE, 13f, Gravity.CENTER);
+        TextView km = label(activity, "كم/س", MUTED, 13f, Gravity.CENTER);
         speedCard.addView(km, new LinearLayout.LayoutParams(-1, dp(activity, 30)));
         LinearLayout.LayoutParams speedParams = new LinearLayout.LayoutParams(dp(activity, 96), dp(activity, 96));
         speedParams.topMargin = dp(activity, 10);
@@ -120,11 +123,11 @@ final class CarScreenLayout {
         empty.setOrientation(LinearLayout.VERTICAL);
         empty.setGravity(Gravity.CENTER);
         empty.setPadding(dp(activity, 28), dp(activity, 22), dp(activity, 28), dp(activity, 22));
-        empty.setBackground(round(Color.argb(247, 255, 249, 235), dp(activity, 24), Color.argb(70, 8, 62, 45)));
-        empty.addView(label(activity, "لا توجد خريطة", DEEP_GREEN, 21f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 42)));
-        Button download = button(activity, "تنزيل خريطة الخليج الموصى بها", R.id.download_map, GOLD, DEEP_GREEN);
+        empty.setBackground(round(Color.argb(248, 17, 29, 43), dp(activity, 24), Color.argb(100, 57, 169, 255)));
+        empty.addView(label(activity, "الخريطة غير محمّلة", TEXT, 21f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 42)));
+        Button download = button(activity, "تنزيل خريطة الخليج", R.id.download_map, PRIMARY, NIGHT);
         empty.addView(download, new LinearLayout.LayoutParams(dp(activity, 290), dp(activity, 52)));
-        Button importMap = button(activity, "إضافة خريطة من USB أو الذاكرة", R.id.import_map, DEEP_GREEN, Color.WHITE);
+        Button importMap = button(activity, "إضافة خريطة من USB", R.id.import_map, SURFACE_ALT, TEXT);
         LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(dp(activity, 290), dp(activity, 52));
         importParams.topMargin = dp(activity, 8);
         empty.addView(importMap, importParams);
@@ -133,14 +136,14 @@ final class CarScreenLayout {
 
         TextView attribution = label(activity, "© OpenStreetMap contributors", MUTED, 10f, Gravity.CENTER);
         attribution.setPadding(dp(activity, 8), dp(activity, 3), dp(activity, 8), dp(activity, 3));
-        attribution.setBackground(round(Color.argb(235, 255, 255, 255), dp(activity, 10), Color.TRANSPARENT));
+        attribution.setBackground(round(Color.argb(225, 7, 17, 29), dp(activity, 10), Color.TRANSPARENT));
         root.addView(attribution, frame(-2, -2, Gravity.BOTTOM | Gravity.LEFT, 0, 0, dp(activity, 16), dp(activity, 16)));
 
         LinearLayout dock = new LinearLayout(activity);
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(dp(activity, 8), dp(activity, 4), dp(activity, 8), dp(activity, 4));
-        dock.setBackground(round(Color.argb(245, 8, 62, 45), dp(activity, 22), Color.argb(80, 241, 215, 147)));
+        dock.setBackground(round(Color.argb(247, 7, 17, 29), dp(activity, 22), Color.argb(115, 57, 169, 255)));
         dock.addView(dockAction(activity, "الخريطة", R.id.action_map), weighted());
         dock.addView(dockAction(activity, "حفظ موقع", R.id.action_save), weighted());
         dock.addView(dockAction(activity, "تسجيل مسار", R.id.action_record), weighted());
@@ -151,9 +154,9 @@ final class CarScreenLayout {
     }
 
     private static TextView control(Activity activity, String text, int id, float size) {
-        TextView view = label(activity, text, GREEN, size, Gravity.CENTER);
+        TextView view = label(activity, text, PRIMARY, size, Gravity.CENTER);
         view.setId(id);
-        view.setBackground(round(Color.argb(247, 255, 255, 255), dp(activity, 25), Color.argb(55, 8, 62, 45)));
+        view.setBackground(round(Color.argb(247, 17, 29, 43), dp(activity, 25), Color.argb(75, 57, 169, 255)));
         return view;
     }
 
@@ -170,7 +173,11 @@ final class CarScreenLayout {
     }
 
     private static TextView dockAction(Activity activity, String text, int id) {
-        TextView view = label(activity, text, Color.WHITE, 13f, Gravity.CENTER);
+        TextView view = id == R.id.action_more ? new DarbakMoreButton(activity) : new TextView(activity);
+        view.setText(text);
+        view.setTextColor(id == R.id.action_more ? PRIMARY : TEXT);
+        view.setTextSize(13f);
+        view.setGravity(Gravity.CENTER);
         view.setId(id);
         view.setPadding(dp(activity, 4), dp(activity, 8), dp(activity, 4), dp(activity, 6));
         return view;
