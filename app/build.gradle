@@ -74,7 +74,7 @@ dependencies {
     implementation "com.github.mapsforge.mapsforge:mapsforge-map:${mapsforgeVersion}@jar"
     implementation "com.github.mapsforge.mapsforge:mapsforge-map-reader:${mapsforgeVersion}@jar"
     implementation "com.github.mapsforge.mapsforge:mapsforge-map-android:${mapsforgeVersion}@jar"
-    implementation "com.github.mapsforge.mapsforge-themes:${mapsforgeVersion}@jar"
+    implementation "com.github.mapsforge.mapsforge:mapsforge-themes:${mapsforgeVersion}@jar"
     implementation 'com.caverock:androidsvg:1.4'
 
     testImplementation 'junit:junit:4.13.2'
