@@ -1,6 +1,7 @@
 package com.abosultan.darbakmaps;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
@@ -8,11 +9,19 @@ import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
-/** Map container that treats a clean single tap as a request to show/hide controls. */
+import com.abosultan.darbakmaps.data.PlaceRepository;
+
+import org.mapsforge.core.model.LatLong;
+import org.mapsforge.map.android.view.MapView;
+
+/** Map-first gesture shell: tap toggles tools, long press saves a waypoint. */
 final class DarbakMapContainer extends FrameLayout {
     private static final long TAP_TIMEOUT_MS = 420L;
+    private static final long LONG_PRESS_MS = 650L;
     private static final long AUTO_HIDE_MS = 5000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -55,7 +64,11 @@ final class DarbakMapContainer extends FrameLayout {
                 break;
             case MotionEvent.ACTION_UP:
                 long elapsed = event.getEventTime() - downTime;
-                if (!moved && elapsed <= TAP_TIMEOUT_MS) {
+                if (!moved && elapsed >= LONG_PRESS_MS) {
+                    final float x = event.getX();
+                    final float y = event.getY();
+                    post(() -> saveWaypointAt(x, y));
+                } else if (!moved && elapsed <= TAP_TIMEOUT_MS) {
                     post(this::toggleTools);
                 }
                 break;
@@ -67,6 +80,38 @@ final class DarbakMapContainer extends FrameLayout {
 
     void showToolsTemporarily() {
         setToolsVisible(true);
+    }
+
+    private void saveWaypointAt(float x, float y) {
+        if (!(getContext() instanceof Activity) || getChildCount() == 0 || !(getChildAt(0) instanceof MapView)) {
+            return;
+        }
+        MapView mapView = (MapView) getChildAt(0);
+        LatLong point = mapView.getMapViewProjection().fromPixels(x, y);
+        if (point == null) {
+            return;
+        }
+        Activity activity = (Activity) getContext();
+        EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setHint("مثال: مدخل الشِعْب أو موقع المخيم");
+        input.setPadding(28, 8, 28, 8);
+
+        new AlertDialog.Builder(activity)
+                .setTitle("حفظ نقطة على الخريطة")
+                .setMessage(String.format(java.util.Locale.US, "%.6f, %.6f", point.latitude, point.longitude))
+                .setView(input)
+                .setNegativeButton("إلغاء", null)
+                .setPositiveButton("حفظ", (dialog, which) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        name = "نقطة بر";
+                    }
+                    new PlaceRepository(activity).add(name, point.latitude, point.longitude);
+                    MapRuntimeBridge.showPoint(point.latitude, point.longitude);
+                    Toast.makeText(activity, "تم حفظ النقطة", Toast.LENGTH_SHORT).show();
+                })
+                .show();
     }
 
     private void toggleTools() {
