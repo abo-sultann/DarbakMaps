@@ -42,7 +42,7 @@ android {
         release {
             minifyEnabled true
             shrinkResources true
-            // Temporary release-build branch only: sign offline with the private DarbakMaps key.
+            signingConfig signingConfigs.production
             buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'true'
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
