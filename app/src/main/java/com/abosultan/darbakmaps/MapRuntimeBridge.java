@@ -37,6 +37,12 @@ public final class MapRuntimeBridge {
         }
     }
 
+    public static synchronized void showPoint(double latitude, double longitude) {
+        if (activeController != null) {
+            activeController.showPoint(latitude, longitude);
+        }
+    }
+
     public static String label(int mode) {
         if (mode == MapUiPreferences.ORIENTATION_HEADING) {
             return "اتجاه ↥";
