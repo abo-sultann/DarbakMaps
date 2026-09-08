@@ -1,15 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="darbak_green">#083E2D</color>
-    <color name="darbak_green_deep">#03271E</color>
-    <color name="darbak_green_soft">#DDEBE4</color>
-    <color name="darbak_gold">#D9AE55</color>
-    <color name="darbak_gold_light">#F1D793</color>
-    <color name="darbak_orange">#EC7A25</color>
-    <color name="darbak_ink">#10251E</color>
-    <color name="darbak_muted">#5C6E67</color>
-    <color name="darbak_ivory">#FFF9EB</color>
+    <color name="darbak_green">#07111D</color>
+    <color name="darbak_green_deep">#F4F7FA</color>
+    <color name="darbak_green_soft">#111D2B</color>
+    <color name="darbak_gold">#39A9FF</color>
+    <color name="darbak_gold_light">#D7AD55</color>
+    <color name="darbak_orange">#FFC857</color>
+    <color name="darbak_ink">#F4F7FA</color>
+    <color name="darbak_muted">#9FB0C2</color>
+    <color name="darbak_ivory">#07111D</color>
     <color name="darbak_white">#FFFFFFFF</color>
     <color name="darbak_transparent">#00000000</color>
+    <color name="darbak_primary">#39A9FF</color>
+    <color name="darbak_surface">#111D2B</color>
+    <color name="darbak_surface_alt">#101E2C</color>
+    <color name="darbak_success">#4CD989</color>
+    <color name="darbak_warning">#FFC857</color>
+    <color name="darbak_error">#FF647C</color>
+    <color name="darbak_brand_gold">#D7AD55</color>
 </resources>
-
