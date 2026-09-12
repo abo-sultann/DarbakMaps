@@ -8,10 +8,15 @@ class Classification {
   const Classification(this.tags);
 }
 
+typedef GeoPoint = ({double lat, double lng});
+
 const double minLat = 14.0;
 const double maxLat = 33.5;
 const double minLon = 33.0;
 const double maxLon = 58.0;
+const double quantizeScale = 1000000.0; // ~0.11 m latitude resolution.
+const double largeGeometryTolerance = 0.00002; // roughly 2 m.
+const int largeGeometryThreshold = 5000;
 
 bool validXml10Rune(int rune) =>
     rune == 0x09 ||
@@ -43,6 +48,99 @@ String cleanLabel(String? raw) {
   var value = String.fromCharCodes(raw.runes.where(validXml10Rune)).trim();
   value = value.replaceAll(RegExp(r'\s+'), ' ');
   return value;
+}
+
+double _q(double value) => (value * quantizeScale).round() / quantizeScale;
+
+bool _same(GeoPoint a, GeoPoint b) => a.lat == b.lat && a.lng == b.lng;
+
+double _pointSegmentDistanceSquared(GeoPoint p, GeoPoint a, GeoPoint b) {
+  final dx = b.lng - a.lng;
+  final dy = b.lat - a.lat;
+  if (dx == 0 && dy == 0) {
+    final px = p.lng - a.lng;
+    final py = p.lat - a.lat;
+    return px * px + py * py;
+  }
+  var t = ((p.lng - a.lng) * dx + (p.lat - a.lat) * dy) / (dx * dx + dy * dy);
+  if (t < 0) t = 0;
+  if (t > 1) t = 1;
+  final projLng = a.lng + t * dx;
+  final projLat = a.lat + t * dy;
+  final ex = p.lng - projLng;
+  final ey = p.lat - projLat;
+  return ex * ex + ey * ey;
+}
+
+List<GeoPoint> _rdp(List<GeoPoint> points, double tolerance) {
+  if (points.length <= 2) return List<GeoPoint>.from(points);
+  final keep = List<bool>.filled(points.length, false);
+  keep[0] = true;
+  keep[points.length - 1] = true;
+  final toleranceSquared = tolerance * tolerance;
+  final stack = <(int, int)>[(0, points.length - 1)];
+  while (stack.isNotEmpty) {
+    final (start, end) = stack.removeLast();
+    var maxDistance = 0.0;
+    var maxIndex = -1;
+    for (var i = start + 1; i < end; i++) {
+      final distance = _pointSegmentDistanceSquared(points[i], points[start], points[end]);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        maxIndex = i;
+      }
+    }
+    if (maxIndex >= 0 && maxDistance > toleranceSquared) {
+      keep[maxIndex] = true;
+      stack.add((start, maxIndex));
+      stack.add((maxIndex, end));
+    }
+  }
+  final result = <GeoPoint>[];
+  for (var i = 0; i < points.length; i++) {
+    if (keep[i]) result.add(points[i]);
+  }
+  return result;
+}
+
+List<GeoPoint> normalizeGeometry(List<LatLng> raw, {required bool polygon}) {
+  final points = <GeoPoint>[];
+  for (final p in raw) {
+    final point = (lat: _q(p.lat), lng: _q(p.lng));
+    if (points.isEmpty || !_same(points.last, point)) {
+      points.add(point);
+    }
+  }
+
+  // Remove immediate A-B-A spikes that are common in legacy Garmin geometry.
+  if (points.length >= 3) {
+    var i = 1;
+    while (i < points.length - 1) {
+      if (_same(points[i - 1], points[i + 1])) {
+        points.removeAt(i);
+        if (i > 1) i--;
+      } else {
+        i++;
+      }
+    }
+  }
+
+  if (points.length > largeGeometryThreshold) {
+    if (polygon && points.length >= 4) {
+      final ring = List<GeoPoint>.from(points);
+      if (_same(ring.first, ring.last)) ring.removeLast();
+      if (ring.length >= 3) {
+        final simplified = _rdp([...ring, ring.first], largeGeometryTolerance);
+        if (simplified.length >= 4) {
+          simplified.removeLast();
+          return simplified;
+        }
+      }
+    } else {
+      return _rdp(points, largeGeometryTolerance);
+    }
+  }
+  return points;
 }
 
 Classification? classifyPoint(int type, String label) {
@@ -173,6 +271,8 @@ Future<void> main(List<String> args) async {
   var decoded = 0;
   var duplicates = 0;
   var invalidFeatures = 0;
+  var simplifiedFeatures = 0;
+  var removedGeometryPoints = 0;
 
   sink.writeln('<?xml version="1.0" encoding="UTF-8"?>');
   sink.writeln('<osm version="0.6" generator="DarbakMaps-Mishari">');
@@ -210,11 +310,15 @@ Future<void> main(List<String> args) async {
           continue;
         }
 
-        if (f.kind == FeatureKind.polyline && f.points.length < 2) {
+        final points = normalizeGeometry(f.points, polygon: f.kind == FeatureKind.polygon);
+        removedGeometryPoints += f.points.length - points.length;
+        if (points.length < f.points.length) simplifiedFeatures++;
+
+        if (f.kind == FeatureKind.polyline && points.length < 2) {
           skippedByType[typeKey] = (skippedByType[typeKey] ?? 0) + 1;
           continue;
         }
-        if (f.kind == FeatureKind.polygon && f.points.length < 3) {
+        if (f.kind == FeatureKind.polygon && points.length < 3) {
           skippedByType[typeKey] = (skippedByType[typeKey] ?? 0) + 1;
           continue;
         }
@@ -230,7 +334,7 @@ Future<void> main(List<String> args) async {
 
         if (f.kind == FeatureKind.point) {
           final id = nextNodeId++;
-          final p = f.points.first;
+          final p = points.first;
           sink.writeln('  <node id="$id" lat="${p.lat}" lon="${p.lng}">');
           for (final e in tags.entries) {
             sink.writeln('    <tag k="${xmlSafe(e.key)}" v="${xmlSafe(e.value)}"/>');
@@ -240,7 +344,7 @@ Future<void> main(List<String> args) async {
         }
 
         final nodeIds = <int>[];
-        for (final p in f.points) {
+        for (final p in points) {
           final nodeId = nextNodeId++;
           nodeIds.add(nodeId);
           sink.writeln('  <node id="$nodeId" lat="${p.lat}" lon="${p.lng}"/>');
@@ -274,6 +378,13 @@ Future<void> main(List<String> args) async {
       'minLon': minLon,
       'maxLon': maxLon,
     },
+    'geometryNormalization': {
+      'coordinateDecimals': 6,
+      'largeGeometryThreshold': largeGeometryThreshold,
+      'rdpToleranceDegrees': largeGeometryTolerance,
+      'simplifiedFeatures': simplifiedFeatures,
+      'removedGeometryPoints': removedGeometryPoints,
+    },
     'idPolicy': {
       'nodeStart': 4000000000000,
       'wayStart': 4500000000000,
@@ -289,5 +400,5 @@ Future<void> main(List<String> args) async {
   };
   await File(reportPath).writeAsString(const JsonEncoder.withIndent('  ').convert(report));
   stderr.writeln(
-      'Darbak Mishari: decoded=$decoded kept=${keptByKind.values.fold<int>(0, (a, b) => a + b)} duplicates=$duplicates invalid=$invalidFeatures');
+      'Darbak Mishari: decoded=$decoded kept=${keptByKind.values.fold<int>(0, (a, b) => a + b)} duplicates=$duplicates invalid=$invalidFeatures simplified=$simplifiedFeatures removedPoints=$removedGeometryPoints');
 }
