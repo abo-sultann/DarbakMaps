@@ -39,6 +39,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y 7zip osmium-tool python3-pip
+          sudo ln -sf "$(command -v 7zz)" /usr/local/bin/7z
           python3 -m pip install --break-system-packages requests beautifulsoup4 gdown
 
       - name: Build private Saudi map
