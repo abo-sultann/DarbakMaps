@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="${1:-$ROOT/build/map-work}"
 OUT="${2:-$ROOT/build/map-output}"
+MISHARI_DRIVE_ID="${MISHARI_DRIVE_ID:-1Pldnix5ODrCS4Brbuf_ZfqVP5KLuhnCJ}"
 MISHARI_PAGE="${MISHARI_PAGE:-https://www.mediafire.com/?pr7b4xb4an3m0np}"
 MISHARI_ARCHIVE_URL="${MISHARI_ARCHIVE_URL:-}"
 OSM_URL="${OSM_URL:-https://download.openstreetmap.fr/extracts/asia/saudi_arabia-latest.osm.pbf}"
@@ -19,9 +20,16 @@ log "Acquire Al Mishari Garmin archive"
 if [[ -n "$MISHARI_ARCHIVE_URL" ]]; then
   ARCHIVE="$WORK/almishar-source.zip"
   curl --fail --location --retry 4 --retry-delay 3 --output "$ARCHIVE" "$MISHARI_ARCHIVE_URL"
+elif [[ -n "$MISHARI_DRIVE_ID" ]]; then
+  ARCHIVE="$WORK/almisharIMAP.rar"
+  python3 -m gdown --id "$MISHARI_DRIVE_ID" --output "$ARCHIVE"
 else
   ARCHIVE="$WORK/almisharIMAP.rar"
   python3 "$ROOT/tools/map/download_mediafire.py" "$MISHARI_PAGE" "$ARCHIVE"
+fi
+if [[ ! -f "$ARCHIVE" || ! -s "$ARCHIVE" ]]; then
+  echo "Al Mishari archive download failed" >&2
+  exit 10
 fi
 sha256sum "$ARCHIVE" | tee "$OUT/mishari-source.sha256"
 
