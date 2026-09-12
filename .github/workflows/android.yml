@@ -8,6 +8,7 @@ on:
       - '.github/workflows/map-build.yml'
       - '.github/workflows/map-build-fast.yml'
       - '.github/workflows/map-source-diagnostic.yml'
+      - '.github/workflows/map-publish.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
