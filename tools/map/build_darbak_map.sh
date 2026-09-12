@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="${1:-$ROOT/build/map-work}"
 OUT="${2:-$ROOT/build/map-output}"
 MISHARI_PAGE="${MISHARI_PAGE:-https://www.mediafire.com/?pr7b4xb4an3m0np}"
+MISHARI_ARCHIVE_URL="${MISHARI_ARCHIVE_URL:-}"
 OSM_URL="${OSM_URL:-https://download.openstreetmap.fr/extracts/asia/saudi_arabia-latest.osm.pbf}"
 OSMOSIS_VERSION="0.49.2"
 MAPSFORGE_VERSION="0.30.0"
@@ -14,13 +15,19 @@ mkdir -p "$WORK" "$OUT"
 
 log() { printf '\n==> %s\n' "$*"; }
 
-log "Download Al Mishari Garmin archive"
-python3 "$ROOT/tools/map/download_mediafire.py" "$MISHARI_PAGE" "$WORK/almisharIMAP.rar"
-sha256sum "$WORK/almisharIMAP.rar" | tee "$OUT/mishari-source.sha256"
+log "Acquire Al Mishari Garmin archive"
+if [[ -n "$MISHARI_ARCHIVE_URL" ]]; then
+  ARCHIVE="$WORK/almishar-source.zip"
+  curl --fail --location --retry 4 --retry-delay 3 --output "$ARCHIVE" "$MISHARI_ARCHIVE_URL"
+else
+  ARCHIVE="$WORK/almisharIMAP.rar"
+  python3 "$ROOT/tools/map/download_mediafire.py" "$MISHARI_PAGE" "$ARCHIVE"
+fi
+sha256sum "$ARCHIVE" | tee "$OUT/mishari-source.sha256"
 
 log "Extract Al Mishari archive"
 mkdir -p "$WORK/mishari"
-7z x -y -pTameem65 "$WORK/almisharIMAP.rar" "-o$WORK/mishari" >/tmp/darbak-7z.log
+7z x -y -pTameem65 "$ARCHIVE" "-o$WORK/mishari" >/tmp/darbak-7z.log
 cat /tmp/darbak-7z.log
 find "$WORK/mishari" -maxdepth 4 -type f -printf '%s\t%p\n' | sort -nr | tee "$OUT/mishari-files.txt"
 IMG="$(find "$WORK/mishari" -type f -iname '*.img' -printf '%s\t%p\n' | sort -nr | head -n1 | cut -f2-)"
