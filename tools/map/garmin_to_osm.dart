@@ -8,7 +8,11 @@ class Classification {
   const Classification(this.tags);
 }
 
-String xml(String value) => const HtmlEscape(HtmlEscapeMode.element).convert(value);
+String xml(String value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 
 String cleanLabel(String? raw) {
   if (raw == null) return '';
@@ -138,6 +142,7 @@ Future<void> main(List<String> args) async {
   final reportPath = args.length >= 3 ? args[2] : '$output.report.json';
 
   final img = await GarminImg.open(input);
+  final polygonTypeNames = img.polygonNames;
   final sink = File(output).openWrite();
   var nextId = -1;
   final seen = <String>{};
@@ -168,7 +173,7 @@ Future<void> main(List<String> args) async {
           case FeatureKind.polyline:
             c = classifyLine(f.type, label);
           case FeatureKind.polygon:
-            c = classifyPolygon(f.type, img.polygonNames[f.type]);
+            c = classifyPolygon(f.type, polygonTypeNames[f.type]);
         }
         final typeKey = '0x${f.type.toRadixString(16)}';
         if (c == null || f.points.isEmpty) {
@@ -205,7 +210,7 @@ Future<void> main(List<String> args) async {
           nodeIds.add(nodeId);
           sink.writeln('  <node id="$nodeId" lat="${p.lat}" lon="${p.lng}"/>');
         }
-        if (f.kind == FeatureKind.polygon && nodeIds.first != nodeIds.last) {
+        if (f.kind == FeatureKind.polygon) {
           nodeIds.add(nodeIds.first);
         }
         final wayId = nextId--;
@@ -233,7 +238,7 @@ Future<void> main(List<String> args) async {
     'keptByKind': keptByKind,
     'keptByGarminType': keptByType,
     'skippedByGarminType': skippedByType,
-    'polygonTypeNames': img.polygonNames.map((k, v) => MapEntry('0x${k.toRadixString(16)}', v)),
+    'polygonTypeNames': polygonTypeNames.map((k, v) => MapEntry('0x${k.toRadixString(16)}', v)),
   };
   await File(reportPath).writeAsString(const JsonEncoder.withIndent('  ').convert(report));
   stderr.writeln('Darbak Mishari: decoded=$decoded kept=${keptByKind.values.fold<int>(0, (a, b) => a + b)} duplicates=$duplicates');
