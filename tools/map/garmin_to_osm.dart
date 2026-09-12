@@ -8,6 +8,11 @@ class Classification {
   const Classification(this.tags);
 }
 
+const double minLat = 14.0;
+const double maxLat = 33.5;
+const double minLon = 33.0;
+const double maxLon = 58.0;
+
 bool validXml10Rune(int rune) =>
     rune == 0x09 ||
     rune == 0x0A ||
@@ -19,10 +24,10 @@ bool validXml10Rune(int rune) =>
 bool validCoordinate(LatLng point) =>
     point.lat.isFinite &&
     point.lng.isFinite &&
-    point.lat >= -90.0 &&
-    point.lat <= 90.0 &&
-    point.lng >= -180.0 &&
-    point.lng <= 180.0;
+    point.lat >= minLat &&
+    point.lat <= maxLat &&
+    point.lng >= minLon &&
+    point.lng <= maxLon;
 
 String xmlSafe(String value) {
   final clean = String.fromCharCodes(value.runes.where(validXml10Rune));
@@ -158,7 +163,8 @@ Future<void> main(List<String> args) async {
   final img = await GarminImg.open(input);
   final polygonTypeNames = img.polygonNames;
   final sink = File(output).openWrite();
-  var nextId = -1;
+  var nextNodeId = 4000000000000;
+  var nextWayId = 4500000000000;
   final seen = <String>{};
   final keptByKind = <String, int>{};
   final skippedByType = <String, int>{};
@@ -223,7 +229,7 @@ Future<void> main(List<String> args) async {
         keptByType[typeKey] = (keptByType[typeKey] ?? 0) + 1;
 
         if (f.kind == FeatureKind.point) {
-          final id = nextId--;
+          final id = nextNodeId++;
           final p = f.points.first;
           sink.writeln('  <node id="$id" lat="${p.lat}" lon="${p.lng}">');
           for (final e in tags.entries) {
@@ -235,14 +241,14 @@ Future<void> main(List<String> args) async {
 
         final nodeIds = <int>[];
         for (final p in f.points) {
-          final nodeId = nextId--;
+          final nodeId = nextNodeId++;
           nodeIds.add(nodeId);
           sink.writeln('  <node id="$nodeId" lat="${p.lat}" lon="${p.lng}"/>');
         }
         if (f.kind == FeatureKind.polygon) {
           nodeIds.add(nodeIds.first);
         }
-        final wayId = nextId--;
+        final wayId = nextWayId++;
         sink.writeln('  <way id="$wayId">');
         for (final nodeId in nodeIds) {
           sink.writeln('    <nd ref="$nodeId"/>');
@@ -262,6 +268,16 @@ Future<void> main(List<String> args) async {
 
   final report = {
     'input': input,
+    'coordinateFilter': {
+      'minLat': minLat,
+      'maxLat': maxLat,
+      'minLon': minLon,
+      'maxLon': maxLon,
+    },
+    'idPolicy': {
+      'nodeStart': 4000000000000,
+      'wayStart': 4500000000000,
+    },
     'decodedFeatures': decoded,
     'duplicateFeaturesSkipped': duplicates,
     'invalidFeaturesSkipped': invalidFeatures,
