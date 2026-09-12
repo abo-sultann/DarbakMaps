@@ -4,43 +4,37 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="${1:-$ROOT/build/map-work}"
 OUT="${2:-$ROOT/build/map-output}"
-MISHARI_DRIVE_ID="${MISHARI_DRIVE_ID:-1Pldnix5ODrCS4Brbuf_ZfqVP5KLuhnCJ}"
-MISHARI_PAGE="${MISHARI_PAGE:-https://www.mediafire.com/?pr7b4xb4an3m0np}"
 MISHARI_ARCHIVE_URL="${MISHARI_ARCHIVE_URL:-}"
+MISHARI_SOURCE_RELEASE_TAG="${MISHARI_SOURCE_RELEASE_TAG:-darbak-map-source}"
 OSM_URL="${OSM_URL:-https://download.openstreetmap.fr/extracts/asia/saudi_arabia-latest.osm.pbf}"
 OSMOSIS_VERSION="0.49.2"
 MAPSFORGE_VERSION="0.30.0"
 
 rm -rf "$WORK" "$OUT"
 mkdir -p "$WORK" "$OUT"
-
 log() { printf '\n==> %s\n' "$*"; }
 
-log "Acquire Al Mishari Garmin archive"
+log "Acquire private Al Mishari ZIP source"
+ARCHIVE="$WORK/almishar-source.zip"
 if [[ -n "$MISHARI_ARCHIVE_URL" ]]; then
-  ARCHIVE="$WORK/almishar-source.zip"
   curl --fail --location --retry 4 --retry-delay 3 --output "$ARCHIVE" "$MISHARI_ARCHIVE_URL"
-elif [[ -n "$MISHARI_DRIVE_ID" ]]; then
-  ARCHIVE="$WORK/almisharIMAP.rar"
-  python3 -m gdown "$MISHARI_DRIVE_ID" -O "$ARCHIVE"
+elif command -v gh >/dev/null 2>&1; then
+  gh release download "$MISHARI_SOURCE_RELEASE_TAG" --pattern 'almishar-source.zip' --output "$ARCHIVE"
 else
-  ARCHIVE="$WORK/almisharIMAP.rar"
-  python3 "$ROOT/tools/map/download_mediafire.py" "$MISHARI_PAGE" "$ARCHIVE"
-fi
-if [[ ! -f "$ARCHIVE" || ! -s "$ARCHIVE" ]]; then
-  echo "Al Mishari archive download failed" >&2
+  echo "No private Mishari ZIP source is available" >&2
   exit 10
 fi
+test -s "$ARCHIVE"
+unzip -tq "$ARCHIVE" >/dev/null
 sha256sum "$ARCHIVE" | tee "$OUT/mishari-source.sha256"
 
-log "Extract Al Mishari archive"
+log "Extract Al Mishari ZIP"
 mkdir -p "$WORK/mishari"
-7z x -y -pTameem65 "$ARCHIVE" "-o$WORK/mishari" >/tmp/darbak-7z.log
-cat /tmp/darbak-7z.log
-find "$WORK/mishari" -maxdepth 4 -type f -printf '%s\t%p\n' | sort -nr | tee "$OUT/mishari-files.txt"
+unzip -q "$ARCHIVE" -d "$WORK/mishari"
+find "$WORK/mishari" -maxdepth 5 -type f -printf '%s\t%p\n' | sort -nr | tee "$OUT/mishari-files.txt"
 IMG="$(find "$WORK/mishari" -type f -iname '*.img' -printf '%s\t%p\n' | sort -nr | head -n1 | cut -f2-)"
 if [[ -z "$IMG" || ! -f "$IMG" ]]; then
-  echo "No Garmin IMG file found after extraction" >&2
+  echo "No Garmin IMG file found in Al Mishari ZIP" >&2
   exit 20
 fi
 printf 'Selected Garmin IMG: %s (%s bytes)\n' "$IMG" "$(stat -c%s "$IMG")" | tee "$OUT/mishari-img.txt"
@@ -70,9 +64,8 @@ log "Merge OSM base with Mishari desert additions"
 osmium merge "$WORK/saudi-latest.osm.pbf" "$WORK/mishari.pbf" -o "$WORK/darbak-merged.osm.pbf" --overwrite
 osmium fileinfo -e "$WORK/darbak-merged.osm.pbf" | tee "$OUT/merged-osmium-info.txt"
 
-log "Install Osmosis ${OSMOSIS_VERSION} and Mapsforge writer ${MAPSFORGE_VERSION}"
-curl --fail --location --retry 4 \
-  -o "$WORK/osmosis.zip" \
+log "Install Osmosis and Mapsforge writer"
+curl --fail --location --retry 4 -o "$WORK/osmosis.zip" \
   "https://github.com/openstreetmap/osmosis/releases/download/${OSMOSIS_VERSION}/osmosis-${OSMOSIS_VERSION}.zip"
 unzip -q "$WORK/osmosis.zip" -d "$WORK/osmosis"
 OSMOSIS_HOME="$WORK/osmosis"
@@ -86,8 +79,7 @@ test "$(sha256sum "$HOME/.openstreetmap/osmosis/plugins/mapsforge-map-writer-${M
   = "2ed0f79498916259826e0b6ef132ecc427e27999b26736036358733279825626"
 
 log "Prepare Darbak desert tag mapping"
-curl --fail --location --retry 4 \
-  -o "$WORK/tag-mapping-default.xml" \
+curl --fail --location --retry 4 -o "$WORK/tag-mapping-default.xml" \
   "https://raw.githubusercontent.com/mapsforge/mapsforge/${MAPSFORGE_VERSION}/mapsforge-map-writer/src/main/config/tag-mapping.xml"
 python3 "$ROOT/tools/map/prepare_tag_mapping.py" "$WORK/tag-mapping-default.xml" "$WORK/tag-mapping-darbak.xml"
 
@@ -95,8 +87,7 @@ log "Build darbak-saudi.map"
 "$OSMOSIS_HOME/bin/osmosis" \
   --rb file="$WORK/darbak-merged.osm.pbf" \
   --mw file="$OUT/darbak-saudi.map" \
-  type=hd \
-  threads=2 \
+  type=hd threads=2 \
   bbox=16.0,34.0,32.6,55.7 \
   map-start-position=24.7136,46.6753 \
   map-start-zoom=7 \
@@ -118,14 +109,14 @@ from datetime import datetime, timezone
 path, size, sha = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 data = {
     "name": "darbak-saudi.map",
-    "format": "mapsforge-v5",
+    "format": "mapsforge",
     "privateUse": True,
     "sizeBytes": size,
     "sha256": sha,
     "builtAtUtc": datetime.now(timezone.utc).isoformat(),
     "sources": [
         "OpenStreetMap Saudi Arabia current extract",
-        "Al Mishari standalone desert Garmin map (desert additions only)"
+        "Al Mishari standalone Garmin desert map (desert additions only)"
     ],
     "mergePolicy": "OSM authoritative for paved roads/cities/services; Mishari augments off-road tracks, desert hydrology and POIs"
 }
