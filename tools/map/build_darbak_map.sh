@@ -22,7 +22,7 @@ if [[ -n "$MISHARI_ARCHIVE_URL" ]]; then
   curl --fail --location --retry 4 --retry-delay 3 --output "$ARCHIVE" "$MISHARI_ARCHIVE_URL"
 elif [[ -n "$MISHARI_DRIVE_ID" ]]; then
   ARCHIVE="$WORK/almisharIMAP.rar"
-  python3 -m gdown --id "$MISHARI_DRIVE_ID" --output "$ARCHIVE"
+  python3 -m gdown "$MISHARI_DRIVE_ID" -O "$ARCHIVE"
 else
   ARCHIVE="$WORK/almisharIMAP.rar"
   python3 "$ROOT/tools/map/download_mediafire.py" "$MISHARI_PAGE" "$ARCHIVE"
