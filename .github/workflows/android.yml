@@ -6,6 +6,8 @@ on:
     paths-ignore:
       - 'tools/map/**'
       - '.github/workflows/map-build.yml'
+      - '.github/workflows/map-build-fast.yml'
+      - '.github/workflows/map-source-diagnostic.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
