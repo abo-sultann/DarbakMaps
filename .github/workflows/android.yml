@@ -3,6 +3,9 @@ name: Android Build
 on:
   push:
     branches: [main, darbak-platform-v1, production-hardening-v1, darbakmaps-0.2.4-ui, darbakmaps-0.2.5-owner-fix, darbakmaps-0.3.0]
+    paths-ignore:
+      - 'tools/map/**'
+      - '.github/workflows/map-build.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
