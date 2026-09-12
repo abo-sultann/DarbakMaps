@@ -17,6 +17,7 @@ import org.mapsforge.core.model.MapPosition;
 import org.mapsforge.core.model.Rotation;
 import org.mapsforge.map.android.graphics.AndroidBitmap;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
+import org.mapsforge.map.android.rendertheme.AssetsRenderTheme;
 import org.mapsforge.map.android.util.AndroidUtil;
 import org.mapsforge.map.android.view.MapView;
 import org.mapsforge.map.layer.cache.TileCache;
@@ -24,6 +25,7 @@ import org.mapsforge.map.layer.overlay.Marker;
 import org.mapsforge.map.layer.overlay.Polyline;
 import org.mapsforge.map.layer.renderer.TileRendererLayer;
 import org.mapsforge.map.reader.MapFile;
+import org.mapsforge.map.rendertheme.XmlRenderTheme;
 import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
 
 import java.io.File;
@@ -33,6 +35,7 @@ public final class OfflineMapController {
     private final MapView mapView;
     private final TileCache tileCache;
     private final TileRendererLayer rendererLayer;
+    private final XmlRenderTheme darbakTheme;
     private Marker locationMarker;
     private Marker selectedMarker;
     private Polyline activeTrack;
@@ -60,11 +63,12 @@ public final class OfflineMapController {
         );
 
         MapFile mapFile = new MapFile(file, "ar");
+        darbakTheme = createDarbakTheme(context);
         rendererLayer = AndroidUtil.createTileRendererLayer(
                 tileCache,
                 mapView.getModel().mapViewPosition,
                 mapFile,
-                MapsforgeThemes.MOTORIDER,
+                darbakTheme,
                 false,
                 true,
                 false
@@ -100,9 +104,9 @@ public final class OfflineMapController {
         }
     }
 
-    /** DarbakMaps is now a single-purpose off-road map. Legacy mode calls keep the same theme. */
+    /** DarbakMaps is a single-purpose off-road map. Legacy mode calls keep the Darbak theme. */
     public void setDesertMode(boolean ignored) {
-        rendererLayer.setXmlRenderTheme(MapsforgeThemes.MOTORIDER);
+        rendererLayer.setXmlRenderTheme(darbakTheme);
         tileCache.purge();
         mapView.getLayerManager().redrawLayers();
     }
@@ -253,6 +257,14 @@ public final class OfflineMapController {
         MapRuntimeBridge.detach(this);
         mapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
+    }
+
+    private XmlRenderTheme createDarbakTheme(Context context) {
+        try {
+            return new AssetsRenderTheme(context.getAssets(), "renderthemes/", "darbak_desert.xml");
+        } catch (RuntimeException error) {
+            return MapsforgeThemes.MOTORIDER;
+        }
     }
 
     private org.mapsforge.core.graphics.Bitmap createArrow(float bearing) {
