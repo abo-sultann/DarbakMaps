@@ -7,7 +7,7 @@ This document defines the private, car-screen map build used by Darbak Maps.
 Produce one offline Mapsforge file (`darbak-saudi.map`) optimized for the owner's Android 7.x car screen (1024×600), using:
 
 1. **Current OpenStreetMap Saudi Arabia data** as the authoritative base for roads, settlements, services and current names.
-2. **Al-Mishari desert data** as the supplemental layer for desert tracks, wadis, faydat, qaa/sabkha, peaks, wells and desert localities that are absent from OSM.
+2. **Al-Mishari standalone Garmin desert data** as the supplemental layer for desert tracks, wadis, peaks, wells and desert localities that are absent from OSM.
 
 The output is for private use in Darbak Maps and is not a Navitel/NM3 runtime dependency.
 
@@ -21,74 +21,76 @@ The merge must not blindly stack both maps. When features overlap, use these rul
 | City streets | OSM | OSM wins |
 | Towns / villages | OSM | OSM wins; Mishari only fills missing localities |
 | Fuel / public services | OSM | OSM wins |
-| Desert tracks | Mishari + OSM | keep both after geometric de-duplication |
-| Wadis / seasonal drainage | Mishari + OSM | prefer named/detailed geometry; remove near-duplicates |
-| Faydat / qaa / sabkha | Mishari | retain unless a clearly newer OSM equivalent exists |
-| Peaks / hills | Mishari + OSM | keep named features, merge near-duplicates by name+distance |
-| Wells / springs | Mishari + OSM | keep both after near-duplicate check |
+| Desert tracks | Mishari + OSM | preserve Mishari off-road additions; OSM remains authoritative for mapped roads |
+| Wadis / seasonal drainage | Mishari + OSM | preserve useful named/detail geometry |
+| Peaks / hills | Mishari + OSM | keep named desert reference features |
+| Wells / springs | Mishari + OSM | keep high-value desert POIs |
 | Protected areas | OSM | OSM wins |
 
 ## Al-Mishari extraction input
 
-The preferred source is the **standalone Garmin IMG version of Al-Mishari desert map**, not a combined city map and not `mapV2.nm3`.
+The source is the **standalone Garmin IMG version of Al-Mishari desert map**, not the combined `mapV2.nm3` Navitel file.
 
-One-time extraction workflow on Windows:
+The source archive is kept privately. The build no longer requires GPSMapEdit or a manual Windows conversion. The automated pipeline:
 
-1. Open the standalone Al-Mishari `.img` in GPSMapEdit.
-2. Save/export it as Polish MP (`mishari.mp`).
-3. Keep the original IMG unchanged as the archive/reference copy.
-4. Convert the MP features into an intermediate GIS/OSM-compatible dataset.
-5. Normalize tags according to the table below before merging with current OSM.
+1. opens the private ZIP source and selects the Garmin `.img`;
+2. decodes Garmin points, polylines, polygons and labels with the open-source `garmin_img` reader;
+3. keeps desert-relevant feature classes and rejects paved-road classes that should come from current OSM;
+4. exports the selected features to OSM XML using negative private IDs so they cannot collide with normal OSM IDs;
+5. repairs legacy Arabic labels when old Windows Arabic bytes were exposed through a Western code page;
+6. sorts the supplemental data to PBF with Osmium;
+7. merges it with the latest Saudi Arabia OSM PBF;
+8. compiles the merged data into Mapsforge `darbak-saudi.map`.
 
-`mapV2.nm3` is retained only as a visual/reference check because NM3 is a final Navitel binary and is not the preferred source for extraction.
+`mapV2.nm3` remains only a visual/reference check. It is not an input to the final map build.
 
 ## Darbak normalization
 
-Convert Mishari feature classes into standard or Darbak-compatible OSM tags before Mapsforge compilation.
+Mishari feature classes are normalized into standard OSM-compatible tags before Mapsforge compilation.
 
 | Desert feature | Normalized tags |
 |---|---|
-| Main desert road | `highway=track`, `tracktype=grade1` or `grade2` |
+| Main desert road | `highway=track`, optionally `tracktype=grade1|grade2` |
 | Faint/off-road trail | `highway=track`, `tracktype=grade3..grade5` |
-| Foot/path line | `highway=path` |
-| Wadi / shaib | `waterway=stream`, `intermittent=yes` (or retained `waterway=wadi` during intermediate processing, then mapped for writer compatibility) |
-| Peak | `natural=peak` |
-| Hill | `natural=hill` |
+| Path line | `highway=path` |
+| Wadi / shaib | `waterway=stream`, usually `intermittent=yes` |
+| Peak / hill reference | `natural=peak` or `natural=hill` when the Garmin type is known |
 | Well | `man_made=water_well` |
 | Spring | `natural=spring` |
-| Sand | `natural=sand` |
-| Dune | `natural=dune` |
-| Fayda / basin | `natural=wetland` plus `name=*` and optional `darbak:class=fayda` |
-| Qaa / sabkha | `natural=wetland` or `natural=salt_pond`, plus `darbak:class=qaa|sabkha` |
+| Sand / dune | `natural=sand` / `natural=dune` when identified |
+| Wet desert basin | `natural=wetland` when identified |
 | Desert locality | `place=locality` |
-| Camp/reference point | `tourism=camp_site` only when semantically valid; otherwise `place=locality` + `darbak:class=*` |
+| Camp/reference point | `tourism=camp_site` only when semantically identified; otherwise named custom POIs fall back conservatively to `place=locality` |
 
 Original Arabic names are preserved. Do not transliterate or replace an Arabic label merely because an English label exists.
 
-## De-duplication
+## De-duplication and safety
 
-Use a two-stage de-duplication pass:
+The build protects the modern base map by design:
 
-1. **Semantic:** normalized Arabic name, feature class, and source identity.
-2. **Spatial:** near-identical points/lines/polygons within a class-specific tolerance.
+- OSM is the sole authority for normal paved-road Garmin classes.
+- Exact repeated Garmin features are removed during decoding.
+- Mishari additions use negative IDs, avoiding ID collisions with OSM.
+- Unknown unnamed Garmin features are discarded instead of guessed.
+- Unknown named line features are retained only as off-road tracks, because the source is the standalone desert map.
+- A generated Mapsforge file must pass size/integrity checks before it is published as a build artifact.
 
-OSM wins for current road/service data. Mishari wins for desert-only content where OSM has no equivalent.
-
-Do not merge two differently named desert features solely because their geometries touch or overlap.
+Future refinement may add a geometric near-duplicate pass after real-world inspection, but no current OSM road is replaced by Mishari.
 
 ## Mapsforge output
 
-Compile the merged OSM/PBF dataset with Mapsforge Map Writer into:
+The output is:
 
 `darbak-saudi.map`
 
-Recommended map characteristics:
+Build characteristics:
 
-- Saudi Arabia only for the initial private build.
-- Preferred language: Arabic (`name:ar`, falling back to `name`).
-- Keep highway geometry and desert reference features at useful zoom levels.
-- Avoid excessive building detail at low/medium zooms to reduce draw cost on the 1 GB-class head unit.
-- Keep POI density conservative: fuel, wells/springs, settlements, desert localities and useful natural features.
+- Saudi Arabia bounds for the private build;
+- Arabic and English preferred languages, retaining the default `name`;
+- hard-disk Mapsforge writer mode to reduce CI memory pressure;
+- custom tag mapping for Darbak desert features;
+- current Saudi OSM extract downloaded at build time;
+- generated SHA-256 and JSON manifest for each finished map.
 
 The Android app renders this with:
 
@@ -107,6 +109,18 @@ The Darbak theme is desert-first:
 - fuel, wells and springs retained as high-value POIs;
 - no satellite imagery and no online tile dependency.
 
+## Reproducible build
+
+The map build entry point is:
+
+`tools/map/build_darbak_map.sh`
+
+GitHub Actions uses:
+
+`.github/workflows/map-build.yml`
+
+The private decrypted Mishari ZIP is persisted as a private repository release asset after a successful bootstrap build, so subsequent rebuilds do not depend on MediaFire or manual extraction.
+
 ## QA before replacing the car map
 
 Check at least these areas before making a map package the default:
@@ -114,7 +128,7 @@ Check at least these areas before making a map package the default:
 1. Al-Qassim / Al-Rass and surrounding desert.
 2. A dense city area to check label clutter and road hierarchy.
 3. A desert area with many named tracks/wadis.
-4. A sabkha/qaa/fayda area.
+4. A sabkha/qaa/fayda area if available in the source.
 5. Zoom 7–10 for overview performance.
 6. Zoom 12–15 while driving for track/name readability.
 7. GPS arrow and heading-up rotation while the custom theme is active.
