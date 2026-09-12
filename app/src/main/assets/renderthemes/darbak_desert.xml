@@ -42,6 +42,12 @@
             <caption k="name" font-size="12" fill="#5D584C" stroke="#FFF9EE" stroke-width="2.0" />
         </rule>
     </rule>
+    <rule e="way" k="natural" v="valley">
+        <area fill="#E7DCC4" stroke="#A88C63" stroke-width="0.65" />
+        <rule e="way" k="*" v="*" zoom-min="11">
+            <caption k="name" font-size="12" font-style="bold" fill="#70542F" stroke="#FFF9EE" stroke-width="2.0" />
+        </rule>
+    </rule>
 
     <!-- Protected areas: visible but quiet -->
     <rule e="way" k="boundary" v="protected_area|national_park">
@@ -148,13 +154,17 @@
         <circle radius="2.8" fill="#5C9EAA" stroke="#FFF9EE" stroke-width="0.9" />
         <caption k="name" font-size="12" fill="#315D68" stroke="#FFF9EE" stroke-width="2.0" />
     </rule>
+    <rule e="node" k="amenity" v="drinking_water" zoom-min="12">
+        <circle radius="2.7" fill="#67AAB6" stroke="#FFF9EE" stroke-width="0.9" />
+        <caption k="name" font-size="11" fill="#315D68" stroke="#FFF9EE" stroke-width="1.8" />
+    </rule>
 
     <!-- Useful POIs kept to driving essentials -->
     <rule e="node" k="amenity" v="fuel" zoom-min="11">
         <circle radius="3.1" fill="#C69A3A" stroke="#5A4723" stroke-width="0.9" />
         <caption k="name" font-size="12" font-style="bold" fill="#5A4723" stroke="#FFF9EE" stroke-width="2.0" />
     </rule>
-    <rule e="node" k="tourism" v="camp_site|picnic_site" zoom-min="13">
+    <rule e="node" k="tourism" v="camp_site|picnic_site|viewpoint" zoom-min="13">
         <circle radius="2.7" fill="#607B5B" stroke="#FFF9EE" stroke-width="0.9" />
         <caption k="name" font-size="11" fill="#42533E" stroke="#FFF9EE" stroke-width="2.0" />
     </rule>
