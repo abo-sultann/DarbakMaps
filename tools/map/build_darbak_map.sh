@@ -68,8 +68,15 @@ log "Install Osmosis and Mapsforge writer"
 curl --fail --location --retry 4 -o "$WORK/osmosis.zip" \
   "https://github.com/openstreetmap/osmosis/releases/download/${OSMOSIS_VERSION}/osmosis-${OSMOSIS_VERSION}.zip"
 unzip -q "$WORK/osmosis.zip" -d "$WORK/osmosis"
-OSMOSIS_HOME="$WORK/osmosis"
-chmod +x "$OSMOSIS_HOME/bin/osmosis"
+OSMOSIS_BIN="$(find "$WORK/osmosis" -type f -path '*/bin/osmosis' -print -quit)"
+if [[ -z "$OSMOSIS_BIN" || ! -f "$OSMOSIS_BIN" ]]; then
+  echo "Osmosis launcher was not found after extraction" >&2
+  find "$WORK/osmosis" -maxdepth 4 -type f -printf '%p\n' | sort | head -100 >&2
+  exit 40
+fi
+OSMOSIS_HOME="$(cd "$(dirname "$OSMOSIS_BIN")/.." && pwd)"
+chmod +x "$OSMOSIS_BIN"
+printf 'Osmosis home: %s\n' "$OSMOSIS_HOME"
 mkdir -p "$HOME/.openstreetmap/osmosis/plugins"
 curl --fail --location --retry 4 \
   -o "$HOME/.openstreetmap/osmosis/plugins/mapsforge-map-writer-${MAPSFORGE_VERSION}-jar-with-dependencies.jar" \
@@ -84,7 +91,7 @@ curl --fail --location --retry 4 -o "$WORK/tag-mapping-default.xml" \
 python3 "$ROOT/tools/map/prepare_tag_mapping.py" "$WORK/tag-mapping-default.xml" "$WORK/tag-mapping-darbak.xml"
 
 log "Build darbak-saudi.map"
-"$OSMOSIS_HOME/bin/osmosis" \
+"$OSMOSIS_BIN" \
   --rb file="$WORK/darbak-merged.osm.pbf" \
   --mw file="$OUT/darbak-saudi.map" \
   type=hd threads=2 \
