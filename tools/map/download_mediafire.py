@@ -8,19 +8,15 @@ import requests
 from bs4 import BeautifulSoup
 
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36 DarbakMaps/1.0'
-
-DIRECT_PATTERNS = [
-    r'https://download[^"\'<> )\]]*mediafire\.com/[^"\'<> )\]]+',
-    r'https://[^"\'<> )\]]*\.mediafire\.com/[^"\'<> )\]]+',
-]
+DIRECT_RE = re.compile(r'https://download\d+\.mediafire\.com/[^"\'<> )\]]+', re.I)
 
 
-def direct_from_text(text: str) -> str | None:
+def direct_from_text(text: str, quick_key: str | None = None) -> str | None:
     normalized = text.replace('\\/', '/').replace('&amp;', '&')
-    for pattern in DIRECT_PATTERNS:
-        match = re.search(pattern, normalized)
-        if match:
-            return match.group(0).rstrip('.,')
+    for match in DIRECT_RE.finditer(normalized):
+        url = match.group(0).rstrip('.,')
+        if quick_key is None or quick_key in url:
+            return url
     return None
 
 
@@ -29,17 +25,32 @@ def quick_key_from_url(page_url: str) -> str | None:
     return match.group(1) if match else None
 
 
+def pick_download_anchor(response: requests.Response, quick_key: str | None = None) -> str | None:
+    soup = BeautifulSoup(response.text, 'html.parser')
+    selectors = ('#downloadButton', 'a.input', 'a.popsok', 'a[aria-label*="Download"]')
+    for selector in selectors:
+        button = soup.select_one(selector)
+        if button and button.get('href'):
+            href = urljoin(response.url, button['href'])
+            if re.match(r'https://download\d+\.mediafire\.com/', href, re.I):
+                if quick_key is None or quick_key in href:
+                    return href
+    for anchor in soup.find_all('a', href=True):
+        href = urljoin(response.url, anchor['href'])
+        if re.match(r'https://download\d+\.mediafire\.com/', href, re.I):
+            if quick_key is None or quick_key in href:
+                return href
+    return direct_from_text(response.text, quick_key)
+
+
 def resolve_native(session: requests.Session, page_url: str) -> str:
+    quick_key = quick_key_from_url(page_url)
     response = session.get(page_url, timeout=45, allow_redirects=True)
     response.raise_for_status()
     content_type = response.headers.get('content-type', '')
     if 'application/' in content_type and 'text/html' not in content_type:
         return response.url
-    soup = BeautifulSoup(response.text, 'html.parser')
-    button = soup.select_one('#downloadButton') or soup.select_one('a.input')
-    if button and button.get('href'):
-        return urljoin(response.url, button['href'])
-    direct = direct_from_text(response.text)
+    direct = pick_download_anchor(response, quick_key)
     if direct:
         return direct
     raise RuntimeError('MediaFire direct download link was not found')
@@ -56,25 +67,28 @@ def resolve_via_repair(session: requests.Session, page_url: str) -> str:
     response = session.get(
         repair,
         timeout=60,
-        allow_redirects=False,
+        allow_redirects=True,
         headers={'User-Agent': UA, 'Referer': page_url},
     )
-    if response.is_redirect and response.headers.get('location'):
-        location = urljoin(repair, response.headers['location'])
-        if 'mediafire.com' in location:
-            return location
     response.raise_for_status()
-    direct = direct_from_text(response.text)
+    direct = pick_download_anchor(response, quick_key)
     if direct:
         return direct
+    candidates = []
     soup = BeautifulSoup(response.text, 'html.parser')
-    button = soup.select_one('#downloadButton') or soup.select_one('a.input')
-    if button and button.get('href'):
-        return urljoin(response.url, button['href'])
-    raise RuntimeError('MediaFire repair endpoint did not issue a runner-local link')
+    for anchor in soup.find_all('a', href=True):
+        href = urljoin(response.url, anchor['href'])
+        if 'download' in href.lower() or quick_key in href:
+            candidates.append(href)
+    if candidates:
+        print('Repair candidate anchors:', file=sys.stderr)
+        for href in candidates[:20]:
+            print(f'  {href}', file=sys.stderr)
+    raise RuntimeError('MediaFire repair endpoint did not issue a runner-local CDN link')
 
 
 def resolve_via_reader(session: requests.Session, page_url: str) -> str:
+    quick_key = quick_key_from_url(page_url)
     reader_url = 'https://r.jina.ai/' + page_url
     response = session.get(
         reader_url,
@@ -86,13 +100,13 @@ def resolve_via_reader(session: requests.Session, page_url: str) -> str:
         },
     )
     response.raise_for_status()
-    direct = direct_from_text(response.text)
+    direct = direct_from_text(response.text, quick_key)
     if direct:
         return direct
     canonical = re.search(r'https://www\.mediafire\.com/file/[^\s)\]]+', response.text)
     if canonical:
         return resolve_native(session, canonical.group(0).rstrip('.,'))
-    raise RuntimeError('Reader fallback did not expose a MediaFire download URL')
+    raise RuntimeError('Reader fallback did not expose a MediaFire CDN URL')
 
 
 def resolve(session: requests.Session, page_url: str) -> str:
@@ -116,7 +130,6 @@ def download(session: requests.Session, direct: str, output: Path, page_url: str
     headers = {
         'User-Agent': UA,
         'Referer': page_url,
-        'Origin': 'https://www.mediafire.com',
         'Accept': 'application/octet-stream,application/x-rar-compressed,application/zip;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.8',
     }
