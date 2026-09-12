@@ -39,7 +39,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y 7zip osmium-tool python3-pip
-          sudo ln -sf "$(command -v 7zz)" /usr/local/bin/7z
+          SEVEN_Z="$(dpkg -L 7zip | grep -E '/(7zz|7zzs|7z)$' | head -n1)"
+          test -n "$SEVEN_Z"
+          sudo ln -sf "$SEVEN_Z" /usr/local/bin/7z
+          7z i >/dev/null
           python3 -m pip install --break-system-packages requests beautifulsoup4 gdown
 
       - name: Build private Saudi map
