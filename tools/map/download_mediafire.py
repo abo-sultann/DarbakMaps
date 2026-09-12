@@ -24,6 +24,11 @@ def direct_from_text(text: str) -> str | None:
     return None
 
 
+def quick_key_from_url(page_url: str) -> str | None:
+    match = re.search(r'(?:\?|/file/)([A-Za-z0-9_-]{10,})', page_url)
+    return match.group(1) if match else None
+
+
 def resolve_native(session: requests.Session, page_url: str) -> str:
     response = session.get(page_url, timeout=45, allow_redirects=True)
     response.raise_for_status()
@@ -38,6 +43,35 @@ def resolve_native(session: requests.Session, page_url: str) -> str:
     if direct:
         return direct
     raise RuntimeError('MediaFire direct download link was not found')
+
+
+def resolve_via_repair(session: requests.Session, page_url: str) -> str:
+    quick_key = quick_key_from_url(page_url)
+    if not quick_key:
+        raise RuntimeError('MediaFire quick key could not be extracted')
+    repair = (
+        'https://www.mediafire.com/download_repair.php'
+        f'?qkey={quick_key}&origin=server_error&template=unselected'
+    )
+    response = session.get(
+        repair,
+        timeout=60,
+        allow_redirects=False,
+        headers={'User-Agent': UA, 'Referer': page_url},
+    )
+    if response.is_redirect and response.headers.get('location'):
+        location = urljoin(repair, response.headers['location'])
+        if 'mediafire.com' in location:
+            return location
+    response.raise_for_status()
+    direct = direct_from_text(response.text)
+    if direct:
+        return direct
+    soup = BeautifulSoup(response.text, 'html.parser')
+    button = soup.select_one('#downloadButton') or soup.select_one('a.input')
+    if button and button.get('href'):
+        return urljoin(response.url, button['href'])
+    raise RuntimeError('MediaFire repair endpoint did not issue a runner-local link')
 
 
 def resolve_via_reader(session: requests.Session, page_url: str) -> str:
@@ -55,7 +89,6 @@ def resolve_via_reader(session: requests.Session, page_url: str) -> str:
     direct = direct_from_text(response.text)
     if direct:
         return direct
-
     canonical = re.search(r'https://www\.mediafire\.com/file/[^\s)\]]+', response.text)
     if canonical:
         return resolve_native(session, canonical.group(0).rstrip('.,'))
@@ -63,11 +96,20 @@ def resolve_via_reader(session: requests.Session, page_url: str) -> str:
 
 
 def resolve(session: requests.Session, page_url: str) -> str:
-    try:
-        return resolve_native(session, page_url)
-    except (requests.RequestException, RuntimeError) as first_error:
-        print(f'Native MediaFire resolve failed: {first_error}; using reader fallback', file=sys.stderr)
-        return resolve_via_reader(session, page_url)
+    errors = []
+    for label, resolver in (
+        ('native', resolve_native),
+        ('repair', resolve_via_repair),
+        ('reader', resolve_via_reader),
+    ):
+        try:
+            direct = resolver(session, page_url)
+            print(f'MediaFire resolver succeeded: {label}', file=sys.stderr)
+            return direct
+        except (requests.RequestException, RuntimeError) as error:
+            errors.append(f'{label}: {error}')
+            print(f'MediaFire resolver failed ({label}): {error}', file=sys.stderr)
+    raise RuntimeError('All MediaFire resolvers failed: ' + ' | '.join(errors))
 
 
 def download(session: requests.Session, direct: str, output: Path, page_url: str) -> None:
