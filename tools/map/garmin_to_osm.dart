@@ -16,6 +16,14 @@ bool validXml10Rune(int rune) =>
     (rune >= 0xE000 && rune <= 0xFFFD) ||
     (rune >= 0x10000 && rune <= 0x10FFFF);
 
+bool validCoordinate(LatLng point) =>
+    point.lat.isFinite &&
+    point.lng.isFinite &&
+    point.lat >= -90.0 &&
+    point.lat <= 90.0 &&
+    point.lng >= -180.0 &&
+    point.lng <= 180.0;
+
 String xmlSafe(String value) {
   final clean = String.fromCharCodes(value.runes.where(validXml10Rune));
   return clean
@@ -155,8 +163,10 @@ Future<void> main(List<String> args) async {
   final keptByKind = <String, int>{};
   final skippedByType = <String, int>{};
   final keptByType = <String, int>{};
+  final invalidByType = <String, int>{};
   var decoded = 0;
   var duplicates = 0;
+  var invalidFeatures = 0;
 
   sink.writeln('<?xml version="1.0" encoding="UTF-8"?>');
   sink.writeln('<osm version="0.6" generator="DarbakMaps-Mishari">');
@@ -165,6 +175,14 @@ Future<void> main(List<String> args) async {
     for (final map in img.maps) {
       for (final f in map.features()) {
         decoded++;
+        final typeKey = '0x${f.type.toRadixString(16)}';
+
+        if (f.points.isEmpty || f.points.any((p) => !validCoordinate(p))) {
+          invalidFeatures++;
+          invalidByType[typeKey] = (invalidByType[typeKey] ?? 0) + 1;
+          continue;
+        }
+
         final label = cleanLabel(f.label);
         final sig = signature(f, label);
         if (!seen.add(sig)) {
@@ -181,8 +199,16 @@ Future<void> main(List<String> args) async {
           case FeatureKind.polygon:
             c = classifyPolygon(f.type, polygonTypeNames[f.type]);
         }
-        final typeKey = '0x${f.type.toRadixString(16)}';
-        if (c == null || f.points.isEmpty) {
+        if (c == null) {
+          skippedByType[typeKey] = (skippedByType[typeKey] ?? 0) + 1;
+          continue;
+        }
+
+        if (f.kind == FeatureKind.polyline && f.points.length < 2) {
+          skippedByType[typeKey] = (skippedByType[typeKey] ?? 0) + 1;
+          continue;
+        }
+        if (f.kind == FeatureKind.polygon && f.points.length < 3) {
           skippedByType[typeKey] = (skippedByType[typeKey] ?? 0) + 1;
           continue;
         }
@@ -206,9 +232,6 @@ Future<void> main(List<String> args) async {
           sink.writeln('  </node>');
           continue;
         }
-
-        if (f.kind == FeatureKind.polyline && f.points.length < 2) continue;
-        if (f.kind == FeatureKind.polygon && f.points.length < 3) continue;
 
         final nodeIds = <int>[];
         for (final p in f.points) {
@@ -241,11 +264,14 @@ Future<void> main(List<String> args) async {
     'input': input,
     'decodedFeatures': decoded,
     'duplicateFeaturesSkipped': duplicates,
+    'invalidFeaturesSkipped': invalidFeatures,
+    'invalidByGarminType': invalidByType,
     'keptByKind': keptByKind,
     'keptByGarminType': keptByType,
     'skippedByGarminType': skippedByType,
     'polygonTypeNames': polygonTypeNames.map((k, v) => MapEntry('0x${k.toRadixString(16)}', v)),
   };
   await File(reportPath).writeAsString(const JsonEncoder.withIndent('  ').convert(report));
-  stderr.writeln('Darbak Mishari: decoded=$decoded kept=${keptByKind.values.fold<int>(0, (a, b) => a + b)} duplicates=$duplicates');
+  stderr.writeln(
+      'Darbak Mishari: decoded=$decoded kept=${keptByKind.values.fold<int>(0, (a, b) => a + b)} duplicates=$duplicates invalid=$invalidFeatures');
 }
