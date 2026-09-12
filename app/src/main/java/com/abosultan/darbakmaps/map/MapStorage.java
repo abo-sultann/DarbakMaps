@@ -12,12 +12,19 @@ import java.io.InputStream;
 
 public final class MapStorage {
     private static final String ACTIVE_MAP = "saudi-active.map";
+    private static final String BACKUP_MAP = ACTIVE_MAP + ".backup";
 
     private MapStorage() {
     }
 
     public static File activeMap(Context context) {
-        return new File(mapDirectory(context), ACTIVE_MAP);
+        File directory = mapDirectory(context);
+        File target = new File(directory, ACTIVE_MAP);
+        File backup = new File(directory, BACKUP_MAP);
+        if (!target.isFile() && backup.isFile()) {
+            backup.renameTo(target);
+        }
+        return target;
     }
 
     static File mapDirectory(Context context) {
@@ -33,7 +40,7 @@ public final class MapStorage {
         }
 
         File pending = new File(directory, ACTIVE_MAP + ".pending");
-        File backup = new File(directory, ACTIVE_MAP + ".backup");
+        File backup = new File(directory, BACKUP_MAP);
         pending.delete();
         backup.delete();
 
@@ -75,8 +82,7 @@ public final class MapStorage {
             throw new IOException("تعذر تجهيز الخريطة الحالية للاستبدال");
         }
 
-        boolean activated = pending.renameTo(target);
-        if (!activated) {
+        if (!pending.renameTo(target)) {
             if (hadCurrent && backup.isFile()) {
                 backup.renameTo(target);
             }
