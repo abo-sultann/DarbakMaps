@@ -9,7 +9,7 @@ on:
       - '.github/workflows/map-build.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: darbak-private-map-${{ github.ref }}
@@ -38,17 +38,22 @@ jobs:
       - name: Install map tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y 7zip osmium-tool python3-pip
-          SEVEN_Z="$(dpkg -L 7zip | grep -E '/(7zz|7zzs|7z)$' | head -n1)"
-          test -n "$SEVEN_Z"
-          sudo ln -sf "$SEVEN_Z" /usr/local/bin/7z
-          7z i >/dev/null
-          python3 -m pip install --break-system-packages requests beautifulsoup4 gdown
+          sudo apt-get install -y unzip osmium-tool python3-pip
 
       - name: Build private Saudi map
         env:
+          GH_TOKEN: ${{ github.token }}
           MISHARI_ARCHIVE_URL: https://eu-central.storage.cloudconvert.com/tasks/3d2eb07e-1580-4855-bfad-07471176d51a/almisharIMAP.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cloudconvert-production%2F20260912%2Ffra%2Fs3%2Faws4_request&X-Amz-Date=20260912T175903Z&X-Amz-Expires=86400&X-Amz-Signature=d099d8d8b8a1855b0ab7a433f444faf53eb65d53e47b669b0fec37327fd182df&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22almisharIMAP.zip%22&response-content-type=application%2Fzip&x-amz-checksum-mode=ENABLED&x-id=GetObject
         run: bash tools/map/build_darbak_map.sh
+
+      - name: Persist private Mishari source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view darbak-map-source >/dev/null 2>&1; then
+            gh release create darbak-map-source --title "Darbak private map source" --notes "Private source used to rebuild the personal Darbak map."
+          fi
+          gh release upload darbak-map-source build/map-work/almishar-source.zip --clobber
 
       - name: Upload Darbak map
         uses: actions/upload-artifact@v4
@@ -63,6 +68,6 @@ jobs:
             build/map-output/mishari-files.txt
             build/map-output/mishari-osmium-info.txt
             build/map-output/merged-osmium-info.txt
-          retention-days: 1
+          retention-days: 7
           compression-level: 0
           if-no-files-found: error
