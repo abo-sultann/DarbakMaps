@@ -8,15 +8,26 @@ class Classification {
   const Classification(this.tags);
 }
 
-String xml(String value) => value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
+bool validXml10Rune(int rune) =>
+    rune == 0x09 ||
+    rune == 0x0A ||
+    rune == 0x0D ||
+    (rune >= 0x20 && rune <= 0xD7FF) ||
+    (rune >= 0xE000 && rune <= 0xFFFD) ||
+    (rune >= 0x10000 && rune <= 0x10FFFF);
+
+String xmlSafe(String value) {
+  final clean = String.fromCharCodes(value.runes.where(validXml10Rune));
+  return clean
+      .replaceAll('&', '&amp;')
+      .replaceAll('"', '&quot;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+}
 
 String cleanLabel(String? raw) {
   if (raw == null) return '';
-  var value = raw.replaceAll(RegExp(r'[\x00-\x1E]'), ' ').trim();
+  var value = String.fromCharCodes(raw.runes.where(validXml10Rune)).trim();
   value = value.replaceAll(RegExp(r'\s+'), ' ');
   return value;
 }
@@ -46,7 +57,6 @@ Classification? classifyPoint(int type, String label) {
       return const Classification({'natural': 'beach'});
   }
   if (label.isNotEmpty) {
-    // Named desert POIs are valuable even when a custom Garmin type is used.
     return const Classification({'place': 'locality'});
   }
   return null;
@@ -54,7 +64,6 @@ Classification? classifyPoint(int type, String label) {
 
 Classification? classifyLine(int type, String label) {
   switch (type) {
-    // OSM is authoritative for paved roads. Keep only Mishari desert additions.
     case 0x0a:
       return const Classification({'highway': 'track', 'surface': 'unpaved'});
     case 0x0f:
@@ -70,8 +79,6 @@ Classification? classifyLine(int type, String label) {
     case 0x26:
       return const Classification({'waterway': 'stream', 'intermittent': 'yes'});
   }
-  // Explicitly discard paved roads, ramps, railways, boundaries, contours and
-  // infrastructure that OSM already maintains more accurately.
   if ((type >= 0x01 && type <= 0x09) ||
       type == 0x0b || type == 0x0c || type == 0x14 || type == 0x15 ||
       (type >= 0x1c && type <= 0x1e) ||
@@ -79,7 +86,6 @@ Classification? classifyLine(int type, String label) {
       type == 0x27 || type == 0x28 || type == 0x29) {
     return null;
   }
-  // Unknown named lines from custom Mishari types are kept as off-road tracks.
   if (label.isNotEmpty) {
     return const Classification({'highway': 'track', 'surface': 'unpaved'});
   }
@@ -195,7 +201,7 @@ Future<void> main(List<String> args) async {
           final p = f.points.first;
           sink.writeln('  <node id="$id" lat="${p.lat}" lon="${p.lng}">');
           for (final e in tags.entries) {
-            sink.writeln('    <tag k="${xml(e.key)}" v="${xml(e.value)}"/>');
+            sink.writeln('    <tag k="${xmlSafe(e.key)}" v="${xmlSafe(e.value)}"/>');
           }
           sink.writeln('  </node>');
           continue;
@@ -219,7 +225,7 @@ Future<void> main(List<String> args) async {
           sink.writeln('    <nd ref="$nodeId"/>');
         }
         for (final e in tags.entries) {
-          sink.writeln('    <tag k="${xml(e.key)}" v="${xml(e.value)}"/>');
+          sink.writeln('    <tag k="${xmlSafe(e.key)}" v="${xmlSafe(e.value)}"/>');
         }
         sink.writeln('  </way>');
       }
