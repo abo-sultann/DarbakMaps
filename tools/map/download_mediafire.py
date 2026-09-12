@@ -56,7 +56,6 @@ def resolve_via_reader(session: requests.Session, page_url: str) -> str:
     if direct:
         return direct
 
-    # Jina can expose a canonical /file/... MediaFire URL instead of the CDN URL.
     canonical = re.search(r'https://www\.mediafire\.com/file/[^\s)\]]+', response.text)
     if canonical:
         return resolve_native(session, canonical.group(0).rstrip('.,'))
@@ -71,11 +70,20 @@ def resolve(session: requests.Session, page_url: str) -> str:
         return resolve_via_reader(session, page_url)
 
 
-def download(session: requests.Session, direct: str, output: Path) -> None:
-    with session.get(direct, stream=True, timeout=120, allow_redirects=True) as response:
+def download(session: requests.Session, direct: str, output: Path, page_url: str) -> None:
+    headers = {
+        'User-Agent': UA,
+        'Referer': page_url,
+        'Origin': 'https://www.mediafire.com',
+        'Accept': 'application/octet-stream,application/x-rar-compressed,application/zip;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.8',
+    }
+    with session.get(direct, stream=True, timeout=120, allow_redirects=True, headers=headers) as response:
         response.raise_for_status()
         content_type = response.headers.get('content-type', '')
         if 'text/html' in content_type.lower():
+            body = response.text[:600].replace('\n', ' ')
+            print(f'MediaFire CDN returned HTML at {response.url}: {body}', file=sys.stderr)
             raise RuntimeError('MediaFire returned HTML instead of archive bytes')
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open('wb') as fh:
@@ -93,7 +101,7 @@ def main() -> int:
     session.headers.update({'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.8'})
     direct = resolve(session, page_url)
     print(f'MediaFire direct URL resolved: {direct.split("?")[0]}')
-    download(session, direct, output)
+    download(session, direct, output, page_url)
     if output.stat().st_size < 1024 * 1024:
         raise RuntimeError(f'downloaded file is unexpectedly small: {output.stat().st_size} bytes')
     print(f'Downloaded {output} ({output.stat().st_size} bytes)')
