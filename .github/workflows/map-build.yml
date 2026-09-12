@@ -47,7 +47,7 @@ jobs:
 
       - name: Build private Saudi map
         env:
-          MISHARI_DRIVE_ID: 1Pldnix5ODrCS4Brbuf_ZfqVP5KLuhnCJ
+          MISHARI_ARCHIVE_URL: https://eu-central.storage.cloudconvert.com/tasks/3d2eb07e-1580-4855-bfad-07471176d51a/almisharIMAP.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cloudconvert-production%2F20260912%2Ffra%2Fs3%2Faws4_request&X-Amz-Date=20260912T175903Z&X-Amz-Expires=86400&X-Amz-Signature=d099d8d8b8a1855b0ab7a433f444faf53eb65d53e47b669b0fec37327fd182df&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22almisharIMAP.zip%22&response-content-type=application%2Fzip&x-amz-checksum-mode=ENABLED&x-id=GetObject
         run: bash tools/map/build_darbak_map.sh
 
       - name: Upload Darbak map
