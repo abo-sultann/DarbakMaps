@@ -7,6 +7,7 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -15,14 +16,15 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * DarbakMaps 0.3 map-first layout for 1024x600 car screens.
- * The map is the product: controls appear on demand, speed stays visible.
+ * DarbakMaps hybrid map-first layout for 1024x600 car screens.
+ * The simple map-first shell remains the default; a richer side panel opens only on demand.
  */
 final class CarScreenLayout {
     private static final int NIGHT = Color.rgb(7, 17, 29);
     private static final int SURFACE = Color.rgb(17, 29, 43);
     private static final int SURFACE_ALT = Color.rgb(16, 30, 44);
     private static final int PRIMARY = Color.rgb(57, 169, 255);
+    private static final int GOLD = Color.rgb(215, 173, 85);
     private static final int TEXT = Color.rgb(244, 247, 250);
     private static final int MUTED = Color.rgb(159, 176, 194);
 
@@ -114,6 +116,95 @@ final class CarScreenLayout {
         dock.addView(dockAction(activity, "المزيد", R.id.action_more), weighted());
         tools.addView(dock, frame(dp(activity, 570), dp(activity, 68), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, dp(activity, 12)));
 
+        // Hybrid side panel: richer controls are available without replacing the old driving layout.
+        LinearLayout sidePanel = new LinearLayout(activity);
+        sidePanel.setOrientation(LinearLayout.VERTICAL);
+        sidePanel.setGravity(Gravity.TOP);
+        sidePanel.setPadding(dp(activity, 14), dp(activity, 12), dp(activity, 14), dp(activity, 12));
+        sidePanel.setBackground(round(Color.argb(248, 7, 17, 29), dp(activity, 22), Color.argb(150, 215, 173, 85)));
+        sidePanel.setVisibility(View.GONE);
+
+        LinearLayout panelHeader = new LinearLayout(activity);
+        panelHeader.setOrientation(LinearLayout.HORIZONTAL);
+        panelHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView panelTitle = label(activity, "لوحة دربك", GOLD, 19f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        panelHeader.addView(panelTitle, new LinearLayout.LayoutParams(0, dp(activity, 42), 1f));
+        TextView panelClose = label(activity, "×", TEXT, 27f, Gravity.CENTER);
+        panelClose.setBackground(round(SURFACE_ALT, dp(activity, 16), Color.argb(80, 215, 173, 85)));
+        panelHeader.addView(panelClose, new LinearLayout.LayoutParams(dp(activity, 44), dp(activity, 40)));
+        sidePanel.addView(panelHeader, new LinearLayout.LayoutParams(-1, dp(activity, 44)));
+
+        TextView panelSubtitle = label(activity, "OSM + المشاري • أوفلاين", MUTED, 12f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        sidePanel.addView(panelSubtitle, new LinearLayout.LayoutParams(-1, dp(activity, 28)));
+
+        TextView searchAction = panelAction(activity, "⌕   البحث");
+        searchAction.setOnClickListener(view -> {
+            sidePanel.setVisibility(View.GONE);
+            search.requestFocus();
+            search.setSelection(search.getText().length());
+            InputMethodManager keyboard = (InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE);
+            if (keyboard != null) {
+                keyboard.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+        sidePanel.addView(searchAction, panelActionParams(activity));
+
+        TextView centerAction = panelAction(activity, "◎   توسيط على موقعي");
+        centerAction.setOnClickListener(view -> {
+            View action = root.findViewById(R.id.action_map);
+            if (action != null) action.performClick();
+        });
+        sidePanel.addView(centerAction, panelActionParams(activity));
+
+        TextView saveAction = panelAction(activity, "＋   حفظ الموقع الحالي");
+        saveAction.setOnClickListener(view -> {
+            View action = root.findViewById(R.id.action_save);
+            if (action != null) action.performClick();
+        });
+        sidePanel.addView(saveAction, panelActionParams(activity));
+
+        TextView savedAction = panelAction(activity, "☆   المحفوظات والمسارات");
+        savedAction.setOnClickListener(view -> {
+            View action = root.findViewById(R.id.action_saved);
+            if (action != null) action.performClick();
+        });
+        sidePanel.addView(savedAction, panelActionParams(activity));
+
+        TextView moreAction = panelAction(activity, "⚙   الإعدادات والمزيد");
+        moreAction.setOnClickListener(view -> {
+            View action = root.findViewById(R.id.action_more);
+            if (action != null) action.performClick();
+        });
+        sidePanel.addView(moreAction, panelActionParams(activity));
+
+        TextView layersTitle = label(activity, "طبقات خريطة دربك", GOLD, 13f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams layersTitleParams = new LinearLayout.LayoutParams(-1, dp(activity, 30));
+        layersTitleParams.topMargin = dp(activity, 5);
+        sidePanel.addView(layersTitle, layersTitleParams);
+        sidePanel.addView(layerLegend(activity, "●  الطرق المعبدة", Color.rgb(223, 176, 64)));
+        sidePanel.addView(layerLegend(activity, "●  الدروب البرية", Color.rgb(176, 92, 51)));
+        sidePanel.addView(layerLegend(activity, "●  الشعاب والأودية", Color.rgb(61, 166, 203)));
+        sidePanel.addView(layerLegend(activity, "●  الجبال والمعالم", Color.rgb(157, 112, 61)));
+
+        TextView layerHint = label(activity, "تظهر التفاصيل تلقائيًا حسب مستوى التكبير", MUTED, 10.5f, Gravity.CENTER);
+        LinearLayout.LayoutParams layerHintParams = new LinearLayout.LayoutParams(-1, dp(activity, 26));
+        layerHintParams.topMargin = dp(activity, 4);
+        sidePanel.addView(layerHint, layerHintParams);
+
+        tools.addView(sidePanel, frame(dp(activity, 276), dp(activity, 418), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
+                dp(activity, 14), 0, 0, 0));
+
+        TextView sideToggle = label(activity, "☰", GOLD, 25f, Gravity.CENTER);
+        sideToggle.setContentDescription("فتح لوحة دربك");
+        sideToggle.setBackground(round(Color.argb(242, 7, 17, 29), dp(activity, 20), Color.argb(145, 215, 173, 85)));
+        sideToggle.setOnClickListener(view -> {
+            boolean show = sidePanel.getVisibility() != View.VISIBLE;
+            sidePanel.setVisibility(show ? View.VISIBLE : View.GONE);
+        });
+        panelClose.setOnClickListener(view -> sidePanel.setVisibility(View.GONE));
+        tools.addView(sideToggle, frame(dp(activity, 52), dp(activity, 52), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
+                dp(activity, 14), 0, 0, 0));
+
         // Permanent speed widget. It is intentionally outside the tools overlay.
         LinearLayout speedPill = new LinearLayout(activity);
         speedPill.setOrientation(LinearLayout.HORIZONTAL);
@@ -186,6 +277,25 @@ final class CarScreenLayout {
         view.setGravity(Gravity.CENTER);
         view.setId(id);
         view.setPadding(dp(activity, 4), dp(activity, 8), dp(activity, 4), dp(activity, 6));
+        return view;
+    }
+
+    private static TextView panelAction(Activity activity, String text) {
+        TextView view = label(activity, text, TEXT, 14f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        view.setPadding(dp(activity, 14), 0, dp(activity, 14), 0);
+        view.setBackground(round(SURFACE_ALT, dp(activity, 16), Color.argb(60, 215, 173, 85)));
+        return view;
+    }
+
+    private static LinearLayout.LayoutParams panelActionParams(Activity activity) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(activity, 43));
+        params.topMargin = dp(activity, 6);
+        return params;
+    }
+
+    private static TextView layerLegend(Activity activity, String text, int color) {
+        TextView view = label(activity, text, color, 11.5f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        view.setPadding(dp(activity, 8), 0, dp(activity, 8), 0);
         return view;
     }
 
