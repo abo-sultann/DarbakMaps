@@ -28,34 +28,37 @@ public final class MapStorage {
     public static File importMap(Context context, Uri source) throws IOException {
         File target = activeMap(context);
         File directory = mapDirectory(context);
-        if (directory == null || (!directory.exists() && !directory.mkdirs())) {
-            throw new IOException("Unable to create map directory");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("تعذر إنشاء مجلد الخرائط");
         }
 
         File pending = new File(directory, ACTIVE_MAP + ".pending");
+        File backup = new File(directory, ACTIVE_MAP + ".backup");
+        pending.delete();
+        backup.delete();
+
         InputStream input = context.getContentResolver().openInputStream(source);
         if (input == null) {
-            throw new IOException("Unable to open selected map");
+            throw new IOException("تعذر فتح ملف الخريطة المحدد");
         }
 
-        FileOutputStream output = new FileOutputStream(pending);
-        try {
+        try (InputStream openedInput = input; FileOutputStream output = new FileOutputStream(pending)) {
             byte[] buffer = new byte[64 * 1024];
             int read;
-            while ((read = input.read(buffer)) != -1) {
+            while ((read = openedInput.read(buffer)) != -1) {
                 output.write(buffer, 0, read);
             }
             output.getFD().sync();
-        } finally {
-            output.close();
-            input.close();
+        } catch (IOException error) {
+            pending.delete();
+            throw error;
         }
 
         MapFile validator = null;
         try {
-            validator = new MapFile(pending);
+            validator = new MapFile(pending, "ar");
             if (validator.boundingBox() == null) {
-                throw new IOException("Invalid map bounds");
+                throw new IOException("ملف الخريطة لا يحتوي حدودًا صالحة");
             }
         } catch (RuntimeException error) {
             pending.delete();
@@ -66,14 +69,22 @@ public final class MapStorage {
             }
         }
 
-        if (target.exists() && !target.delete()) {
+        boolean hadCurrent = target.isFile();
+        if (hadCurrent && !target.renameTo(backup)) {
             pending.delete();
-            throw new IOException("Unable to replace old map");
+            throw new IOException("تعذر تجهيز الخريطة الحالية للاستبدال");
         }
-        if (!pending.renameTo(target)) {
+
+        boolean activated = pending.renameTo(target);
+        if (!activated) {
+            if (hadCurrent && backup.isFile()) {
+                backup.renameTo(target);
+            }
             pending.delete();
-            throw new IOException("Unable to activate imported map");
+            throw new IOException("تعذر تفعيل الخريطة الجديدة وتم الاحتفاظ بالخريطة السابقة");
         }
+
+        backup.delete();
         return target;
     }
 }
