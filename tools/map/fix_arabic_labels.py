@@ -9,14 +9,23 @@ ARABIC = re.compile(r'[\u0600-\u06ff]')
 MOJIBAKE = re.compile(r'[ÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ]')
 
 
+def xml10_safe(value: str) -> str:
+    return ''.join(
+        ch for ch in value
+        if ord(ch) in (0x09, 0x0A, 0x0D)
+        or 0x20 <= ord(ch) <= 0xD7FF
+        or 0xE000 <= ord(ch) <= 0xFFFD
+        or 0x10000 <= ord(ch) <= 0x10FFFF
+    )
+
+
 def repair(value: str) -> str:
-    decoded = html.unescape(value)
-    # Garmin Arabic maps commonly expose cp1256 bytes through a cp1252 decode.
-    # Reverse that only when it makes the result more Arabic and less mojibake.
+    decoded = xml10_safe(html.unescape(value))
     try:
         candidate = decoded.encode('cp1252').decode('cp1256')
     except (UnicodeEncodeError, UnicodeDecodeError):
         return decoded
+    candidate = xml10_safe(candidate)
     before_ar = len(ARABIC.findall(decoded))
     after_ar = len(ARABIC.findall(candidate))
     before_bad = len(MOJIBAKE.findall(decoded))
@@ -38,10 +47,10 @@ def main() -> int:
         for line in src:
             match = NAME_TAG.match(line.rstrip('\n'))
             if not match:
-                dst.write(line)
+                dst.write(xml10_safe(line))
                 continue
             total += 1
-            original = html.unescape(match.group(2))
+            original = xml10_safe(html.unescape(match.group(2)))
             fixed = repair(match.group(2))
             if fixed != original:
                 changed += 1
