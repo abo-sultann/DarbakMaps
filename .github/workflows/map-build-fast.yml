@@ -1,0 +1,71 @@
+name: Darbak Private Map Fast Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/map-build-fast.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darbak-private-map-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  map-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JAVACMD_OPTIONS: -Xmx5g
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install map tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip osmium-tool python3-pip
+
+      - name: Use RAM writer for this build
+        run: |
+          sed -i 's/type=hd threads=2/type=ram threads=4/' tools/map/build_darbak_map.sh
+          grep -n 'type=ram' tools/map/build_darbak_map.sh
+
+      - name: Build private Saudi map
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MISHARI_SOURCE_RELEASE_TAG: darbak-map-source
+        run: bash tools/map/build_darbak_map.sh
+
+      - name: Upload Darbak map
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-private-map-fast
+          path: |
+            build/map-output/darbak-saudi.map
+            build/map-output/darbak-saudi.map.sha256
+            build/map-output/darbak-map-manifest.json
+            build/map-output/mishari-report.json
+            build/map-output/mishari-img.txt
+            build/map-output/mishari-files.txt
+            build/map-output/mishari-osmium-info.txt
+            build/map-output/merged-osmium-info.txt
+            build/map-output/osm-fileinfo.txt
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
