@@ -1,26 +1,30 @@
-name: Darbak Private Map Fast Build
+name: Darbak Offline Map Recovery Build
 
 on:
+  push:
+    paths:
+      - '.github/workflows/map-build-fast.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: darbak-private-map-fast-${{ github.ref }}
+  group: darbak-map-recovery-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  map-fast:
-    if: ${{ github.event.repository.private }}
+  map-recovery:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
     env:
       JAVACMD_OPTIONS: -Xmx5g
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -36,23 +40,31 @@ jobs:
       - name: Install map tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip osmium-tool python3-pip
+          sudo apt-get install -y unzip p7zip-full osmium-tool python3-pip
+          python3 -m pip install --user gdown
 
-      - name: Use RAM writer for this build
+      - name: Restore verified Drive-based Mishari builder
         run: |
-          sed -i 's/type=hd threads=2/type=ram threads=4/' tools/map/build_darbak_map.sh
-          grep -n 'type=ram' tools/map/build_darbak_map.sh
+          git show f175e22e0611e1adbfe84f94726e91b4206f0cd0:tools/map/build_darbak_map.sh > tools/map/build_darbak_map.recovery.sh
+          chmod +x tools/map/build_darbak_map.recovery.sh
+          sed -i 's/type=hd/type=ram/' tools/map/build_darbak_map.recovery.sh
+          sed -i 's/threads=2/threads=4/' tools/map/build_darbak_map.recovery.sh
 
-      - name: Build private Saudi map
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MISHARI_SOURCE_RELEASE_TAG: darbak-map-source
-        run: bash tools/map/build_darbak_map.sh
+      - name: Build final Saudi offline map
+        run: bash tools/map/build_darbak_map.recovery.sh
 
-      - name: Upload Darbak map
+      - name: Verify output
+        run: |
+          test -s build/map-output/darbak-saudi.map
+          test -s build/map-output/darbak-saudi.map.sha256
+          test -s build/map-output/darbak-map-manifest.json
+          cat build/map-output/darbak-saudi.map.sha256
+          ls -lh build/map-output/darbak-saudi.map
+
+      - name: Upload final offline map
         uses: actions/upload-artifact@v4
         with:
-          name: DarbakMaps-private-map-fast
+          name: DarbakMaps-offline-map-final
           path: |
             build/map-output/darbak-saudi.map
             build/map-output/darbak-saudi.map.sha256
