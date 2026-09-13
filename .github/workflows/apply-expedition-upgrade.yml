@@ -1,0 +1,53 @@
+name: Darbak Maps Expedition Upgrade
+
+on:
+  push:
+    paths:
+      - 'tools/apply_expedition_upgrade.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply expedition upgrade
+        run: python3 tools/apply_expedition_upgrade.py
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean assembleDebug
+
+      - name: Commit upgraded app
+        run: |
+          git config user.name "Darbak Build Bot"
+          git config user.email "actions@github.com"
+          git add app/build.gradle \
+                  app/src/main/res/values/ids.xml \
+                  app/src/main/java/com/abosultan/darbakmaps/MapUiPreferences.java \
+                  app/src/main/java/com/abosultan/darbakmaps/NavigationGuidance.java \
+                  app/src/main/java/com/abosultan/darbakmaps/TrackSessionState.java \
+                  app/src/main/java/com/abosultan/darbakmaps/QuickPointDialog.java \
+                  app/src/main/java/com/abosultan/darbakmaps/BackgroundTrackService.java \
+                  app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java \
+                  app/src/main/java/com/abosultan/darbakmaps/MainActivity.java \
+                  app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java \
+                  app/src/main/java/com/abosultan/darbakmaps/map/OfflineMapController.java
+          git diff --cached --quiet || git commit -m "feat: expedition guidance and track tools 0.7.0"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-0.7.0-expedition-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
