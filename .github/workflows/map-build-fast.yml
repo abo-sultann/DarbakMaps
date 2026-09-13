@@ -62,6 +62,10 @@ jobs:
                   out.append('unrar x -o+ -y -p"$MISHARI_PASSWORD" "$ARCHIVE" "$WORK/mishari/"\n')
               elif 'cat /tmp/darbak-7z.log' in line:
                   continue
+              elif line.strip() == 'OSMOSIS_HOME="$WORK/osmosis"':
+                  out.append('OSMOSIS_BIN="$(find "$WORK/osmosis" -type f -path "*/bin/osmosis" -print -quit)"\n')
+                  out.append('test -n "$OSMOSIS_BIN"\n')
+                  out.append('OSMOSIS_HOME="$(dirname "$(dirname "$OSMOSIS_BIN")")"\n')
               else:
                   out.append(line)
           path.write_text(''.join(out), encoding='utf-8')
