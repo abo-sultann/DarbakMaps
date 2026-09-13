@@ -58,9 +58,9 @@ jobs:
           out = []
           for line in path.read_text(encoding='utf-8').splitlines(True):
               if line.startswith('7z x '):
-                  out.append('unar -f -D -p "$MISHARI_PASSWORD" -o "$WORK/mishari" "$ARCHIVE" >/tmp/darbak-unar.log\n')
+                  out.append('unar -f -D -p "$MISHARI_PASSWORD" -o "$WORK/mishari" "$ARCHIVE"\n')
               elif 'cat /tmp/darbak-7z.log' in line:
-                  out.append('cat /tmp/darbak-unar.log\n')
+                  continue
               else:
                   out.append(line)
           path.write_text(''.join(out), encoding='utf-8')
