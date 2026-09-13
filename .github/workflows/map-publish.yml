@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.repository.private && github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -37,7 +37,6 @@ jobs:
           test -s release-map/darbak-saudi.map
           test -s release-map/darbak-saudi.map.sha256
           (cd release-map && sha256sum -c darbak-saudi.map.sha256)
-          ls -lh release-map/darbak-saudi.map
 
       - name: Publish private latest map
         env:
@@ -46,9 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! gh release view darbak-map-latest >/dev/null 2>&1; then
-            gh release create darbak-map-latest \
-              --title 'Darbak Saudi Map — latest private build' \
-              --notes 'Private Darbak Maps vector package: current OSM Saudi base + Al Mishari desert supplement.'
+            gh release create darbak-map-latest --title 'Darbak Saudi Map — latest private build' --notes 'Private Darbak Maps vector package.'
           fi
           gh release upload darbak-map-latest \
             release-map/darbak-saudi.map \
