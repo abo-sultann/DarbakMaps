@@ -34,7 +34,7 @@ public final class MainActivity extends Activity {
     private static final int REQ_FOLDER = 4101;
     private static final int REQ_STORAGE = 4102;
     private static final String BASE = "DarbakMaps-bundle.zip";
-    private static final String EXPECTED_SHA256 = "4e7d6daba1da9f75c061c9dedd74bd8e847b94a214cef1bb32af26d5ca99f6cd";
+    private static final String EXPECTED_SHA256 = "ba1c03dd48fcaddc74210decaf67ee8fe41fe72f5e426ba64b4fda4921f79262";
 
     private TextView status;
     private Button choose;
