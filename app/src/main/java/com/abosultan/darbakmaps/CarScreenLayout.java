@@ -269,11 +269,13 @@ final class CarScreenLayout {
             view = new DarbakMoreButton(activity);
         } else if (id == R.id.action_saved) {
             view = new DarbakSavedButton(activity);
+        } else if (id == R.id.action_save) {
+            view = new DarbakSaveButton(activity);
         } else {
             view = new TextView(activity);
         }
         view.setText(text);
-        view.setTextColor((id == R.id.action_more || id == R.id.action_saved) ? PRIMARY : TEXT);
+        view.setTextColor((id == R.id.action_more || id == R.id.action_saved || id == R.id.action_save) ? PRIMARY : TEXT);
         view.setTextSize(13f);
         view.setGravity(Gravity.CENTER);
         view.setId(id);
