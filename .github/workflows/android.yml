@@ -9,6 +9,8 @@ on:
       - '.github/workflows/map-build-fast.yml'
       - '.github/workflows/map-source-diagnostic.yml'
       - '.github/workflows/map-publish.yml'
+      - '.github/workflows/test-apk-publish.yml'
+      - 'update-manifest-debug.json'
       - '**/*.md'
       - 'docs/**'
   workflow_dispatch:
@@ -34,6 +36,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: darbakmaps-debug-signing-v1
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
