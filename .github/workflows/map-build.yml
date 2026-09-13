@@ -2,11 +2,6 @@ name: Darbak Private Map Build
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'tools/map/**'
-      - '.github/workflows/map-build.yml'
 
 permissions:
   contents: write
