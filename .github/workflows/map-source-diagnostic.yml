@@ -2,16 +2,13 @@ name: Darbak Map Source Diagnostic
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/map-source-diagnostic.yml'
 
 permissions:
   contents: read
 
 jobs:
   inspect:
+    if: ${{ github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
