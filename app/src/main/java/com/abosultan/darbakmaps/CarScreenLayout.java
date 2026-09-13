@@ -202,6 +202,7 @@ final class CarScreenLayout {
                 dp(activity, 14), 0, 0, 0));
 
         LinearLayout speedPill = new LinearLayout(activity);
+        speedPill.setId(R.id.speed_panel);
         speedPill.setOrientation(LinearLayout.HORIZONTAL);
         speedPill.setGravity(Gravity.CENTER);
         speedPill.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
@@ -220,9 +221,10 @@ final class CarScreenLayout {
         empty.setPadding(dp(activity, 28), dp(activity, 22), dp(activity, 28), dp(activity, 22));
         empty.setBackground(round(Color.argb(248, 17, 29, 43), dp(activity, 24), Color.argb(100, 57, 169, 255)));
         empty.addView(label(activity, "الخريطة غير محمّلة", TEXT, 21f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 42)));
-        Button download = button(activity, "تنزيل خريطة الخليج", R.id.download_map, PRIMARY, NIGHT);
-        empty.addView(download, new LinearLayout.LayoutParams(dp(activity, 290), dp(activity, 52)));
-        Button importMap = button(activity, "إضافة خريطة من USB", R.id.import_map, SURFACE_ALT, TEXT);
+        Button download = button(activity, "خريطة دربك", R.id.download_map, PRIMARY, NIGHT);
+        download.setVisibility(View.GONE);
+        empty.addView(download, new LinearLayout.LayoutParams(1, 1));
+        Button importMap = button(activity, "إضافة خريطة دربك من USB أو الذاكرة", R.id.import_map, SURFACE_ALT, TEXT);
         LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(dp(activity, 290), dp(activity, 52));
         importParams.topMargin = dp(activity, 8);
         empty.addView(importMap, importParams);

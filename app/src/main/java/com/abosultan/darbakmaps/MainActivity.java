@@ -77,6 +77,7 @@ public final class MainActivity extends Activity implements LocationController.C
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         immersive();
+        applyDisplayPreferences();
         licenseManager = new LicenseManager(this);
         if (!licenseManager.isLicensed()) {
             startActivityForResult(new Intent(this, ActivationActivity.class), REQUEST_ACTIVATION);
@@ -109,6 +110,8 @@ public final class MainActivity extends Activity implements LocationController.C
         noMapPanel = findViewById(R.id.no_map_panel);
         gpsStatus = findViewById(R.id.gps_status);
         speedValue = findViewById(R.id.speed_value);
+        View speedPanel = findViewById(R.id.speed_panel);
+        if (speedPanel != null) speedPanel.setVisibility(MapUiPreferences.showSpeed(this) ? View.VISIBLE : View.GONE);
         actionRecord = findViewById(R.id.action_record);
         modeDesert = findViewById(R.id.mode_desert);
         modeCity = findViewById(R.id.mode_city);
@@ -194,7 +197,7 @@ public final class MainActivity extends Activity implements LocationController.C
         findViewById(R.id.action_save).setOnClickListener(view -> saveCurrentPlace());
         actionRecord.setOnClickListener(view -> toggleTrackRecording());
         findViewById(R.id.action_saved).setOnClickListener(view -> showSavedHub());
-        findViewById(R.id.action_more).setOnClickListener(view -> showMore());
+        findViewById(R.id.action_more).setOnClickListener(view -> DarbakPanels.showMore(this));
 
         modeDesert.setOnClickListener(view -> selectMapMode(true));
         modeCity.setOnClickListener(view -> selectMapMode(false));
@@ -226,6 +229,7 @@ public final class MainActivity extends Activity implements LocationController.C
                         FrameLayout.LayoutParams.MATCH_PARENT
                 ));
                 noMapPanel.setVisibility(View.GONE);
+                MapRuntimeBridge.refreshSavedPlaces(this);
                 return;
             } catch (RuntimeException error) {
                 toast("تعذر فتح حزمة الخريطة");
@@ -382,7 +386,7 @@ public final class MainActivity extends Activity implements LocationController.C
         if (results.isEmpty()) {
             toast(MapStorage.activeMap(this).isFile()
                     ? "لا توجد نتائج مطابقة داخل الخريطة"
-                    : "لا توجد نتائج؛ أضف خريطة الخليج للبحث في المدن والمعالم");
+                    : "لا توجد نتائج؛ أضف خريطة دربك للبحث في المدن والمعالم");
             return;
         }
         String[] labels = new String[results.size()];
@@ -428,27 +432,11 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void saveCurrentPlace() {
-        Location location = locationController == null ? null : locationController.getLastLocation();
-        if (location == null) {
-            toast("لا يمكن الحفظ قبل وصول إشارة GPS");
-            return;
-        }
-        EditText input = new EditText(this);
-        input.setHint("مثال: المخيم أو مدخل الشِعْب");
-        input.setSingleLine(true);
-        input.setPadding(28, 8, 28, 8);
         showImmersive(new AlertDialog.Builder(this)
-                .setTitle("حفظ الموقع الحالي")
-                .setView(input)
+                .setTitle("حفظ موقع بدقة")
+                .setMessage("أخفِ الأدوات بلمسة على الخريطة، ثم اضغط مطولاً على النقطة المطلوبة.\n\nسيظهر نموذج الحفظ لاختيار الأيقونة والنوع والاسم المختصر والملاحظة، وتبقى العلامة ظاهرة على الخريطة.")
                 .setNegativeButton("إلغاء", null)
-                .setPositiveButton("حفظ", (dialog, which) -> {
-                    String name = input.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        name = "موقع محفوظ";
-                    }
-                    placeRepository.add(name, location.getLatitude(), location.getLongitude());
-                    toast("تم حفظ الموقع داخل الجهاز");
-                })
+                .setPositiveButton("فهمت", null)
                 .create());
     }
 
@@ -517,19 +505,54 @@ public final class MainActivity extends Activity implements LocationController.C
         String[] labels = new String[places.size()];
         for (int i = 0; i < places.size(); i++) {
             PlaceRepository.Place place = places.get(i);
-            labels[i] = place.name + "\n" + coordinates(place.latitude, place.longitude);
+            labels[i] = PlaceRepository.iconGlyph(place.iconKey) + "  " + place.name
+                    + "\n" + place.category + " • " + coordinates(place.latitude, place.longitude);
         }
         showImmersive(new AlertDialog.Builder(this)
                 .setTitle(title)
-                .setItems(labels, (dialog, which) -> {
-                    PlaceRepository.Place selected = places.get(which);
-                    if (mapController != null) {
-                        mapController.showPoint(selected.latitude, selected.longitude);
+                .setItems(labels, (dialog, which) -> showPlaceActions(places.get(which)))
+                .setNegativeButton("إغلاق", null)
+                .create());
+    }
+
+    private void showPlaceActions(PlaceRepository.Place selected) {
+        int routingMode = MapUiPreferences.routingMode(this);
+        String routingLabel = MapRuntimeBridge.routingLabel(routingMode);
+        String[] actions = {"عرض على الخريطة", "توجيه — " + routingLabel, "حذف الموقع"};
+        showImmersive(new AlertDialog.Builder(this)
+                .setTitle(PlaceRepository.iconGlyph(selected.iconKey) + "  " + selected.name)
+                .setMessage(selected.note == null || selected.note.isEmpty()
+                        ? selected.category
+                        : selected.category + "\n" + selected.note)
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) {
+                        if (mapController != null) mapController.showPoint(selected.latitude, selected.longitude);
+                        else toast("الخريطة غير جاهزة");
+                    } else if (which == 1) {
+                        if (mapController == null) {
+                            toast("الخريطة غير جاهزة");
+                            return;
+                        }
+                        MapRuntimeBridge.navigateTo(this, selected.latitude, selected.longitude);
+                        if (routingMode == MapUiPreferences.ROUTING_ROADS) {
+                            toast("وضع الطرق تجريبي في هذه النسخة؛ سيبقى خط الهدف ظاهرًا حتى اكتمال محرك الطرق");
+                        } else {
+                            toast("بدأ التوجيه المباشر إلى " + selected.name);
+                        }
                     } else {
-                        toast("أضف حزمة خريطة لعرض الموقع");
+                        AlertDialog confirm = new AlertDialog.Builder(this)
+                                .setTitle("حذف الموقع؟")
+                                .setMessage(selected.name)
+                                .setNegativeButton("إلغاء", null)
+                                .setPositiveButton("حذف", (d, w) -> {
+                                    placeRepository.delete(selected.id);
+                                    MapRuntimeBridge.refreshSavedPlaces(this);
+                                    toast("تم حذف الموقع");
+                                }).create();
+                        showImmersive(confirm);
                     }
                 })
-                .setNegativeButton("إغلاق", null)
+                .setNegativeButton("رجوع", null)
                 .create());
     }
 
@@ -620,15 +643,7 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void showStartupSettings() {
-        boolean enabled = StartupPreferences.isEnabled(this);
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("الإعدادات")
-                .setMultiChoiceItems(
-                        new String[]{"التشغيل مع الشاشة"},
-                        new boolean[]{enabled},
-                        (dialog, which, checked) -> StartupPreferences.setEnabled(this, checked))
-                .setPositiveButton("تم", null)
-                .create());
+        DarbakPanels.showSettings(this);
     }
 
     private void showMapManager() {
@@ -676,15 +691,7 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void showAbout() {
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("دربك " + BuildConfig.VERSION_NAME)
-                .setMessage("خرائط متجهية أوفلاين للبر والمدن\n"
-                        + "بدون صور أقمار صناعية\n\n"
-                        + "بيانات الخريطة © مساهمو OpenStreetMap\n"
-                        + "تقنية العرض Mapsforge\n\n"
-                        + "جميع الحقوق محفوظة لأبوسلطان")
-                .setPositiveButton("حسنًا", null)
-                .create());
+        DarbakPanels.showAbout(this);
     }
 
     private void checkForUpdates() {
@@ -708,6 +715,14 @@ public final class MainActivity extends Activity implements LocationController.C
                         .create()));
             }
         });
+    }
+
+    private void applyDisplayPreferences() {
+        if (MapUiPreferences.keepScreenOn(this)) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
     }
 
     private void ensureLocationPermission() {

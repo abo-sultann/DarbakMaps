@@ -25,9 +25,10 @@ import java.util.Set;
 
 /** Location-first Arabic search over an installed Mapsforge map and saved places. */
 public final class OfflineMapSearchEngine {
-    private static final int MAX_INDEX_ITEMS = 24_000;
+    private static final int MAX_INDEX_ITEMS = 10_000;
     private static final int INDEX_ZOOM = 9;
-    private static final int NEARBY_RADIUS_TILES = 9;
+    private static final int NEARBY_RADIUS_TILES = 5;
+    private static final long INDEX_BUDGET_NANOS = 2_800_000_000L;
 
     private static final Set<String> GENERIC_SERVICE_NAMES = new HashSet<>();
 
@@ -177,6 +178,7 @@ public final class OfflineMapSearchEngine {
 
     private List<Result> buildIndex(File file, Double latitude, Double longitude) {
         LinkedHashMap<String, Result> output = new LinkedHashMap<>();
+        final long deadline = System.nanoTime() + INDEX_BUDGET_NANOS;
         MapFile mapFile = null;
         try {
             mapFile = new MapFile(file, "ar");
@@ -208,6 +210,7 @@ public final class OfflineMapSearchEngine {
             tiles.sort(Comparator.comparingLong(tile -> tile.distanceSquared(orderedFocusX, orderedFocusY)));
 
             for (TileRef tileRef : tiles) {
+                if (System.nanoTime() >= deadline) break;
                 if (output.size() >= MAX_INDEX_ITEMS) {
                     break;
                 }

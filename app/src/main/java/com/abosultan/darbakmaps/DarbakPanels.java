@@ -46,10 +46,10 @@ final class DarbakPanels {
         Dialog dialog = baseDialog(activity);
         LinearLayout root = panel(activity, 24);
         root.addView(title(activity, "دربك للبر"));
-        root.addView(subtitle(activity, "أدوات أساسية فقط — الخريطة تبقى هي الواجهة"));
+        root.addView(subtitle(activity, "واجهة دربك للبر — أوفلاين ومهيأة لشاشة السيارة"));
 
         LinearLayout row1 = row(activity);
-        row1.addView(card(activity, "الإعدادات", "تشغيل الشاشة وسلوك الأدوات", () -> {
+        row1.addView(card(activity, "الإعدادات", "التوجيه والعلامات واتجاه الخريطة والعرض", () -> {
             dialog.dismiss();
             showSettings(activity);
         }), weightedCard());
@@ -89,9 +89,9 @@ final class DarbakPanels {
 
     static void showSettings(Activity activity) {
         Dialog dialog = baseDialog(activity);
-        LinearLayout root = panel(activity, 26);
-        root.addView(title(activity, "الإعدادات"));
-        root.addView(subtitle(activity, "إعدادات دربك فقط — بدون تحويل إلى واجهات قديمة"));
+        LinearLayout root = panel(activity, 18);
+        root.addView(title(activity, "إعدادات دربك"));
+        root.addView(subtitle(activity, "التحكم بالخريطة والتوجيه والعلامات وشاشة السيارة"));
 
         root.addView(toggleCard(activity,
                 "التشغيل مع الشاشة",
@@ -99,37 +99,87 @@ final class DarbakPanels {
                 StartupPreferences.isEnabled(activity),
                 checked -> StartupPreferences.setEnabled(activity, checked)));
 
-        LinearLayout.LayoutParams spacing = new LinearLayout.LayoutParams(-1, dp(activity, 92));
-        spacing.topMargin = dp(activity, 10);
-        LinearLayout autoHide = toggleCard(activity,
-                "إخفاء الأدوات تلقائيًا",
-                "تختفي بعد 5 ثوانٍ وتعود بلمسة على الخريطة",
-                MapUiPreferences.autoHideTools(activity),
-                checked -> MapUiPreferences.setAutoHideTools(activity, checked));
-        root.addView(autoHide, spacing);
+        TextView routing = text(activity,
+                "نمط التوجيه: " + MapRuntimeBridge.routingLabel(MapUiPreferences.routingMode(activity)) + "  •  اضغط للتغيير",
+                TEXT, 15f, Gravity.CENTER);
+        routing.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(90, 215, 173, 85)));
+        routing.setOnClickListener(view -> {
+            int next = MapUiPreferences.routingMode(activity) == MapUiPreferences.ROUTING_DIRECT
+                    ? MapUiPreferences.ROUTING_ROADS : MapUiPreferences.ROUTING_DIRECT;
+            MapUiPreferences.setRoutingMode(activity, next);
+            String suffix = next == MapUiPreferences.ROUTING_ROADS ? " (تجريبي)" : "";
+            routing.setText("نمط التوجيه: " + MapRuntimeBridge.routingLabel(next) + suffix + "  •  اضغط للتغيير");
+        });
+        LinearLayout.LayoutParams routingParams = new LinearLayout.LayoutParams(-1, dp(activity, 60));
+        routingParams.topMargin = dp(activity, 7);
+        root.addView(routing, routingParams);
+
+        root.addView(toggleCard(activity,
+                "علامات المواقع المحفوظة",
+                "إظهار الأيقونات على الخريطة دائمًا",
+                MapUiPreferences.showSavedPlaces(activity),
+                checked -> { MapUiPreferences.setShowSavedPlaces(activity, checked); MapRuntimeBridge.refreshSavedPlaces(activity); }), compact(activity));
+
+        root.addView(toggleCard(activity,
+                "أسماء المواقع المحفوظة",
+                "إظهار الاسم بجوار أيقونة المخيم أو البيت وغيرها",
+                MapUiPreferences.showSavedLabels(activity),
+                checked -> { MapUiPreferences.setShowSavedLabels(activity, checked); MapRuntimeBridge.refreshSavedPlaces(activity); }), compact(activity));
+
+        root.addView(toggleCard(activity,
+                "إظهار السرعة",
+                "إظهار أو إخفاء قراءة كم/س على الخريطة",
+                MapUiPreferences.showSpeed(activity),
+                checked -> {
+                    MapUiPreferences.setShowSpeed(activity, checked);
+                    View speed = activity.findViewById(R.id.speed_panel);
+                    if (speed != null) speed.setVisibility(checked ? View.VISIBLE : View.GONE);
+                }), compact(activity));
+
+        root.addView(toggleCard(activity,
+                "إبقاء الشاشة مضاءة",
+                "مناسب للقيادة والبر أثناء عرض الخريطة",
+                MapUiPreferences.keepScreenOn(activity),
+                checked -> {
+                    MapUiPreferences.setKeepScreenOn(activity, checked);
+                    if (checked) activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    else activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }), compact(activity));
 
         TextView orientation = text(activity,
-                "اتجاه الخريطة\n" + MapRuntimeBridge.label(MapUiPreferences.orientation(activity)) + " — اضغط للتغيير",
-                TEXT, 16f, Gravity.CENTER);
-        orientation.setLineSpacing(3f, 1f);
-        orientation.setBackground(round(SURFACE_ALT, dp(activity, 22), Color.argb(80, 57, 169, 255)));
+                "اتجاه الخريطة: " + MapRuntimeBridge.label(MapUiPreferences.orientation(activity)) + "  •  اضغط للتغيير",
+                TEXT, 15f, Gravity.CENTER);
+        orientation.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(80, 57, 169, 255)));
         orientation.setOnClickListener(view -> {
             int mode = MapRuntimeBridge.cycleOrientation(activity);
-            orientation.setText("اتجاه الخريطة\n" + MapRuntimeBridge.label(mode) + " — اضغط للتغيير");
+            orientation.setText("اتجاه الخريطة: " + MapRuntimeBridge.label(mode) + "  •  اضغط للتغيير");
         });
-        LinearLayout.LayoutParams orientationParams = new LinearLayout.LayoutParams(-1, dp(activity, 82));
-        orientationParams.topMargin = dp(activity, 10);
+        LinearLayout.LayoutParams orientationParams = new LinearLayout.LayoutParams(-1, dp(activity, 58));
+        orientationParams.topMargin = dp(activity, 7);
         root.addView(orientation, orientationParams);
+
+        TextView behavior = text(activity,
+                "الأدوات تظهر وتختفي بلمسة على الخريطة فقط — بدون مؤقت",
+                GOLD, 12.5f, Gravity.CENTER);
+        LinearLayout.LayoutParams behaviorParams = new LinearLayout.LayoutParams(-1, dp(activity, 38));
+        behaviorParams.topMargin = dp(activity, 6);
+        root.addView(behavior, behaviorParams);
 
         TextView done = action(activity, "تم", PRIMARY, NIGHT);
         done.setOnClickListener(view -> dialog.dismiss());
-        LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(dp(activity, 180), dp(activity, 50));
+        LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(dp(activity, 160), dp(activity, 44));
         doneParams.gravity = Gravity.CENTER;
-        doneParams.topMargin = dp(activity, 16);
+        doneParams.topMargin = dp(activity, 6);
         root.addView(done, doneParams);
 
         dialog.setContentView(root);
-        show(dialog, activity, 700);
+        show(dialog, activity, 820);
+    }
+
+    private static LinearLayout.LayoutParams compact(Activity activity) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(activity, 72));
+        params.topMargin = dp(activity, 6);
+        return params;
     }
 
     private interface ToggleAction {
@@ -164,7 +214,7 @@ final class DarbakPanels {
         root.addView(title(activity, "الخرائط الأوفلاين"));
         root.addView(subtitle(activity, mapStatus(activity)));
 
-        TextView download = action(activity, "تنزيل خريطة الخليج الموصى بها", PRIMARY, NIGHT);
+        TextView download = action(activity, "خريطة دربك السعودية المعتمدة", PRIMARY, NIGHT);
         download.setOnClickListener(view -> {
             dialog.dismiss();
             downloadRecommendedMap(activity);
