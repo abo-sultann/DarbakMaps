@@ -32,6 +32,7 @@ jobs:
           git config user.email "actions@github.com"
           git add app/src/main/java/com/abosultan/darbakmaps/MainActivity.java app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java app/src/main/java/com/abosultan/darbakmaps/map/OfflineMapSearchEngine.java app/build.gradle
           git diff --cached --quiet || git commit -m "feat: Darbak Maps 0.6.0 UX upgrade"
+          git pull --rebase origin main
           git push origin HEAD:main
 
       - name: Upload APK
