@@ -65,6 +65,10 @@ public final class MapRuntimeBridge {
         return true;
     }
 
+    public static synchronized void clearStoredTrack() {
+        if (activeController != null) activeController.clearStoredTrack();
+    }
+
     public static synchronized boolean hasActiveMap() {
         return activeController != null;
     }

@@ -207,7 +207,10 @@ public final class MainActivity extends Activity implements LocationController.C
             return true;
         });
         View navStop = findViewById(R.id.nav_stop);
-        if (navStop != null) navStop.setOnClickListener(view -> NavigationGuidance.stop(this));
+        if (navStop != null) navStop.setOnClickListener(view -> {
+            BacktrackGuidance.stop(this);
+            NavigationGuidance.stop(this);
+        });
         findViewById(R.id.action_saved).setOnClickListener(view -> showSavedHub());
         findViewById(R.id.action_more).setOnClickListener(view -> DarbakPanels.showMore(this));
 
@@ -243,6 +246,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 noMapPanel.setVisibility(View.GONE);
                 MapRuntimeBridge.refreshSavedPlaces(this);
                 NavigationGuidance.restore(this);
+                BacktrackGuidance.restore(this);
                 restoreActiveTrack();
                 return;
             } catch (RuntimeException error) {
@@ -478,8 +482,12 @@ public final class MainActivity extends Activity implements LocationController.C
     private void syncBackgroundTrackUi() {
         if (actionRecord == null) return;
         TrackSessionState.updateActionLabel(actionRecord, this);
-        if (MapUiPreferences.backgroundTrackEnabled(this) && MapUiPreferences.showTrackStats(this)) {
-            actionRecord.setContentDescription(TrackSessionState.summary(this));
+        View statsPanel = findViewById(R.id.track_stats_panel);
+        TextView statsText = findViewById(R.id.track_stats_text);
+        boolean showStats = MapUiPreferences.backgroundTrackEnabled(this) && MapUiPreferences.showTrackStats(this);
+        if (statsPanel != null) statsPanel.setVisibility(showStats ? View.VISIBLE : View.GONE);
+        if (statsText != null && showStats) {
+            statsText.setText(TrackSessionState.summary(this) + (TrackSessionState.isPaused(this) ? " • متوقف مؤقتًا" : ""));
         }
     }
 
@@ -553,6 +561,7 @@ public final class MainActivity extends Activity implements LocationController.C
                             toast("الخريطة غير جاهزة");
                             return;
                         }
+                        BacktrackGuidance.stop(this);
                         NavigationGuidance.start(this, selected.name, selected.latitude, selected.longitude);
                         if (routingMode == MapUiPreferences.ROUTING_ROADS) {
                             toast("وضع الطرق تجريبي في هذه النسخة؛ سيبقى خط الهدف ظاهرًا حتى اكتمال محرك الطرق");
@@ -645,12 +654,17 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void showTrackActions(File track) {
-        String[] actions = {"عرض المسار على الخريطة", "الرجوع على نفس الطريق"};
+        String[] actions = {"عرض المسار على الخريطة", "الرجوع على نفس الطريق", "إخفاء المسار المعروض"};
         showImmersive(new AlertDialog.Builder(this)
                 .setTitle(track.getName().replace(".gpx", "").replace('_', ' '))
                 .setItems(actions, (dialog, which) -> {
                     if (which == 0) loadStoredTrack(track);
-                    else startBacktrack(track);
+                    else if (which == 1) startBacktrack(track);
+                    else {
+                        BacktrackGuidance.stop(this);
+                        MapRuntimeBridge.clearStoredTrack();
+                        toast("تم إخفاء المسار");
+                    }
                 })
                 .setNegativeButton("إلغاء", null)
                 .create());
@@ -667,8 +681,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 if (points.size() < 2) throw new IllegalStateException("المسار قصير");
                 GeoPoint start = points.get(0);
                 runOnUiThread(() -> {
-                    mapController.showStoredTrack(points);
-                    NavigationGuidance.start(this, "بداية المسار", start.latitude, start.longitude);
+                    BacktrackGuidance.start(this, track, points);
                     toast("اتبع الخط الظاهر للرجوع على نفس الطريق");
                 });
             } catch (Exception error) {
@@ -818,7 +831,8 @@ public final class MainActivity extends Activity implements LocationController.C
                 mapController.addTrackPoint(location.getLatitude(), location.getLongitude());
             }
             NavigationGuidance.update(this, location);
-            TrackSessionState.updateActionLabel(actionRecord, this);
+            BacktrackGuidance.update(this, location);
+            syncBackgroundTrackUi();
         });
     }
 

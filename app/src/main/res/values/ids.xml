@@ -9,4 +9,6 @@
     <item name="nav_distance" type="id" />
     <item name="nav_detail" type="id" />
     <item name="nav_stop" type="id" />
+    <item name="track_stats_panel" type="id" />
+    <item name="track_stats_text" type="id" />
 </resources>

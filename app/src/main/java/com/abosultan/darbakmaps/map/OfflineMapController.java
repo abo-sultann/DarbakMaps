@@ -295,6 +295,14 @@ public final class OfflineMapController {
         mapView.getLayerManager().redrawLayers();
     }
 
+    public void clearStoredTrack() {
+        if (storedTrack != null) {
+            mapView.getLayerManager().getLayers().remove(storedTrack);
+            storedTrack = null;
+            mapView.getLayerManager().redrawLayers();
+        }
+    }
+
     public void beginTrack() {
         if (activeTrack != null) mapView.getLayerManager().getLayers().remove(activeTrack);
         org.mapsforge.core.graphics.Paint trackPaint = AndroidGraphicFactory.INSTANCE.createPaint();
