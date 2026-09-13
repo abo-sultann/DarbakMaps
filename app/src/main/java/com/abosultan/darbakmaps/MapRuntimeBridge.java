@@ -2,7 +2,10 @@ package com.abosultan.darbakmaps;
 
 import android.content.Context;
 
+import com.abosultan.darbakmaps.data.GeoPoint;
 import com.abosultan.darbakmaps.map.OfflineMapController;
+
+import java.util.List;
 
 public final class MapRuntimeBridge {
     private static OfflineMapController activeController;
@@ -41,6 +44,18 @@ public final class MapRuntimeBridge {
         if (activeController != null) {
             activeController.showPoint(latitude, longitude);
         }
+    }
+
+    public static synchronized boolean showStoredTrack(List<GeoPoint> points) {
+        if (activeController == null || points == null || points.isEmpty()) {
+            return false;
+        }
+        activeController.showStoredTrack(points);
+        return true;
+    }
+
+    public static synchronized boolean hasActiveMap() {
+        return activeController != null;
     }
 
     public static String label(int mode) {
