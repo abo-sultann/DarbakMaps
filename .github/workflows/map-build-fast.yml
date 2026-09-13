@@ -48,7 +48,11 @@ jobs:
           git show f175e22e0611e1adbfe84f94726e91b4206f0cd0:tools/map/build_darbak_map.sh > tools/map/build_darbak_map.recovery.sh
           chmod +x tools/map/build_darbak_map.recovery.sh
           sed -i 's/python3 -m gdown --id "$MISHARI_DRIVE_ID" --output "$ARCHIVE"/python3 -m gdown "$MISHARI_DRIVE_ID" --output "$ARCHIVE"/' tools/map/build_darbak_map.recovery.sh
-          sed -i 's/^7z x /7zz x /' tools/map/build_darbak_map.recovery.sh
+          SEVENZIP="$(dpkg -L 7zip | grep -E '/usr/bin/7[^/]*$' | head -n1)"
+          test -n "$SEVENZIP"
+          test -x "$SEVENZIP"
+          echo "Using 7-Zip executable: $SEVENZIP"
+          sed -i "s#^7z x #$SEVENZIP x #" tools/map/build_darbak_map.recovery.sh
           sed -i 's/type=hd/type=ram/' tools/map/build_darbak_map.recovery.sh
           sed -i 's/threads=2/threads=4/' tools/map/build_darbak_map.recovery.sh
 
