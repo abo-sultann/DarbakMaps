@@ -25,3 +25,7 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 }
+
+dependencies {
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+}
