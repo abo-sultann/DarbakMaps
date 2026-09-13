@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'tools/apply_expedition_upgrade.py'
+      - '.github/workflows/apply-expedition-upgrade.yml'
   workflow_dispatch:
 
 permissions:
