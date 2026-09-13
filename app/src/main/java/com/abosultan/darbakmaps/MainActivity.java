@@ -120,6 +120,7 @@ public final class MainActivity extends Activity implements LocationController.C
         locationController = new LocationController(this, this);
         startupPhase = "ربط الأزرار";
         bindActions();
+        NavigationGuidance.restore(this);
         startupPhase = "تجهيز شاشة الخريطة";
         loadActiveMap();
         startupPhase = "تشغيل GPS";
@@ -195,8 +196,18 @@ public final class MainActivity extends Activity implements LocationController.C
         findViewById(R.id.import_map).setOnClickListener(view -> chooseMapFile());
         findViewById(R.id.download_map).setOnClickListener(view -> confirmRecommendedMapDownload());
         findViewById(R.id.action_map).setOnClickListener(view -> centerOnCurrentLocation());
-        findViewById(R.id.action_save).setOnClickListener(view -> saveCurrentPlace());
+        findViewById(R.id.action_save).setOnClickListener(view -> QuickPointDialog.show(this, placeRepository,
+                locationController == null ? null : locationController.getLastLocation()));
         actionRecord.setOnClickListener(view -> toggleTrackRecording());
+        actionRecord.setOnLongClickListener(view -> {
+            if (!MapUiPreferences.backgroundTrackEnabled(this)) return false;
+            boolean paused = TrackSessionState.togglePaused(this);
+            TrackSessionState.updateActionLabel(actionRecord, this);
+            toast(paused ? "تم إيقاف تسجيل المسار مؤقتًا" : "تمت متابعة تسجيل المسار");
+            return true;
+        });
+        View navStop = findViewById(R.id.nav_stop);
+        if (navStop != null) navStop.setOnClickListener(view -> NavigationGuidance.stop(this));
         findViewById(R.id.action_saved).setOnClickListener(view -> showSavedHub());
         findViewById(R.id.action_more).setOnClickListener(view -> DarbakPanels.showMore(this));
 
@@ -231,6 +242,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 ));
                 noMapPanel.setVisibility(View.GONE);
                 MapRuntimeBridge.refreshSavedPlaces(this);
+                NavigationGuidance.restore(this);
                 restoreActiveTrack();
                 return;
             } catch (RuntimeException error) {
@@ -465,9 +477,10 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void syncBackgroundTrackUi() {
         if (actionRecord == null) return;
-        actionRecord.setText(MapUiPreferences.backgroundTrackEnabled(this)
-                ? "إيقاف المسار"
-                : getString(R.string.record_track));
+        TrackSessionState.updateActionLabel(actionRecord, this);
+        if (MapUiPreferences.backgroundTrackEnabled(this) && MapUiPreferences.showTrackStats(this)) {
+            actionRecord.setContentDescription(TrackSessionState.summary(this));
+        }
     }
 
     private void restoreActiveTrack() {
@@ -486,6 +499,7 @@ public final class MainActivity extends Activity implements LocationController.C
     private void showSavedHub() {
         String[] items = {
                 "المواقع المحفوظة (" + placeRepository.all().size() + ")",
+                "الأقرب إلى موقعي",
                 "المسارات السابقة (" + TrackStorage.list(this).length + ")"
         };
         showImmersive(new AlertDialog.Builder(this)
@@ -493,6 +507,8 @@ public final class MainActivity extends Activity implements LocationController.C
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
                         showPlaces(placeRepository.all(), "المواقع المحفوظة");
+                    } else if (which == 1) {
+                        showNearbyPlaces();
                     } else {
                         showTracks();
                     }
@@ -537,7 +553,7 @@ public final class MainActivity extends Activity implements LocationController.C
                             toast("الخريطة غير جاهزة");
                             return;
                         }
-                        MapRuntimeBridge.navigateTo(this, selected.latitude, selected.longitude);
+                        NavigationGuidance.start(this, selected.name, selected.latitude, selected.longitude);
                         if (routingMode == MapUiPreferences.ROUTING_ROADS) {
                             toast("وضع الطرق تجريبي في هذه النسخة؛ سيبقى خط الهدف ظاهرًا حتى اكتمال محرك الطرق");
                         } else {
@@ -572,7 +588,7 @@ public final class MainActivity extends Activity implements LocationController.C
         }
         showImmersive(new AlertDialog.Builder(this)
                 .setTitle("المسارات السابقة")
-                .setItems(labels, (dialog, which) -> loadStoredTrack(tracks[which]))
+                .setItems(labels, (dialog, which) -> showTrackActions(tracks[which]))
                 .setNegativeButton("إغلاق", null)
                 .create());
     }
@@ -606,6 +622,57 @@ public final class MainActivity extends Activity implements LocationController.C
                         toast(error.getMessage() == null ? "تعذر فتح المسار" : error.getMessage());
                     }
                 });
+            }
+        });
+    }
+
+    private void showNearbyPlaces() {
+        Location current = locationController == null ? null : locationController.getLastLocation();
+        if (current == null) {
+            toast("بانتظار إشارة GPS");
+            return;
+        }
+        List<PlaceRepository.Place> places = new java.util.ArrayList<>(placeRepository.all());
+        java.util.Collections.sort(places, (a, b) -> Float.compare(distanceTo(current, a), distanceTo(current, b)));
+        if (places.size() > 30) places = new java.util.ArrayList<>(places.subList(0, 30));
+        showPlaces(places, "أقرب المواقع إليك");
+    }
+
+    private float distanceTo(Location current, PlaceRepository.Place place) {
+        float[] out = new float[1];
+        Location.distanceBetween(current.getLatitude(), current.getLongitude(), place.latitude, place.longitude, out);
+        return out[0];
+    }
+
+    private void showTrackActions(File track) {
+        String[] actions = {"عرض المسار على الخريطة", "الرجوع على نفس الطريق"};
+        showImmersive(new AlertDialog.Builder(this)
+                .setTitle(track.getName().replace(".gpx", "").replace('_', ' '))
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) loadStoredTrack(track);
+                    else startBacktrack(track);
+                })
+                .setNegativeButton("إلغاء", null)
+                .create());
+    }
+
+    private void startBacktrack(File track) {
+        if (mapController == null) {
+            toast("أضف حزمة خريطة لعرض المسار");
+            return;
+        }
+        ioExecutor.execute(() -> {
+            try {
+                List<GeoPoint> points = TrackStorage.load(track);
+                if (points.size() < 2) throw new IllegalStateException("المسار قصير");
+                GeoPoint start = points.get(0);
+                runOnUiThread(() -> {
+                    mapController.showStoredTrack(points);
+                    NavigationGuidance.start(this, "بداية المسار", start.latitude, start.longitude);
+                    toast("اتبع الخط الظاهر للرجوع على نفس الطريق");
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> toast("تعذر بدء الرجوع على المسار"));
             }
         });
     }
@@ -747,9 +814,11 @@ public final class MainActivity extends Activity implements LocationController.C
                 mapController.updateLocation(location.getLatitude(), location.getLongitude(),
                         location.hasBearing() ? location.getBearing() : 0f);
             }
-            if (MapUiPreferences.backgroundTrackEnabled(this) && mapController != null) {
+            if (MapUiPreferences.backgroundTrackEnabled(this) && !TrackSessionState.isPaused(this) && mapController != null) {
                 mapController.addTrackPoint(location.getLatitude(), location.getLongitude());
             }
+            NavigationGuidance.update(this, location);
+            TrackSessionState.updateActionLabel(actionRecord, this);
         });
     }
 

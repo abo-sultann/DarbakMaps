@@ -149,6 +149,9 @@ public final class OfflineMapController {
         updateLocationMarker(lastLocation, lastBearing);
         updateNavigationLine();
 
+        if (MapUiPreferences.followVehicle(mapView.getContext()) && centeredOnFirstFix) {
+            mapView.getModel().mapViewPosition.setCenter(lastLocation);
+        }
         if (!centeredOnFirstFix) {
             centeredOnFirstFix = true;
             centerOn(latitude, longitude);

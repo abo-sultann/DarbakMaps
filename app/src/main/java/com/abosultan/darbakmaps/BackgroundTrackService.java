@@ -34,6 +34,7 @@ public final class BackgroundTrackService extends Service implements LocationLis
 
     public static void setEnabled(Context context, boolean enabled) {
         MapUiPreferences.setBackgroundTrackEnabled(context, enabled);
+        if (enabled) TrackSessionState.beginIfNeeded(context);
         Intent intent = new Intent(context, BackgroundTrackService.class);
         intent.setAction(enabled ? ACTION_START : ACTION_STOP);
         startCompat(context, intent);
@@ -76,6 +77,7 @@ public final class BackgroundTrackService extends Service implements LocationLis
             } catch (IOException ignored) {
                 // Keep shutdown safe; the partial file remains recoverable if saving fails.
             }
+            TrackSessionState.reset(this);
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -113,10 +115,11 @@ public final class BackgroundTrackService extends Service implements LocationLis
 
     @Override
     public void onLocationChanged(Location location) {
-        if (location == null) return;
+        if (location == null || TrackSessionState.isPaused(this)) return;
         if (lastAccepted != null && lastAccepted.distanceTo(location) < MIN_DISTANCE_METERS) return;
         try {
             BackgroundTrackStore.append(this, location);
+            TrackSessionState.onFix(this, location);
             lastAccepted = new Location(location);
         } catch (IOException ignored) {
             // Do not crash the long-running service because of one storage failure.

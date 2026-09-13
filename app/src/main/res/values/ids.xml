@@ -3,4 +3,10 @@
     <item name="tools_overlay" type="id" />
     <item name="orientation_mode" type="id" />
     <item name="speed_panel" type="id" />
+    <item name="nav_panel" type="id" />
+    <item name="nav_arrow" type="id" />
+    <item name="nav_name" type="id" />
+    <item name="nav_distance" type="id" />
+    <item name="nav_detail" type="id" />
+    <item name="nav_stop" type="id" />
 </resources>

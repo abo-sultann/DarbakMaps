@@ -19,6 +19,9 @@ public final class MapUiPreferences {
     private static final String KEY_SHOW_SPEED = "show_speed";
     private static final String KEY_KEEP_SCREEN = "keep_screen_on";
     private static final String KEY_BACKGROUND_TRACK = "background_track";
+    private static final String KEY_FOLLOW_VEHICLE = "follow_vehicle";
+    private static final String KEY_SHOW_TRACK_STATS = "show_track_stats";
+    private static final String KEY_OFF_ROUTE_ALERT = "off_route_alert";
 
     private MapUiPreferences() {}
 
@@ -78,6 +81,30 @@ public final class MapUiPreferences {
 
     public static void setBackgroundTrackEnabled(Context context, boolean value) {
         prefs(context).edit().putBoolean(KEY_BACKGROUND_TRACK, value).apply();
+    }
+
+    public static boolean followVehicle(Context context) {
+        return prefs(context).getBoolean(KEY_FOLLOW_VEHICLE, true);
+    }
+
+    public static void setFollowVehicle(Context context, boolean value) {
+        prefs(context).edit().putBoolean(KEY_FOLLOW_VEHICLE, value).apply();
+    }
+
+    public static boolean showTrackStats(Context context) {
+        return prefs(context).getBoolean(KEY_SHOW_TRACK_STATS, true);
+    }
+
+    public static void setShowTrackStats(Context context, boolean value) {
+        prefs(context).edit().putBoolean(KEY_SHOW_TRACK_STATS, value).apply();
+    }
+
+    public static boolean offRouteAlert(Context context) {
+        return prefs(context).getBoolean(KEY_OFF_ROUTE_ALERT, true);
+    }
+
+    public static void setOffRouteAlert(Context context, boolean value) {
+        prefs(context).edit().putBoolean(KEY_OFF_ROUTE_ALERT, value).apply();
     }
 
     /** Compatibility with older builds. Tools are now controlled only by tapping the map. */

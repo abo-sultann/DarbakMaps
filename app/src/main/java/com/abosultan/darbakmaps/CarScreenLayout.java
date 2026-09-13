@@ -78,6 +78,37 @@ final class CarScreenLayout {
         gps.setBackground(round(Color.argb(232, 17, 29, 43), dp(activity, 18), Color.argb(75, 57, 169, 255)));
         tools.addView(gps, frame(-2, dp(activity, 36), Gravity.TOP | Gravity.RIGHT, dp(activity, 14), dp(activity, 78), 0, 0));
 
+
+        LinearLayout navPanel = new LinearLayout(activity);
+        navPanel.setId(R.id.nav_panel);
+        navPanel.setOrientation(LinearLayout.HORIZONTAL);
+        navPanel.setGravity(Gravity.CENTER_VERTICAL);
+        navPanel.setPadding(dp(activity, 14), dp(activity, 6), dp(activity, 14), dp(activity, 6));
+        navPanel.setBackground(round(Color.argb(246, 7, 17, 29), dp(activity, 20), Color.argb(160, 215, 173, 85)));
+        TextView navArrow = label(activity, "➤", GOLD, 34f, Gravity.CENTER);
+        navArrow.setId(R.id.nav_arrow);
+        navPanel.addView(navArrow, new LinearLayout.LayoutParams(dp(activity, 58), -1));
+        LinearLayout navText = new LinearLayout(activity);
+        navText.setOrientation(LinearLayout.VERTICAL);
+        navText.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
+        TextView navName = label(activity, "", TEXT, 16f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        navName.setId(R.id.nav_name);
+        TextView navDistance = label(activity, "", GOLD, 20f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        navDistance.setId(R.id.nav_distance);
+        TextView navDetail = label(activity, "", MUTED, 11f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        navDetail.setId(R.id.nav_detail);
+        navText.addView(navName, new LinearLayout.LayoutParams(-1, dp(activity, 24)));
+        navText.addView(navDistance, new LinearLayout.LayoutParams(-1, dp(activity, 29)));
+        navText.addView(navDetail, new LinearLayout.LayoutParams(-1, dp(activity, 20)));
+        navPanel.addView(navText, new LinearLayout.LayoutParams(0, -1, 1f));
+        TextView navStop = label(activity, "×", TEXT, 25f, Gravity.CENTER);
+        navStop.setId(R.id.nav_stop);
+        navStop.setBackground(round(SURFACE_ALT, dp(activity, 14), Color.argb(85, 215, 173, 85)));
+        navPanel.addView(navStop, new LinearLayout.LayoutParams(dp(activity, 42), dp(activity, 42)));
+        navPanel.setVisibility(View.GONE);
+        tools.addView(navPanel, frame(dp(activity, 470), dp(activity, 88), Gravity.TOP | Gravity.CENTER_HORIZONTAL,
+                0, dp(activity, 74), 0, 0));
+
         LinearLayout leftControls = new LinearLayout(activity);
         leftControls.setOrientation(LinearLayout.VERTICAL);
         leftControls.setGravity(Gravity.CENTER);

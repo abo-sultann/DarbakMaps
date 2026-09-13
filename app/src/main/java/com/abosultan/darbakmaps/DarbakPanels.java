@@ -158,6 +158,24 @@ final class DarbakPanels {
                     }
                 }), compact(activity));
 
+        root.addView(toggleCard(activity,
+                "متابعة السيارة أثناء القيادة",
+                "يبقي الخريطة متمركزة على سيارتك أثناء الحركة",
+                MapUiPreferences.followVehicle(activity),
+                checked -> MapUiPreferences.setFollowVehicle(activity, checked)), compact(activity));
+
+        root.addView(toggleCard(activity,
+                "إحصاءات المسار",
+                "المسافة والمدة والمتوسط وأعلى سرعة أثناء التسجيل",
+                MapUiPreferences.showTrackStats(activity),
+                checked -> MapUiPreferences.setShowTrackStats(activity, checked)), compact(activity));
+
+        root.addView(toggleCard(activity,
+                "تنبيه الابتعاد عن الاتجاه",
+                "يظهر تنبيه واضح عندما يصبح اتجاه السيارة بعيدًا عن الهدف",
+                MapUiPreferences.offRouteAlert(activity),
+                checked -> MapUiPreferences.setOffRouteAlert(activity, checked)), compact(activity));
+
         TextView orientation = text(activity,
                 "اتجاه الخريطة: " + MapRuntimeBridge.label(MapUiPreferences.orientation(activity)) + "  •  اضغط للتغيير",
                 TEXT, 15f, Gravity.CENTER);
