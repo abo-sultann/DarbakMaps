@@ -1,10 +1,13 @@
 package com.abosultan.darbakjoiner;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.ProgressDialog;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -17,6 +20,9 @@ import androidx.documentfile.provider.DocumentFile;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.MessageDigest;
@@ -26,11 +32,13 @@ import java.util.Locale;
 
 public final class MainActivity extends Activity {
     private static final int REQ_FOLDER = 4101;
+    private static final int REQ_STORAGE = 4102;
     private static final String BASE = "DarbakMaps-bundle.zip";
     private static final String EXPECTED_SHA256 = "4e7d6daba1da9f75c061c9dedd74bd8e847b94a214cef1bb32af26d5ca99f6cd";
 
     private TextView status;
     private Button choose;
+    private Uri pendingTree;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,12 +104,49 @@ public final class MainActivity extends Activity {
         if (requestCode != REQ_FOLDER || resultCode != RESULT_OK || data == null) return;
         Uri tree = data.getData();
         if (tree == null) return;
+
+        if ("file".equalsIgnoreCase(tree.getScheme())) {
+            pendingTree = tree;
+            ensureLegacyStorageAndJoin();
+            return;
+        }
+
         final int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         try { getContentResolver().takePersistableUriPermission(tree, flags); } catch (Exception ignored) {}
-        joinParts(tree);
+        joinDocumentTree(tree);
     }
 
-    private void joinParts(Uri treeUri) {
+    private void ensureLegacyStorageAndJoin() {
+        if (Build.VERSION.SDK_INT >= 23 &&
+                (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED ||
+                 checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)) {
+            requestPermissions(new String[]{
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+            }, REQ_STORAGE);
+        } else if (pendingTree != null) {
+            joinLegacyFolder(new File(pendingTree.getPath()));
+            pendingTree = null;
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_STORAGE) return;
+        boolean ok = grantResults.length > 0;
+        for (int result : grantResults) ok &= result == PackageManager.PERMISSION_GRANTED;
+        if (ok && pendingTree != null) {
+            Uri uri = pendingTree;
+            pendingTree = null;
+            joinLegacyFolder(new File(uri.getPath()));
+        } else {
+            pendingTree = null;
+            status.setText("خطأ: يلزم السماح بالوصول للتخزين لدمج الملفات.");
+        }
+    }
+
+    private ProgressDialog showProgress() {
         ProgressDialog p = new ProgressDialog(this);
         p.setTitle("Darbak Joiner");
         p.setMessage("جارٍ فحص الأجزاء…");
@@ -111,7 +156,58 @@ public final class MainActivity extends Activity {
         p.setCancelable(false);
         p.show();
         choose.setEnabled(false);
+        return p;
+    }
 
+    private void joinLegacyFolder(File dir) {
+        ProgressDialog p = showProgress();
+        new Thread(() -> {
+            try {
+                if (dir == null || !dir.isDirectory()) throw new Exception("المجلد غير صالح");
+
+                List<File> parts = new ArrayList<>();
+                for (int n = 1; n <= 3; n++) {
+                    File f = new File(dir, BASE + String.format(Locale.US, ".%03d", n));
+                    if (!f.isFile()) throw new Exception("الملف مفقود: " + f.getName());
+                    parts.add(f);
+                }
+
+                File outFile = new File(dir, BASE);
+                if (outFile.exists() && !outFile.delete()) throw new Exception("تعذر استبدال الملف النهائي القديم");
+
+                long total = 0;
+                for (File f : parts) total += Math.max(0, f.length());
+                long done = 0;
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+                try (OutputStream rawOut = new FileOutputStream(outFile);
+                     BufferedOutputStream out = new BufferedOutputStream(rawOut, 1024 * 1024)) {
+                    byte[] buffer = new byte[1024 * 1024];
+                    for (File part : parts) {
+                        try (InputStream rawIn = new FileInputStream(part);
+                             BufferedInputStream in = new BufferedInputStream(rawIn, 1024 * 1024)) {
+                            int read;
+                            while ((read = in.read(buffer)) != -1) {
+                                out.write(buffer, 0, read);
+                                digest.update(buffer, 0, read);
+                                done += read;
+                                final int percent = total > 0 ? (int) Math.min(100, (done * 100L) / total) : 0;
+                                runOnUiThread(() -> { p.setProgress(percent); p.setMessage("جارٍ الدمج… " + percent + "%"); });
+                            }
+                        }
+                    }
+                    out.flush();
+                }
+
+                verifyAndFinish(outFile, digest, p);
+            } catch (Exception e) {
+                fail(p, e);
+            }
+        }, "darbak-joiner-legacy").start();
+    }
+
+    private void joinDocumentTree(Uri treeUri) {
+        ProgressDialog p = showProgress();
         new Thread(() -> {
             try {
                 DocumentFile dir = DocumentFile.fromTreeUri(this, treeUri);
@@ -161,23 +257,39 @@ public final class MainActivity extends Activity {
                     outFile.delete();
                     throw new Exception("فشل التحقق من سلامة الملف. أعد تنزيل الأجزاء الثلاثة.");
                 }
-
-                runOnUiThread(() -> {
-                    p.dismiss();
-                    choose.setEnabled(true);
-                    status.setText("تم الدمج والتحقق بنجاح ✅\nالملف الناتج: " + BASE + "\nافتحه لاستخراج APK والخريطة.");
-                    Toast.makeText(this, "تم إنشاء الحزمة بنجاح", Toast.LENGTH_LONG).show();
-                });
+                success(p);
             } catch (Exception e) {
-                runOnUiThread(() -> {
-                    p.dismiss();
-                    choose.setEnabled(true);
-                    String m = e.getMessage() == null ? "تعذر دمج الملفات" : e.getMessage();
-                    status.setText("خطأ: " + m);
-                    Toast.makeText(this, m, Toast.LENGTH_LONG).show();
-                });
+                fail(p, e);
             }
-        }, "darbak-joiner").start();
+        }, "darbak-joiner-tree").start();
+    }
+
+    private void verifyAndFinish(File outFile, MessageDigest digest, ProgressDialog p) throws Exception {
+        String actual = hex(digest.digest());
+        if (!EXPECTED_SHA256.equalsIgnoreCase(actual)) {
+            outFile.delete();
+            throw new Exception("فشل التحقق من سلامة الملف. أعد تنزيل الأجزاء الثلاثة.");
+        }
+        success(p);
+    }
+
+    private void success(ProgressDialog p) {
+        runOnUiThread(() -> {
+            p.dismiss();
+            choose.setEnabled(true);
+            status.setText("تم الدمج والتحقق بنجاح ✅\nالملف الناتج: " + BASE + "\nافتحه لاستخراج APK والخريطة.");
+            Toast.makeText(this, "تم إنشاء الحزمة بنجاح", Toast.LENGTH_LONG).show();
+        });
+    }
+
+    private void fail(ProgressDialog p, Exception e) {
+        runOnUiThread(() -> {
+            p.dismiss();
+            choose.setEnabled(true);
+            String m = e.getMessage() == null ? "تعذر دمج الملفات" : e.getMessage();
+            status.setText("خطأ: " + m);
+            Toast.makeText(this, m, Toast.LENGTH_LONG).show();
+        });
     }
 
     private static String hex(byte[] bytes) {
