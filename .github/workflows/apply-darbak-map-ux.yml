@@ -1,9 +1,10 @@
-name: Apply Darbak Maps UX Upgrade
+name: Darbak Maps UX Upgrade
 
 on:
   push:
     paths:
-      - '.github/workflows/apply-darbak-map-ux.yml'
+      - 'tools/apply_darbak_map_ux.py'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,218 +13,30 @@ jobs:
   upgrade:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Apply approved Darbak Maps UX changes
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
+      - name: Apply upgrade
+        run: python3 tools/apply_darbak_map_ux.py
 
-          main = Path('app/src/main/java/com/abosultan/darbakmaps/MainActivity.java')
-          s = main.read_text()
-          s = s.replace('findViewById(R.id.action_more).setOnClickListener(view -> showMore());',
-                        'findViewById(R.id.action_more).setOnClickListener(view -> DarbakPanels.showMore(this));')
-          s = s.replace('noMapPanel.setVisibility(View.GONE);\n                return;',
-                        'noMapPanel.setVisibility(View.GONE);\n                MapRuntimeBridge.refreshSavedPlaces(this);\n                return;', 1)
-          s = s.replace('"لا توجد نتائج؛ أضف خريطة الخليج للبحث في المدن والمعالم"',
-                        '"لا توجد نتائج؛ أضف خريطة دربك للبحث في المدن والمعالم"')
-
-          save_method = '''    private void saveCurrentPlace() {
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("حفظ موقع")
-                .setMessage("لحفظ أي نقطة بدقة: أغلق الأدوات ثم اضغط مطولاً على المكان المطلوب في الخريطة.\\n\\nيمكنك اختيار نوع الموقع وأيقونته واسم مختصر وملاحظة، وتبقى العلامة ظاهرة على الخريطة.")
-                .setNegativeButton("إلغاء", null)
-                .setPositiveButton("فهمت", null)
-                .create());
-    }
-
-'''
-          s, n = re.subn(r'    private void saveCurrentPlace\(\) \{.*?\n    \}\n\n(?=    private void toggleTrackRecording)', save_method, s, count=1, flags=re.S)
-          if n != 1: raise SystemExit('saveCurrentPlace patch failed')
-
-          places_method = '''    private void showPlaces(List<PlaceRepository.Place> places, String title) {
-        if (places.isEmpty()) {
-            toast("لا توجد مواقع مطابقة");
-            return;
-        }
-        String[] labels = new String[places.size()];
-        for (int i = 0; i < places.size(); i++) {
-            PlaceRepository.Place place = places.get(i);
-            labels[i] = PlaceRepository.iconGlyph(place.iconKey) + "  " + place.name
-                    + "\\n" + place.category + " • " + coordinates(place.latitude, place.longitude);
-        }
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setItems(labels, (dialog, which) -> showPlaceActions(places.get(which)))
-                .setNegativeButton("إغلاق", null)
-                .create());
-    }
-
-    private void showPlaceActions(PlaceRepository.Place selected) {
-        String routeMode = MapRuntimeBridge.routingLabel(MapUiPreferences.routingMode(this));
-        String[] actions = {"عرض على الخريطة", "توجيه — " + routeMode, "حذف الموقع"};
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(PlaceRepository.iconGlyph(selected.iconKey) + "  " + selected.name)
-                .setMessage(selected.note == null || selected.note.isEmpty() ? selected.category : selected.category + "\\n" + selected.note)
-                .setItems(actions, (dialog, which) -> {
-                    if (which == 0) {
-                        if (mapController != null) mapController.showPoint(selected.latitude, selected.longitude);
-                        else toast("الخريطة غير جاهزة");
-                    } else if (which == 1) {
-                        if (mapController == null) {
-                            toast("الخريطة غير جاهزة");
-                            return;
-                        }
-                        MapRuntimeBridge.navigateTo(this, selected.latitude, selected.longitude);
-                        mapController.showPoint(selected.latitude, selected.longitude);
-                        toast("بدأ التوجيه إلى " + selected.name + " • " + routeMode);
-                    } else {
-                        new AlertDialog.Builder(this)
-                                .setTitle("حذف الموقع؟")
-                                .setMessage(selected.name)
-                                .setNegativeButton("إلغاء", null)
-                                .setPositiveButton("حذف", (d, w) -> {
-                                    placeRepository.delete(selected.id);
-                                    MapRuntimeBridge.refreshSavedPlaces(this);
-                                    toast("تم حذف الموقع");
-                                }).show();
-                    }
-                })
-                .setNegativeButton("رجوع", null)
-                .create());
-    }
-
-'''
-          s, n = re.subn(r'    private void showPlaces\(List<PlaceRepository\.Place> places, String title\) \{.*?\n    \}\n\n(?=    private void showTracks)', places_method, s, count=1, flags=re.S)
-          if n != 1: raise SystemExit('showPlaces patch failed')
-
-          s, n = re.subn(r'    private void showStartupSettings\(\) \{.*?\n    \}\n\n(?=    private void showMapManager)',
-                        '    private void showStartupSettings() {\n        DarbakPanels.showSettings(this);\n    }\n\n', s, count=1, flags=re.S)
-          if n != 1: raise SystemExit('settings delegate patch failed')
-
-          s, n = re.subn(r'    private void showAbout\(\) \{.*?\n    \}\n\n(?=    private void checkForUpdates)',
-                        '    private void showAbout() {\n        DarbakPanels.showAbout(this);\n    }\n\n', s, count=1, flags=re.S)
-          if n != 1: raise SystemExit('about delegate patch failed')
-          main.write_text(s)
-
-          panels = Path('app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java')
-          p = panels.read_text()
-          settings = '''    static void showSettings(Activity activity) {
-        Dialog dialog = baseDialog(activity);
-        LinearLayout root = panel(activity, 22);
-        root.addView(title(activity, "إعدادات دربك"));
-        root.addView(subtitle(activity, "كل ما يمكن تخصيصه للخريطة من مكان واحد"));
-
-        root.addView(toggleCard(activity,
-                "التشغيل مع الشاشة",
-                "يفتح دربك تلقائيًا بعد تشغيل الشاشة",
-                StartupPreferences.isEnabled(activity),
-                checked -> StartupPreferences.setEnabled(activity, checked)));
-
-        TextView routing = text(activity,
-                "نمط التوجيه\\n" + MapRuntimeBridge.routingLabel(MapUiPreferences.routingMode(activity)) + " — اضغط للتغيير",
-                TEXT, 16f, Gravity.CENTER);
-        routing.setBackground(round(SURFACE_ALT, dp(activity, 22), Color.argb(80, 215, 173, 85)));
-        routing.setOnClickListener(view -> {
-            int next = MapUiPreferences.routingMode(activity) == MapUiPreferences.ROUTING_DIRECT
-                    ? MapUiPreferences.ROUTING_ROADS : MapUiPreferences.ROUTING_DIRECT;
-            MapUiPreferences.setRoutingMode(activity, next);
-            routing.setText("نمط التوجيه\\n" + MapRuntimeBridge.routingLabel(next) + " — اضغط للتغيير");
-        });
-        LinearLayout.LayoutParams routingParams = new LinearLayout.LayoutParams(-1, dp(activity, 76));
-        routingParams.topMargin = dp(activity, 8);
-        root.addView(routing, routingParams);
-
-        root.addView(toggleCard(activity,
-                "إظهار المواقع المحفوظة",
-                "يعرض العلامات المخصصة دائمًا على الخريطة",
-                MapUiPreferences.showSavedPlaces(activity),
-                checked -> { MapUiPreferences.setShowSavedPlaces(activity, checked); MapRuntimeBridge.refreshSavedPlaces(activity); }), spacing(activity));
-
-        root.addView(toggleCard(activity,
-                "إظهار أسماء المواقع",
-                "الاسم يظهر بجوار أيقونة المخيم أو البيت أو غيرها",
-                MapUiPreferences.showSavedLabels(activity),
-                checked -> { MapUiPreferences.setShowSavedLabels(activity, checked); MapRuntimeBridge.refreshSavedPlaces(activity); }), spacing(activity));
-
-        TextView orientation = text(activity,
-                "اتجاه الخريطة\\n" + MapRuntimeBridge.label(MapUiPreferences.orientation(activity)) + " — اضغط للتغيير",
-                TEXT, 16f, Gravity.CENTER);
-        orientation.setBackground(round(SURFACE_ALT, dp(activity, 22), Color.argb(80, 57, 169, 255)));
-        orientation.setOnClickListener(view -> {
-            int mode = MapRuntimeBridge.cycleOrientation(activity);
-            orientation.setText("اتجاه الخريطة\\n" + MapRuntimeBridge.label(mode) + " — اضغط للتغيير");
-        });
-        LinearLayout.LayoutParams orientationParams = new LinearLayout.LayoutParams(-1, dp(activity, 76));
-        orientationParams.topMargin = dp(activity, 8);
-        root.addView(orientation, orientationParams);
-
-        TextView behavior = text(activity,
-                "الأدوات: إظهار/إخفاء بالضغط على الخريطة فقط — بدون مؤقت",
-                GOLD, 13f, Gravity.CENTER);
-        LinearLayout.LayoutParams behaviorParams = new LinearLayout.LayoutParams(-1, dp(activity, 46));
-        behaviorParams.topMargin = dp(activity, 8);
-        root.addView(behavior, behaviorParams);
-
-        TextView done = action(activity, "تم", PRIMARY, NIGHT);
-        done.setOnClickListener(view -> dialog.dismiss());
-        LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(dp(activity, 180), dp(activity, 48));
-        doneParams.gravity = Gravity.CENTER;
-        doneParams.topMargin = dp(activity, 10);
-        root.addView(done, doneParams);
-
-        dialog.setContentView(root);
-        show(dialog, activity, 760);
-    }
-
-    private static LinearLayout.LayoutParams spacing(Activity activity) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(activity, 82));
-        params.topMargin = dp(activity, 8);
-        return params;
-    }
-
-'''
-          p, n = re.subn(r'    static void showSettings\(Activity activity\) \{.*?\n    \}\n\n(?=    private interface ToggleAction)', settings, p, count=1, flags=re.S)
-          if n != 1: raise SystemExit('DarbakPanels settings patch failed')
-          p = p.replace('"أدوات أساسية فقط — الخريطة تبقى هي الواجهة"', '"واجهة دربك للبر — سريعة، أوفلاين، ومهيأة لشاشة السيارة"')
-          p = p.replace('"تشغيل الشاشة وسلوك الأدوات"', '"التوجيه، العلامات، اتجاه الخريطة والتشغيل"')
-          p = p.replace('"تنزيل خريطة الخليج الموصى بها"', '"خريطة دربك السعودية المعتمدة"')
-          panels.write_text(p)
-
-          search = Path('app/src/main/java/com/abosultan/darbakmaps/map/OfflineMapSearchEngine.java')
-          q = search.read_text()
-          q = q.replace('private static final int MAX_INDEX_ITEMS = 24_000;', 'private static final int MAX_INDEX_ITEMS = 8_000;')
-          q = q.replace('private static final int NEARBY_RADIUS_TILES = 9;', 'private static final int NEARBY_RADIUS_TILES = 5;')
-          search.write_text(q)
-
-          gradle = Path('app/build.gradle')
-          g = gradle.read_text().replace('versionCode 12', 'versionCode 13').replace("versionName '0.5.2'", "versionName '0.6.0'")
-          gradle.write_text(g)
-          PY
-
-      - name: Build debug APK
+      - name: Build APK
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon clean assembleDebug
 
-      - name: Commit approved upgrade
+      - name: Commit upgraded app
         run: |
           git config user.name "Darbak Build Bot"
           git config user.email "actions@github.com"
-          git add app/src/main/java/com/abosultan/darbakmaps/MainActivity.java \
-                  app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java \
-                  app/src/main/java/com/abosultan/darbakmaps/map/OfflineMapSearchEngine.java \
-                  app/build.gradle
-          git commit -m "feat: Darbak Maps 0.6.0 UX and saved-place upgrade"
+          git add app/src/main/java/com/abosultan/darbakmaps/MainActivity.java app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java app/src/main/java/com/abosultan/darbakmaps/map/OfflineMapSearchEngine.java app/build.gradle
+          git diff --cached --quiet || git commit -m "feat: Darbak Maps 0.6.0 UX upgrade"
           git push origin HEAD:main
 
-      - name: Upload patched APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DarbakMaps-0.6.0-UX-preview
+          name: DarbakMaps-0.6.0-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 7
