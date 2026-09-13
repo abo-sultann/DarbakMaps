@@ -6,10 +6,12 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RectF;
 
 import com.abosultan.darbakmaps.MapRuntimeBridge;
 import com.abosultan.darbakmaps.MapUiPreferences;
 import com.abosultan.darbakmaps.data.GeoPoint;
+import com.abosultan.darbakmaps.data.PlaceRepository;
 
 import org.mapsforge.core.graphics.Style;
 import org.mapsforge.core.model.LatLong;
@@ -29,6 +31,7 @@ import org.mapsforge.map.rendertheme.XmlRenderTheme;
 import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class OfflineMapController {
@@ -36,8 +39,11 @@ public final class OfflineMapController {
     private final TileCache tileCache;
     private final TileRendererLayer rendererLayer;
     private final XmlRenderTheme darbakTheme;
+    private final List<Marker> savedMarkers = new ArrayList<>();
     private Marker locationMarker;
     private Marker selectedMarker;
+    private Marker navigationMarker;
+    private Polyline navigationLine;
     private Polyline activeTrack;
     private Polyline storedTrack;
     private int lastArrowBucket = Integer.MIN_VALUE;
@@ -45,7 +51,9 @@ public final class OfflineMapController {
     private boolean centeredOnFirstFix;
     private int orientationMode;
     private LatLong lastLocation;
+    private LatLong navigationTarget;
     private float lastBearing;
+    private int navigationMode = MapUiPreferences.ROUTING_DIRECT;
 
     public OfflineMapController(Context context, File file) {
         MapsforgeRuntime.ensureInitialized(context);
@@ -79,13 +87,12 @@ public final class OfflineMapController {
         );
 
         orientationMode = MapUiPreferences.orientation(context);
+        navigationMode = MapUiPreferences.routingMode(context);
         applyOrientationBehavior();
         MapRuntimeBridge.attach(this);
     }
 
-    public MapView view() {
-        return mapView;
-    }
+    public MapView view() { return mapView; }
 
     public void zoomIn() {
         byte current = mapView.getModel().mapViewPosition.getZoomLevel();
@@ -104,7 +111,6 @@ public final class OfflineMapController {
         }
     }
 
-    /** DarbakMaps is a single-purpose off-road map. Legacy mode calls keep the Darbak theme. */
     public void setDesertMode(boolean ignored) {
         rendererLayer.setXmlRenderTheme(darbakTheme);
         tileCache.purge();
@@ -125,9 +131,7 @@ public final class OfflineMapController {
         boolean manualRotation = orientationMode == MapUiPreferences.ORIENTATION_FREE;
         mapView.getTouchGestureHandler().setRotationEnabled(manualRotation);
         mapView.setMapViewCenterY(orientationMode == MapUiPreferences.ORIENTATION_HEADING ? 0.62f : 0.5f);
-        if (orientationMode == MapUiPreferences.ORIENTATION_NORTH) {
-            rotateMapTo(0f);
-        }
+        if (orientationMode == MapUiPreferences.ORIENTATION_NORTH) rotateMapTo(0f);
     }
 
     public void updateLocation(double latitude, double longitude, float bearing) {
@@ -143,6 +147,7 @@ public final class OfflineMapController {
         }
 
         updateLocationMarker(lastLocation, lastBearing);
+        updateNavigationLine();
 
         if (!centeredOnFirstFix) {
             centeredOnFirstFix = true;
@@ -157,9 +162,7 @@ public final class OfflineMapController {
         } else if (orientationMode == MapUiPreferences.ORIENTATION_NORTH) {
             rotateMapTo(0f);
         }
-        if (lastLocation != null) {
-            updateLocationMarker(lastLocation, lastBearing);
-        }
+        if (lastLocation != null) updateLocationMarker(lastLocation, lastBearing);
     }
 
     private void updateLocationMarker(LatLong position, float bearing) {
@@ -187,11 +190,7 @@ public final class OfflineMapController {
             mapView.rotate(new Rotation(normalized, px, py));
             mapView.getLayerManager().redrawLayers();
         };
-        if (mapView.getWidth() == 0 || mapView.getHeight() == 0) {
-            mapView.post(action);
-        } else {
-            action.run();
-        }
+        if (mapView.getWidth() == 0 || mapView.getHeight() == 0) mapView.post(action); else action.run();
     }
 
     public void showPoint(double latitude, double longitude) {
@@ -207,10 +206,69 @@ public final class OfflineMapController {
         mapView.getLayerManager().redrawLayers();
     }
 
-    public void showStoredTrack(List<GeoPoint> points) {
-        if (storedTrack != null) {
-            mapView.getLayerManager().getLayers().remove(storedTrack);
+    public void showSavedPlaces(List<PlaceRepository.Place> places, boolean showLabels) {
+        for (Marker marker : savedMarkers) mapView.getLayerManager().getLayers().remove(marker);
+        savedMarkers.clear();
+        if (places != null) {
+            int limit = Math.min(places.size(), 250);
+            for (int i = 0; i < limit; i++) {
+                PlaceRepository.Place place = places.get(i);
+                Marker marker = new Marker(new LatLong(place.latitude, place.longitude),
+                        createSavedMarker(place, showLabels), 0, -20);
+                marker.setBillboard(true);
+                savedMarkers.add(marker);
+                mapView.getLayerManager().getLayers().add(marker);
+            }
         }
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    public void setNavigationTarget(double latitude, double longitude, int mode) {
+        navigationTarget = new LatLong(latitude, longitude);
+        navigationMode = mode == MapUiPreferences.ROUTING_ROADS ? MapUiPreferences.ROUTING_ROADS : MapUiPreferences.ROUTING_DIRECT;
+        if (navigationMarker == null) {
+            navigationMarker = new Marker(navigationTarget, createNavigationTarget(), 0, -22);
+            navigationMarker.setBillboard(true);
+            mapView.getLayerManager().getLayers().add(navigationMarker);
+        } else {
+            navigationMarker.setLatLong(navigationTarget);
+        }
+        updateNavigationLine();
+        centerOn(latitude, longitude);
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    public void clearNavigationTarget() {
+        navigationTarget = null;
+        if (navigationMarker != null) {
+            mapView.getLayerManager().getLayers().remove(navigationMarker);
+            navigationMarker = null;
+        }
+        if (navigationLine != null) {
+            mapView.getLayerManager().getLayers().remove(navigationLine);
+            navigationLine = null;
+        }
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    private void updateNavigationLine() {
+        if (navigationTarget == null || lastLocation == null) return;
+        if (navigationLine != null) mapView.getLayerManager().getLayers().remove(navigationLine);
+        org.mapsforge.core.graphics.Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
+        int color = navigationMode == MapUiPreferences.ROUTING_ROADS
+                ? AndroidGraphicFactory.INSTANCE.createColor(245, 215, 173, 85)
+                : AndroidGraphicFactory.INSTANCE.createColor(245, 57, 169, 255);
+        paint.setColor(color);
+        paint.setStrokeWidth(navigationMode == MapUiPreferences.ROUTING_ROADS ? 9f : 7f);
+        paint.setStyle(Style.STROKE);
+        navigationLine = new Polyline(paint, AndroidGraphicFactory.INSTANCE);
+        navigationLine.addPoint(lastLocation);
+        navigationLine.addPoint(navigationTarget);
+        mapView.getLayerManager().getLayers().add(navigationLine);
+    }
+
+    public void showStoredTrack(List<GeoPoint> points) {
+        if (storedTrack != null) mapView.getLayerManager().getLayers().remove(storedTrack);
         org.mapsforge.core.graphics.Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
         paint.setColor(AndroidGraphicFactory.INSTANCE.createColor(230, 8, 62, 45));
         paint.setStrokeWidth(8f);
@@ -235,9 +293,7 @@ public final class OfflineMapController {
     }
 
     public void beginTrack() {
-        if (activeTrack != null) {
-            mapView.getLayerManager().getLayers().remove(activeTrack);
-        }
+        if (activeTrack != null) mapView.getLayerManager().getLayers().remove(activeTrack);
         org.mapsforge.core.graphics.Paint trackPaint = AndroidGraphicFactory.INSTANCE.createPaint();
         trackPaint.setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 236, 122, 37));
         trackPaint.setStrokeWidth(7f);
@@ -265,6 +321,66 @@ public final class OfflineMapController {
         } catch (RuntimeException error) {
             return MapsforgeThemes.MOTORIDER;
         }
+    }
+
+    private org.mapsforge.core.graphics.Bitmap createSavedMarker(PlaceRepository.Place place, boolean showLabel) {
+        String glyph = PlaceRepository.iconGlyph(place.iconKey);
+        String label = place.name == null ? "" : place.name.trim();
+        int width = showLabel ? 220 : 66;
+        int height = 68;
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
+        bg.setColor(Color.argb(235, 7, 17, 29));
+        canvas.drawRoundRect(new RectF(1, 1, width - 1, height - 8), 18, 18, bg);
+
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(2f);
+        border.setColor(Color.rgb(215, 173, 85));
+        canvas.drawRoundRect(new RectF(2, 2, width - 2, height - 9), 18, 18, border);
+
+        Paint icon = new Paint(Paint.ANTI_ALIAS_FLAG);
+        icon.setTextSize(30f);
+        icon.setColor(Color.rgb(215, 173, 85));
+        icon.setTextAlign(Paint.Align.CENTER);
+        canvas.drawText(glyph, 34f, 42f, icon);
+
+        if (showLabel) {
+            Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+            text.setTextSize(20f);
+            text.setColor(Color.WHITE);
+            text.setTextAlign(Paint.Align.RIGHT);
+            String shown = label.length() > 18 ? label.substring(0, 18) + "…" : label;
+            canvas.drawText(shown, width - 14f, 41f, text);
+        }
+
+        Path tip = new Path();
+        tip.moveTo(24f, height - 9f);
+        tip.lineTo(34f, height);
+        tip.lineTo(44f, height - 9f);
+        tip.close();
+        Paint tipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        tipPaint.setColor(Color.rgb(215, 173, 85));
+        canvas.drawPath(tip, tipPaint);
+        return new AndroidBitmap(bitmap);
+    }
+
+    private org.mapsforge.core.graphics.Bitmap createNavigationTarget() {
+        int size = 60;
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint outer = new Paint(Paint.ANTI_ALIAS_FLAG);
+        outer.setColor(Color.WHITE);
+        canvas.drawCircle(size / 2f, size / 2f, 25f, outer);
+        Paint middle = new Paint(Paint.ANTI_ALIAS_FLAG);
+        middle.setColor(Color.rgb(215, 173, 85));
+        canvas.drawCircle(size / 2f, size / 2f, 19f, middle);
+        Paint inner = new Paint(Paint.ANTI_ALIAS_FLAG);
+        inner.setColor(Color.rgb(7, 17, 29));
+        canvas.drawCircle(size / 2f, size / 2f, 8f, inner);
+        return new AndroidBitmap(bitmap);
     }
 
     private org.mapsforge.core.graphics.Bitmap createArrow(float bearing) {
