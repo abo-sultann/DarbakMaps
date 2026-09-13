@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: darbak-private-map-${{ github.ref }}
@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   map:
+    if: ${{ github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -35,22 +36,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y unzip osmium-tool python3-pip
 
-      - name: Bootstrap private Mishari source
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BOOTSTRAP_URL: https://eu-central.storage.cloudconvert.com/tasks/3d2eb07e-1580-4855-bfad-07471176d51a/almisharIMAP.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cloudconvert-production%2F20260912%2Ffra%2Fs3%2Faws4_request&X-Amz-Date=20260912T175903Z&X-Amz-Expires=86400&X-Amz-Signature=d099d8d8b8a1855b0ab7a433f444faf53eb65d53e47b669b0fec37327fd182df&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22almisharIMAP.zip%22&response-content-type=application%2Fzip&x-amz-checksum-mode=ENABLED&x-id=GetObject
-        run: |
-          if ! gh release view darbak-map-source >/dev/null 2>&1; then
-            mkdir -p build/bootstrap
-            curl --fail --location --retry 4 --retry-delay 3 "$BOOTSTRAP_URL" -o build/bootstrap/almishar-source.zip
-            unzip -tq build/bootstrap/almishar-source.zip >/dev/null
-            gh release create darbak-map-source --title "Darbak private map source" --notes "Private source used to rebuild the personal Darbak map."
-            gh release upload darbak-map-source build/bootstrap/almishar-source.zip --clobber
-          fi
-
       - name: Build private Saudi map
         env:
           GH_TOKEN: ${{ github.token }}
+          MISHARI_SOURCE_RELEASE_TAG: darbak-map-source
         run: bash tools/map/build_darbak_map.sh
 
       - name: Upload Darbak map
