@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'tools/apply_darbak_map_ux.py'
+      - '.github/workflows/apply-darbak-map-ux.yml'
   workflow_dispatch:
 
 permissions:
