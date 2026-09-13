@@ -40,7 +40,7 @@ jobs:
       - name: Install map tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip p7zip-full osmium-tool python3-pip
+          sudo apt-get install -y unzip 7zip osmium-tool python3-pip
           python3 -m pip install --user gdown
 
       - name: Restore verified Drive-based Mishari builder
@@ -48,6 +48,7 @@ jobs:
           git show f175e22e0611e1adbfe84f94726e91b4206f0cd0:tools/map/build_darbak_map.sh > tools/map/build_darbak_map.recovery.sh
           chmod +x tools/map/build_darbak_map.recovery.sh
           sed -i 's/python3 -m gdown --id "$MISHARI_DRIVE_ID" --output "$ARCHIVE"/python3 -m gdown "$MISHARI_DRIVE_ID" --output "$ARCHIVE"/' tools/map/build_darbak_map.recovery.sh
+          sed -i 's/^7z x /7zz x /' tools/map/build_darbak_map.recovery.sh
           sed -i 's/type=hd/type=ram/' tools/map/build_darbak_map.recovery.sh
           sed -i 's/threads=2/threads=4/' tools/map/build_darbak_map.recovery.sh
 
