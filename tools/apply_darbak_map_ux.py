@@ -3,7 +3,7 @@ import re
 
 
 def must_sub(pattern, replacement, text, label, flags=re.S):
-    out, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+    out, count = re.subn(pattern, lambda match: replacement, text, count=1, flags=flags)
     if count != 1:
         raise SystemExit(f"{label}: expected one match, got {count}")
     return out
