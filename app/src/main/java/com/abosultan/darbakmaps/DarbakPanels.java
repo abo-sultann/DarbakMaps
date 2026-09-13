@@ -18,6 +18,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -146,6 +147,17 @@ final class DarbakPanels {
                     else activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 }), compact(activity));
 
+        root.addView(toggleCard(activity,
+                "رسم وتسجيل المسار بالخلفية",
+                "يسجل خط سيرك ويستمر حتى عند إغلاق التطبيق",
+                MapUiPreferences.backgroundTrackEnabled(activity),
+                checked -> {
+                    BackgroundTrackService.setEnabled(activity, checked);
+                    if (activity instanceof MainActivity) {
+                        ((MainActivity) activity).onBackgroundTrackSettingChanged(checked);
+                    }
+                }), compact(activity));
+
         TextView orientation = text(activity,
                 "اتجاه الخريطة: " + MapRuntimeBridge.label(MapUiPreferences.orientation(activity)) + "  •  اضغط للتغيير",
                 TEXT, 15f, Gravity.CENTER);
@@ -172,7 +184,10 @@ final class DarbakPanels {
         doneParams.topMargin = dp(activity, 6);
         root.addView(done, doneParams);
 
-        dialog.setContentView(root);
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(true);
+        scroll.addView(root);
+        dialog.setContentView(scroll);
         show(dialog, activity, 820);
     }
 

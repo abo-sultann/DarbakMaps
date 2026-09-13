@@ -13,8 +13,11 @@ public final class BootReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent receivedIntent) {
-        if (!Intent.ACTION_BOOT_COMPLETED.equals(receivedIntent.getAction())
-                || !StartupPreferences.isEnabled(context)) {
+        if (!Intent.ACTION_BOOT_COMPLETED.equals(receivedIntent.getAction())) {
+            return;
+        }
+        BackgroundTrackService.ensureRunning(context);
+        if (!StartupPreferences.isEnabled(context)) {
             return;
         }
 

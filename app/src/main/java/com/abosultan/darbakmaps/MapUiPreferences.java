@@ -18,6 +18,7 @@ public final class MapUiPreferences {
     private static final String KEY_SHOW_SAVED_LABELS = "show_saved_labels";
     private static final String KEY_SHOW_SPEED = "show_speed";
     private static final String KEY_KEEP_SCREEN = "keep_screen_on";
+    private static final String KEY_BACKGROUND_TRACK = "background_track";
 
     private MapUiPreferences() {}
 
@@ -69,6 +70,14 @@ public final class MapUiPreferences {
 
     public static void setKeepScreenOn(Context context, boolean value) {
         prefs(context).edit().putBoolean(KEY_KEEP_SCREEN, value).apply();
+    }
+
+    public static boolean backgroundTrackEnabled(Context context) {
+        return prefs(context).getBoolean(KEY_BACKGROUND_TRACK, false);
+    }
+
+    public static void setBackgroundTrackEnabled(Context context, boolean value) {
+        prefs(context).edit().putBoolean(KEY_BACKGROUND_TRACK, value).apply();
     }
 
     /** Compatibility with older builds. Tools are now controlled only by tapping the map. */

@@ -28,8 +28,8 @@ import com.abosultan.darbakmaps.activation.ActivationActivity;
 import com.abosultan.darbakmaps.activation.LicenseManager;
 import com.abosultan.darbakmaps.data.GeoPoint;
 import com.abosultan.darbakmaps.data.PlaceRepository;
-import com.abosultan.darbakmaps.data.TrackRecorder;
 import com.abosultan.darbakmaps.data.TrackStorage;
+import com.abosultan.darbakmaps.data.BackgroundTrackStore;
 import com.abosultan.darbakmaps.location.LocationController;
 import com.abosultan.darbakmaps.map.DarbakPreviewMapView;
 import com.abosultan.darbakmaps.map.MapStorage;
@@ -54,7 +54,6 @@ public final class MainActivity extends Activity implements LocationController.C
     private static final int REQUEST_MAP_FILE = 702;
 
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
-    private final TrackRecorder trackRecorder = new TrackRecorder();
     private final OfflineMapSearchEngine searchEngine = new OfflineMapSearchEngine();
 
     private LicenseManager licenseManager;
@@ -129,6 +128,8 @@ public final class MainActivity extends Activity implements LocationController.C
         } catch (RuntimeException error) {
             gpsStatus.setText("GPS متاح بعد منح الصلاحية من إعدادات الجهاز");
         }
+        BackgroundTrackService.ensureRunning(this);
+        syncBackgroundTrackUi();
         startupPhase = "اكتمل";
     }
 
@@ -230,6 +231,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 ));
                 noMapPanel.setVisibility(View.GONE);
                 MapRuntimeBridge.refreshSavedPlaces(this);
+                restoreActiveTrack();
                 return;
             } catch (RuntimeException error) {
                 toast("تعذر فتح حزمة الخريطة");
@@ -441,42 +443,44 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void toggleTrackRecording() {
-        if (!trackRecorder.isRecording()) {
-            trackRecorder.start();
+        boolean enabled = !MapUiPreferences.backgroundTrackEnabled(this);
+        BackgroundTrackService.setEnabled(this, enabled);
+        onBackgroundTrackSettingChanged(enabled);
+        toast(enabled
+                ? "بدأ رسم وتسجيل المسار — سيستمر عند إغلاق التطبيق"
+                : "تم إيقاف التسجيل وحفظ المسار");
+    }
+
+    void onBackgroundTrackSettingChanged(boolean enabled) {
+        if (enabled) {
             if (mapController != null) {
                 mapController.beginTrack();
+                restoreActiveTrack();
             }
-            actionRecord.setText("إيقاف وحفظ");
-            toast("بدأ تسجيل المسار");
-            return;
+        } else if (mapController != null) {
+            mapController.beginTrack();
         }
+        syncBackgroundTrackUi();
+    }
 
-        List<GeoPoint> points = trackRecorder.stop();
-        actionRecord.setText(R.string.record_track);
-        if (points.size() < 2) {
-            toast("المسار قصير ولم يُحفظ");
-            return;
-        }
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setText("مسار " + new SimpleDateFormat("dd-MM HH:mm", Locale.US).format(new Date()));
-        input.selectAll();
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("اسم المسار")
-                .setView(input)
-                .setNegativeButton("إلغاء", null)
-                .setPositiveButton("حفظ", (dialog, which) -> {
-                    String name = input.getText().toString().trim();
-                    ioExecutor.execute(() -> {
-                        try {
-                            TrackStorage.save(this, name.isEmpty() ? "مسار محفوظ" : name, points);
-                            runOnUiThread(() -> toast("تم حفظ المسار بصيغة GPX"));
-                        } catch (Exception error) {
-                            runOnUiThread(() -> toast("تعذر حفظ المسار"));
-                        }
-                    });
-                })
-                .create());
+    private void syncBackgroundTrackUi() {
+        if (actionRecord == null) return;
+        actionRecord.setText(MapUiPreferences.backgroundTrackEnabled(this)
+                ? "إيقاف المسار"
+                : getString(R.string.record_track));
+    }
+
+    private void restoreActiveTrack() {
+        if (!MapUiPreferences.backgroundTrackEnabled(this) || mapController == null) return;
+        mapController.beginTrack();
+        ioExecutor.execute(() -> {
+            List<GeoPoint> points = BackgroundTrackStore.loadActive(this);
+            runOnUiThread(() -> {
+                if (!isActivityUnavailable() && mapController != null && points.size() >= 2) {
+                    mapController.showStoredTrack(points);
+                }
+            });
+        });
     }
 
     private void showSavedHub() {
@@ -743,7 +747,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 mapController.updateLocation(location.getLatitude(), location.getLongitude(),
                         location.hasBearing() ? location.getBearing() : 0f);
             }
-            if (trackRecorder.add(location) && mapController != null) {
+            if (MapUiPreferences.backgroundTrackEnabled(this) && mapController != null) {
                 mapController.addTrackPoint(location.getLatitude(), location.getLongitude());
             }
         });
@@ -760,6 +764,7 @@ public final class MainActivity extends Activity implements LocationController.C
         if (requestCode == REQUEST_LOCATION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 locationController.start();
+                BackgroundTrackService.ensureRunning(this);
             } else {
                 gpsStatus.setText("صلاحية GPS مطلوبة");
             }
@@ -792,6 +797,10 @@ public final class MainActivity extends Activity implements LocationController.C
         immersive();
         if (initialized && locationController != null && locationController.hasPermission()) {
             locationController.start();
+        }
+        if (initialized) {
+            BackgroundTrackService.ensureRunning(this);
+            syncBackgroundTrackUi();
         }
     }
 
