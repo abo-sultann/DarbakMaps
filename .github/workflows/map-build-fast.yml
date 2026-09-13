@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   map-fast:
+    if: ${{ github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -39,7 +40,6 @@ jobs:
 
       - name: Use RAM writer for this build
         run: |
-          # Coordinate validation is performed by tools/map/garmin_to_osm.dart before this stage.
           sed -i 's/type=hd threads=2/type=ram threads=4/' tools/map/build_darbak_map.sh
           grep -n 'type=ram' tools/map/build_darbak_map.sh
 
