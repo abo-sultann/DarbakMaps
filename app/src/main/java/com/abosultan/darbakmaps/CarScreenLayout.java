@@ -93,7 +93,6 @@ final class CarScreenLayout {
         leftControls.addView(orientation, orientationParams);
         tools.addView(leftControls, frame(dp(activity, 76), -2, Gravity.LEFT | Gravity.CENTER_VERTICAL, 0, 0, dp(activity, 14), 0));
 
-        // Legacy mode controls remain hidden only so the old activity bindings stay safe.
         LinearLayout legacyModes = new LinearLayout(activity);
         TextView desert = new TextView(activity);
         desert.setId(R.id.mode_desert);
@@ -116,7 +115,6 @@ final class CarScreenLayout {
         dock.addView(dockAction(activity, "المزيد", R.id.action_more), weighted());
         tools.addView(dock, frame(dp(activity, 570), dp(activity, 68), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, dp(activity, 12)));
 
-        // Hybrid side panel: richer controls are available without replacing the old driving layout.
         LinearLayout sidePanel = new LinearLayout(activity);
         sidePanel.setOrientation(LinearLayout.VERTICAL);
         sidePanel.setGravity(Gravity.TOP);
@@ -143,9 +141,7 @@ final class CarScreenLayout {
             search.requestFocus();
             search.setSelection(search.getText().length());
             InputMethodManager keyboard = (InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE);
-            if (keyboard != null) {
-                keyboard.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
-            }
+            if (keyboard != null) keyboard.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
         });
         sidePanel.addView(searchAction, panelActionParams(activity));
 
@@ -205,7 +201,6 @@ final class CarScreenLayout {
         tools.addView(sideToggle, frame(dp(activity, 52), dp(activity, 52), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
                 dp(activity, 14), 0, 0, 0));
 
-        // Permanent speed widget. It is intentionally outside the tools overlay.
         LinearLayout speedPill = new LinearLayout(activity);
         speedPill.setOrientation(LinearLayout.HORIZONTAL);
         speedPill.setGravity(Gravity.CENTER);
@@ -234,7 +229,6 @@ final class CarScreenLayout {
         empty.setVisibility(View.GONE);
         root.addView(empty, frame(dp(activity, 400), -2, Gravity.CENTER, 0, 0, 0, 0));
 
-        // Keep required map attribution tiny and unobtrusive.
         TextView attribution = label(activity, "© OpenStreetMap", MUTED, 9f, Gravity.CENTER);
         attribution.setPadding(dp(activity, 6), dp(activity, 2), dp(activity, 6), dp(activity, 2));
         attribution.setBackground(round(Color.argb(190, 7, 17, 29), dp(activity, 8), Color.TRANSPARENT));
@@ -270,9 +264,16 @@ final class CarScreenLayout {
     }
 
     private static TextView dockAction(Activity activity, String text, int id) {
-        TextView view = id == R.id.action_more ? new DarbakMoreButton(activity) : new TextView(activity);
+        TextView view;
+        if (id == R.id.action_more) {
+            view = new DarbakMoreButton(activity);
+        } else if (id == R.id.action_saved) {
+            view = new DarbakSavedButton(activity);
+        } else {
+            view = new TextView(activity);
+        }
         view.setText(text);
-        view.setTextColor(id == R.id.action_more ? PRIMARY : TEXT);
+        view.setTextColor((id == R.id.action_more || id == R.id.action_saved) ? PRIMARY : TEXT);
         view.setTextSize(13f);
         view.setGravity(Gravity.CENTER);
         view.setId(id);
@@ -316,9 +317,7 @@ final class CarScreenLayout {
         GradientDrawable background = new GradientDrawable();
         background.setColor(fill);
         background.setCornerRadius(radius);
-        if (Color.alpha(stroke) > 0) {
-            background.setStroke(1, stroke);
-        }
+        if (Color.alpha(stroke) > 0) background.setStroke(1, stroke);
         return background;
     }
 
