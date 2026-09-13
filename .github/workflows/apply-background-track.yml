@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'tools/apply_background_track.py'
+      - '.github/workflows/apply-background-track.yml'
   workflow_dispatch:
 
 permissions:
