@@ -40,7 +40,7 @@ jobs:
       - name: Install map tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip 7zip osmium-tool python3-pip
+          sudo apt-get install -y unzip unar osmium-tool python3-pip
           python3 -m pip install --user gdown
 
       - name: Restore verified Drive-based Mishari builder
@@ -48,11 +48,23 @@ jobs:
           git show f175e22e0611e1adbfe84f94726e91b4206f0cd0:tools/map/build_darbak_map.sh > tools/map/build_darbak_map.recovery.sh
           chmod +x tools/map/build_darbak_map.recovery.sh
           sed -i 's/python3 -m gdown --id "$MISHARI_DRIVE_ID" --output "$ARCHIVE"/python3 -m gdown "$MISHARI_DRIVE_ID" --output "$ARCHIVE"/' tools/map/build_darbak_map.recovery.sh
-          SEVENZIP="$(dpkg -L 7zip | grep -E '/usr/bin/7[^/]*$' | head -n1)"
-          test -n "$SEVENZIP"
-          test -x "$SEVENZIP"
-          echo "Using 7-Zip executable: $SEVENZIP"
-          sed -i "s#^7z x #$SEVENZIP x #" tools/map/build_darbak_map.recovery.sh
+          PASS="$(sed -n 's/^7z x -y -p\([^ ]*\) .*/\1/p' tools/map/build_darbak_map.recovery.sh | head -n1)"
+          test -n "$PASS"
+          echo "::add-mask::$PASS"
+          printf 'MISHARI_PASSWORD=%s\n' "$PASS" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/map/build_darbak_map.recovery.sh')
+          out = []
+          for line in path.read_text(encoding='utf-8').splitlines(True):
+              if line.startswith('7z x '):
+                  out.append('unar -f -D -p "$MISHARI_PASSWORD" -o "$WORK/mishari" "$ARCHIVE" >/tmp/darbak-unar.log\n')
+              elif 'cat /tmp/darbak-7z.log' in line:
+                  out.append('cat /tmp/darbak-unar.log\n')
+              else:
+                  out.append(line)
+          path.write_text(''.join(out), encoding='utf-8')
+          PY
           sed -i 's/type=hd/type=ram/' tools/map/build_darbak_map.recovery.sh
           sed -i 's/threads=2/threads=4/' tools/map/build_darbak_map.recovery.sh
 
