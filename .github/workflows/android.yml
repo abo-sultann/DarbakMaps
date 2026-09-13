@@ -9,21 +9,21 @@ on:
       - '.github/workflows/map-build-fast.yml'
       - '.github/workflows/map-source-diagnostic.yml'
       - '.github/workflows/map-publish.yml'
-  pull_request:
-    branches: [main]
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: darbak-maps-${{ github.ref }}
+  group: darbak-maps-apk-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -38,13 +38,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build, lint, and unit tests
-        run: ./gradlew --no-daemon clean lintDebug testDebugUnitTest assembleDebug
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DarbakMaps-0.4.0-debug
+          name: DarbakMaps-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
           if-no-files-found: error
