@@ -1,0 +1,87 @@
+name: Darbak Maps App + Offline Map Bundle
+
+on:
+  push:
+    paths:
+      - '.github/workflows/app-map-bundle.yml'
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradle.properties'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare Gradle
+        run: chmod +x ./gradlew
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon clean assembleDebug
+
+      - name: Download verified offline map artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/darbak-release
+          gh run download 34758044067 \
+            --repo "${{ github.repository }}" \
+            --name DarbakMaps-offline-map-final \
+            --dir build/darbak-map
+
+      - name: Verify official map
+        run: |
+          set -euo pipefail
+          cd build/darbak-map
+          test -s darbak-saudi.map
+          sha256sum -c darbak-saudi.map.sha256
+          test -s darbak-map-manifest.json
+
+      - name: Assemble car-screen delivery folder
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" build/darbak-release/DarbakMaps-debug.apk
+          cp build/darbak-map/darbak-saudi.map build/darbak-release/darbak-saudi.map
+          cp build/darbak-map/darbak-saudi.map.sha256 build/darbak-release/darbak-saudi.map.sha256
+          cp build/darbak-map/darbak-map-manifest.json build/darbak-release/darbak-map-manifest.json
+          cat > build/darbak-release/INSTALL.txt <<'EOF'
+          Darbak Maps - car screen test bundle
+
+          1) Install DarbakMaps-debug.apk on the Android 7.1 car screen.
+          2) Copy darbak-saudi.map to USB/SD or local storage.
+          3) Open Darbak Maps and choose: إضافة خريطة من USB.
+          4) Select darbak-saudi.map once. The app validates and copies it to its private offline map storage.
+          5) Test labels, map continuity, GPS arrow, saved places and search before normal use.
+
+          The APK stays small; the 190 MB map remains a separate replaceable offline data file.
+          EOF
+
+      - name: Upload Darbak Maps test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-car-screen-test-bundle
+          path: build/darbak-release/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
