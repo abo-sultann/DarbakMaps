@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -93,30 +94,24 @@ public final class TrackStorage {
     }
 
     /**
-     * Loads a navigation/display-safe representation of a GPX file. Original GPX bytes are never
-     * rewritten. Long tracks are reduced in memory while retaining segment boundaries and the end.
+     * Loads a bounded navigation/display representation. The source GPX is never rewritten.
+     * Missing timestamps remain unknown (0), and reduction preserves segment starts/endpoints and
+     * geometrically important turns rather than blindly dropping every second point.
      */
     public static List<GeoPoint> load(File file) throws IOException {
         if (file == null || !file.isFile()) throw new IOException("ملف المسار غير موجود");
         List<GeoPoint> points = new ArrayList<>();
-        SimpleDateFormat timeFormat = utcFormat();
-        GeoPoint lastPoint = null;
-        boolean pendingSegment = true;
-        long sampleStep = 1L;
-        long seen = 0L;
+        boolean segmentStart = true;
+        boolean inPoint = false;
+        boolean validPoint = false;
+        double latitude = 0d;
+        double longitude = 0d;
+        long time = 0L;
 
         try (FileInputStream input = new FileInputStream(file)) {
             XmlPullParser parser = Xml.newPullParser();
             parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true);
             parser.setInput(input, "UTF-8");
-
-            boolean inPoint = false;
-            boolean segmentStart = true;
-            boolean validPoint = false;
-            double latitude = 0d;
-            double longitude = 0d;
-            long time = 0L;
-
             for (int event = parser.getEventType(); event != XmlPullParser.END_DOCUMENT; event = parser.next()) {
                 String name = parser.getName();
                 if (event == XmlPullParser.START_TAG) {
@@ -137,8 +132,7 @@ public final class TrackStorage {
                         }
                     } else if (inPoint && validPoint && "time".equalsIgnoreCase(name)) {
                         try {
-                            Date parsed = timeFormat.parse(parser.nextText());
-                            if (parsed != null) time = parsed.getTime();
+                            time = parseGpxTime(parser.nextText());
                         } catch (Exception ignored) {
                             time = 0L;
                         }
@@ -146,31 +140,10 @@ public final class TrackStorage {
                 } else if (event == XmlPullParser.END_TAG && inPoint
                         && ("trkpt".equalsIgnoreCase(name) || "rtept".equalsIgnoreCase(name))) {
                     if (validPoint) {
-                        pendingSegment |= segmentStart;
-                        long resolvedTime = time > 0L ? time : file.lastModified();
-                        GeoPoint point = new GeoPoint(latitude, longitude, resolvedTime, pendingSegment);
-                        lastPoint = point;
-                        if (seen % sampleStep == 0L) {
-                            points.add(point);
-                            pendingSegment = false;
-                        }
-                        seen++;
+                        points.add(new GeoPoint(latitude, longitude, time, segmentStart));
                         segmentStart = false;
-                        if (points.size() > MAX_LOADED_POINTS) {
-                            List<GeoPoint> reduced = new ArrayList<>(points.size() / 2 + 1);
-                            boolean carrySegment = false;
-                            for (int index = 0; index < points.size(); index++) {
-                                GeoPoint candidate = points.get(index);
-                                carrySegment |= candidate.segmentStart;
-                                if (index % 2 == 0) {
-                                    reduced.add(new GeoPoint(candidate.latitude, candidate.longitude,
-                                            candidate.timeMillis, carrySegment));
-                                    carrySegment = false;
-                                }
-                            }
-                            pendingSegment |= carrySegment;
-                            points = reduced;
-                            sampleStep *= 2L;
+                        if (points.size() > MAX_LOADED_POINTS * 2) {
+                            points = reducePreservingGeometry(points, MAX_LOADED_POINTS);
                         }
                     }
                     inPoint = false;
@@ -179,17 +152,69 @@ public final class TrackStorage {
         } catch (Exception error) {
             throw new IOException("تعذر قراءة GPX", error);
         }
-
-        if (lastPoint != null) {
-            GeoPoint currentLast = points.isEmpty() ? null : points.get(points.size() - 1);
-            if (currentLast == null || currentLast.latitude != lastPoint.latitude
-                    || currentLast.longitude != lastPoint.longitude || currentLast.timeMillis != lastPoint.timeMillis) {
-                points.add(new GeoPoint(lastPoint.latitude, lastPoint.longitude,
-                        lastPoint.timeMillis, pendingSegment || lastPoint.segmentStart));
-            }
-        }
+        if (points.size() > MAX_LOADED_POINTS) points = reducePreservingGeometry(points, MAX_LOADED_POINTS);
         if (points.size() < 2) throw new IOException("المسار لا يحتوي نقاطًا كافية");
         return points;
+    }
+
+    static List<GeoPoint> reducePreservingGeometry(List<GeoPoint> input, int limit) {
+        if (input == null || input.size() <= limit) return input == null ? new ArrayList<>() : new ArrayList<>(input);
+        int stride = Math.max(2, (int) Math.ceil(input.size() / (double) Math.max(2, limit - 2)));
+        List<GeoPoint> out = new ArrayList<>(Math.min(limit + 64, input.size()));
+        for (int i = 0; i < input.size(); i++) {
+            GeoPoint p = input.get(i);
+            boolean endpoint = i == 0 || i == input.size() - 1;
+            boolean boundary = p.segmentStart || (i + 1 < input.size() && input.get(i + 1).segmentStart);
+            boolean sharpTurn = i > 0 && i + 1 < input.size()
+                    && !p.segmentStart && !input.get(i + 1).segmentStart
+                    && turnAngleDegrees(input.get(i - 1), p, input.get(i + 1)) >= 25d;
+            if (endpoint || boundary || sharpTurn || i % stride == 0) out.add(p);
+        }
+        // If an extremely twisty route still exceeds the cap, increase stride but never discard
+        // segment boundaries/endpoints. Sharp turns are retained while space allows.
+        if (out.size() > limit) {
+            List<GeoPoint> bounded = new ArrayList<>(limit);
+            int secondaryStride = Math.max(2, (int) Math.ceil(out.size() / (double) limit));
+            for (int i = 0; i < out.size(); i++) {
+                GeoPoint p = out.get(i);
+                boolean mandatory = i == 0 || i == out.size() - 1 || p.segmentStart
+                        || (i + 1 < out.size() && out.get(i + 1).segmentStart);
+                if (mandatory || i % secondaryStride == 0) bounded.add(p);
+            }
+            out = bounded;
+        }
+        return out;
+    }
+
+    static double turnAngleDegrees(GeoPoint a, GeoPoint b, GeoPoint c) {
+        double h1 = Math.atan2(b.longitude - a.longitude, b.latitude - a.latitude);
+        double h2 = Math.atan2(c.longitude - b.longitude, c.latitude - b.latitude);
+        double diff = Math.abs(Math.toDegrees(h2 - h1)) % 360d;
+        return diff > 180d ? 360d - diff : diff;
+    }
+
+    static long parseGpxTime(String raw) throws ParseException {
+        if (raw == null || raw.trim().isEmpty()) return 0L;
+        String value = raw.trim();
+        String[] patterns = {
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ssXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        };
+        ParseException last = null;
+        for (String pattern : patterns) {
+            try {
+                SimpleDateFormat format = new SimpleDateFormat(pattern, Locale.US);
+                format.setLenient(false);
+                if (pattern.endsWith("'Z'")) format.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date parsed = format.parse(value);
+                if (parsed != null) return parsed.getTime();
+            } catch (ParseException error) {
+                last = error;
+            }
+        }
+        throw last == null ? new ParseException(value, 0) : last;
     }
 
     private static SimpleDateFormat utcFormat() {
