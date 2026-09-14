@@ -238,7 +238,7 @@ final class CarScreenLayout {
         speedPill.setGravity(Gravity.CENTER);
         speedPill.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
         speedPill.setBackground(round(Color.argb(218, 7, 17, 29), dp(activity, 18), Color.argb(65, 57, 169, 255)));
-        TextView speed = label(activity, "0", TEXT, 31f, Gravity.CENTER);
+        TextView speed = label(activity, "—", TEXT, 31f, Gravity.CENTER);
         speed.setId(R.id.speed_value);
         speedPill.addView(speed, new LinearLayout.LayoutParams(dp(activity, 62), -1));
         TextView km = label(activity, "كم/س", MUTED, 11f, Gravity.CENTER);
@@ -256,7 +256,7 @@ final class CarScreenLayout {
         trackStatsPanel.addView(trackStats, new LinearLayout.LayoutParams(-1, -1));
         trackStatsPanel.setVisibility(View.GONE);
         root.addView(trackStatsPanel, frame(dp(activity, 335), dp(activity, 46), Gravity.BOTTOM | Gravity.RIGHT,
-                dp(activity, 14), 0, 0, dp(activity, 14)));
+                dp(activity, 14), 0, 0, dp(activity, 92)));
 
         LinearLayout empty = new LinearLayout(activity);
         empty.setId(R.id.no_map_panel);

@@ -203,6 +203,7 @@ public final class MainActivity extends Activity implements LocationController.C
             if (!MapUiPreferences.backgroundTrackEnabled(this)) return false;
             boolean paused = TrackSessionState.togglePaused(this);
             TrackSessionState.updateActionLabel(actionRecord, this);
+            if (!paused && mapController != null) mapController.startTrackSegment();
             toast(paused ? "تم إيقاف تسجيل المسار مؤقتًا" : "تمت متابعة تسجيل المسار");
             return true;
         });
@@ -229,6 +230,11 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void loadActiveMap() {
+        try {
+            RecommendedMapDownloader.recoverInterruptedInstall(this);
+        } catch (Exception recoveryError) {
+            toast(recoveryError.getMessage() == null ? "تعذر استعادة الخريطة السابقة" : recoveryError.getMessage());
+        }
         searchEngine.clear();
         if (mapController != null) {
             mapController.destroy();
@@ -445,6 +451,7 @@ public final class MainActivity extends Activity implements LocationController.C
             return;
         }
         if (mapController != null) {
+            mapController.resumeFollow();
             mapController.centerOn(location.getLatitude(), location.getLongitude());
         }
     }
@@ -459,6 +466,10 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void toggleTrackRecording() {
+        if (TrackRuntimeState.isFinalizing(this)) {
+            toast("جارٍ حفظ المسار؛ انتظر ظهور النتيجة");
+            return;
+        }
         boolean enabled = !MapUiPreferences.backgroundTrackEnabled(this);
         BackgroundTrackService.setEnabled(this, enabled);
         onBackgroundTrackSettingChanged(enabled);
@@ -498,13 +509,21 @@ public final class MainActivity extends Activity implements LocationController.C
             List<GeoPoint> points = BackgroundTrackStore.loadActive(this);
             runOnUiThread(() -> {
                 if (!isActivityUnavailable() && mapController != null && points.size() >= 2) {
-                    mapController.showStoredTrack(points);
+                    mapController.showActiveTrack(points);
                 }
             });
         });
     }
 
     private void showSavedHub() {
+        if (placeRepository.hasCorruptStore()) {
+            showImmersive(new AlertDialog.Builder(this)
+                    .setTitle("تعذر قراءة المواقع المحفوظة")
+                    .setMessage("احتفظ التطبيق بالبيانات الأصلية ولم يكتب فوقها. لا تضف أو تحذف مواقع قبل الاستعادة أو التصدير.")
+                    .setPositiveButton("حسنًا", null)
+                    .create());
+            return;
+        }
         String[] items = {
                 "المواقع المحفوظة (" + placeRepository.all().size() + ")",
                 "الأقرب إلى موقعي",
@@ -546,7 +565,7 @@ public final class MainActivity extends Activity implements LocationController.C
     private void showPlaceActions(PlaceRepository.Place selected) {
         int routingMode = MapUiPreferences.routingMode(this);
         String routingLabel = MapRuntimeBridge.routingLabel(routingMode);
-        String[] actions = {"عرض على الخريطة", "توجيه — " + routingLabel, "حذف الموقع"};
+        String[] actions = {"عرض على الخريطة", "توجيه — " + routingLabel, "تعديل الموقع", "حذف الموقع"};
         showImmersive(new AlertDialog.Builder(this)
                 .setTitle(PlaceRepository.iconGlyph(selected.iconKey) + "  " + selected.name)
                 .setMessage(selected.note == null || selected.note.isEmpty()
@@ -568,15 +587,23 @@ public final class MainActivity extends Activity implements LocationController.C
                         } else {
                             toast("بدأ التوجيه المباشر إلى " + selected.name);
                         }
+                    } else if (which == 2) {
+                        PointEditor.show(this, selected.latitude, selected.longitude, selected);
                     } else {
                         AlertDialog confirm = new AlertDialog.Builder(this)
                                 .setTitle("حذف الموقع؟")
                                 .setMessage(selected.name)
                                 .setNegativeButton("إلغاء", null)
                                 .setPositiveButton("حذف", (d, w) -> {
-                                    placeRepository.delete(selected.id);
-                                    MapRuntimeBridge.refreshSavedPlaces(this);
-                                    toast("تم حذف الموقع");
+                                    try {
+                                        if (!placeRepository.delete(selected.id)) {
+                                            throw new IllegalStateException("الموقع لم يعد موجودًا");
+                                        }
+                                        MapRuntimeBridge.refreshSavedPlaces(this);
+                                        toast("تم حذف الموقع");
+                                    } catch (RuntimeException error) {
+                                        toast(error.getMessage() == null ? "تعذر حذف الموقع" : error.getMessage());
+                                    }
                                 }).create();
                         showImmersive(confirm);
                     }
@@ -820,12 +847,16 @@ public final class MainActivity extends Activity implements LocationController.C
     @Override
     public void onLocation(Location location) {
         runOnUiThread(() -> {
-            int speed = location.hasSpeed() ? Math.max(0, Math.round(location.getSpeed() * 3.6f)) : 0;
-            speedValue.setText(String.valueOf(speed));
+            if (location.hasSpeed()) {
+                int speed = Math.max(0, Math.round(location.getSpeed() * 3.6f));
+                speedValue.setText(String.valueOf(speed));
+            } else {
+                speedValue.setText("—");
+            }
             gpsStatus.setText("GPS متصل • أوفلاين");
             if (mapController != null) {
                 mapController.updateLocation(location.getLatitude(), location.getLongitude(),
-                        location.hasBearing() ? location.getBearing() : 0f);
+                        location.hasBearing() ? location.getBearing() : Float.NaN);
             }
             if (MapUiPreferences.backgroundTrackEnabled(this) && !TrackSessionState.isPaused(this) && mapController != null) {
                 mapController.addTrackPoint(location.getLatitude(), location.getLongitude());
@@ -838,7 +869,15 @@ public final class MainActivity extends Activity implements LocationController.C
 
     @Override
     public void onProviderState(boolean enabled) {
-        runOnUiThread(() -> gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح"));
+        runOnUiThread(() -> {
+            gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح");
+            speedValue.setText("—");
+            if (!enabled) {
+                NavigationGuidance.stop(this);
+                View nav = findViewById(R.id.nav_panel);
+                if (nav != null) nav.setVisibility(View.GONE);
+            }
+        });
     }
 
     @Override
@@ -884,6 +923,27 @@ public final class MainActivity extends Activity implements LocationController.C
         if (initialized) {
             BackgroundTrackService.ensureRunning(this);
             syncBackgroundTrackUi();
+            showPendingTrackResult();
+        }
+    }
+
+    private void showPendingTrackResult() {
+        TrackRuntimeState.Result result = TrackRuntimeState.peekResult(this);
+        if (result != null) {
+            TrackRuntimeState.clearResult(this);
+            if (result.success) {
+                toast(result.message);
+            } else {
+                showImmersive(new AlertDialog.Builder(this)
+                        .setTitle("تعذر حفظ المسار")
+                        .setMessage(result.message + "\n\nبقي التسجيل محفوظًا للاستعادة.")
+                        .setNegativeButton("لاحقًا", null)
+                        .setPositiveButton("إعادة المحاولة", (dialog, which) -> BackgroundTrackService.retryFinalize(this))
+                        .create());
+            }
+        } else {
+            String writeError = TrackRuntimeState.writeError(this);
+            if (writeError != null && !writeError.isEmpty()) toast(writeError);
         }
     }
 
