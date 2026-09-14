@@ -70,8 +70,7 @@ public final class MapRuntimeBridge {
     }
 
     public static synchronized void resumeFollow() {
-        if (activeController == null) return;
-        MapUiPreferences.setFollowVehicle(activeController.view().getContext(), true);
+        if (activeController != null) activeController.resumeFollow();
     }
 
     public static synchronized boolean hasActiveMap() {
