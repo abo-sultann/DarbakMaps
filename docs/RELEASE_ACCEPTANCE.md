@@ -2,79 +2,74 @@
 
 الإصدار المرشح: **0.9.0 / vc21**  
 الحزمة: `com.abosultan.darbakmaps.debug`  
-الحالة: **مرشح للاختبار الميداني** حتى يكتمل T3 والتوقيع.  
-هذه الوثيقة تسجل الاختبارات المنفذة فقط؛ عدم وجود دليل يعني أن البند غير مغلق.
+مصدر APK: `1da936e63bd42a6214a0afb76c337f66c00d31be`  
+Final Candidate: workflow `34884270566` — **SUCCESS**  
+الحالة: **مرشح اختبار ميداني**، لا يسمى Production قبل تحقق شهادة النسخة المثبتة واختبارات T3.
 
-## 1) التسجيل التلقائي وآخر 1000 كم
-| قبول | النتيجة | الدليل |
-|---|---|---|
-| رحلة صناعية >1200 كم تبقي أحدث ~1000 كم | ناجح — وحدة | `TrackJournalRetentionTest.trimsSyntheticRoutePast1200KmToNewest1000Km` ضمن suite الناجح workflow `34883690007` |
-| gap لا يدخل حساب المسافة | ناجح — وحدة | `segmentGapDoesNotCountAsDistance` |
-| recovery عند فقد primary ووجود backup | ناجح — وحدة | `recoversBackupWhenPrimaryMissing` |
-| حفظ snapshot دون مسح السجل | compile/unit integration ناجح | workflow `34883690007` |
-| إغلاق Activity مع استمرار Service | غير مختبر ميدانيًا | يحتاج T3 |
-| screen off | غير مختبر ميدانيًا | يحتاج T3 |
-| reboot resume بدون فتح UI | غير مختبر ميدانيًا | يحتاج T3 |
-| GPS loss/recovery والوقوف الطويل | غير مختبر ميدانيًا | يحتاج GPS/T3 |
-| kill أثناء write/trim | recovery logic موجود؛ kill فعلي غير منفذ | يحتاج fault injection/device |
-| storage full والتعافي | غير منفذ | يحتاج fault injection/device |
-| البحث+التوجيه+التسجيل طويلًا دون RAM growth | غير منفذ | يحتاج profiler/T3 |
-| عدم حذف saved places/manual GPX عند rolling trim | مثبت بنيويًا بالكود؛ لم ينفذ integration filesystem test بعد | rolling trim يلمس `active-track.csv` فقط |
+## التسجيل التلقائي وآخر 1000 كم
+- ✅ اختبار وحدة: رحلة صناعية >1200 كم، وبعد التقليم يبقى أحدث ~1000 كم ضمن هامش أخذ العينات الموثق.
+- ✅ اختبار وحدة: فجوة segment لا تدخل حساب المسافة.
+- ✅ اختبار وحدة: استعادة backup عند فقد ملف primary أثناء نافذة trim.
+- ✅ compile/integration: snapshot GPX لا يمسح rolling journal.
+- ✅ compile/integration: pause/resume وخدمة التسجيل الجديدة.
+- ⬜ ميداني: إغلاق Activity، screen off، reboot، GPS loss/recovery، الوقوف الطويل.
+- ⬜ fault: kill أثناء write/trim، storage full والتعافي.
+- ⬜ أداء: recording + search + navigation طويلًا مع قياس RAM على T3.
 
-## 2) البحث والمعالم
-| قبول | النتيجة | الدليل |
-|---|---|---|
-| عربي/جزئي/aliases | منفذ في الكود، قبول بيانات فعلية غير مكتمل | `OfflineMapSearchEngine` |
-| POI + Way/area | منفذ في الكود، لم تثبت عينات الخريطة بعد | `readMapData`, representativePosition |
-| persistent incremental index | منفذ؛ restart acceptance غير منفذ | `.darbak-search-<identity>.idx` + state |
-| around current/landmark 5/10/25/50/100km | compile/unit integration ناجح | workflow `34884015788` |
-| categories | compile ناجح | الكل/أودية/جبال/معالم/قرى/مياه/خدمات |
-| لا “لا توجد” قبل اكتمال index | compile ناجح، UI device check باقي | partial/truncated state |
-| dedupe | منفذ، test map sample باقي | normalized name/source + coordinates |
-| cap/truncation | منفذ، synthetic cap acceptance باقي | `MAX_INDEX_ITEMS=250000`, `isTruncated()` |
-| زمن/RAM على T3 وخريطة السعودية | غير منفذ | ميداني |
+## البحث
+- ✅ compile/lint: تطبيع عربي، partial match، aliases، POI + Way/area، وفئات البر.
+- ✅ compile/integration: حول موقعي وحول معلم بنطاقات 5/10/25/50/100 كم.
+- ✅ compile: حالات partial/truncated بدل «لا توجد» قبل اكتمال الفهرسة.
+- ✅ compile: persistent index مربوط بهوية ملف الخريطة.
+- ⬜ بيانات فعلية: اختيار عينات مؤكدة من ملف السعودية لكل فئة وإثبات الدقة/إزالة التكرار.
+- ⬜ أداء: زمن البحث/RAM على T3 قبل/بعد اكتمال الفهرس.
 
-## 3) المحفوظات والأيقونات والاتجاه
-| قبول | النتيجة | الدليل |
-|---|---|---|
-| الاسم غير مطلوب وauto-label | compile ناجح | `PlaceRepository` + `PointEditor` |
-| أيقونة سمان ثابتة لا تعتمد Emoji | compile ناجح | Canvas artwork؛ workflow `34883845877` |
-| الفلاتر حسب الأيقونة | compile ناجح | `SavedPlacesDialog` |
-| nearest + direct distance | compile ناجح | `SavedPlacesDialog` |
-| relative arrow مع 359↔0 | ناجح — وحدة | `DirectionMathTest.relativeDirectionHandles359ToZeroWrap` |
-| circular smoothing | ناجح — وحدة | `DirectionMathTest.smoothingUsesShortestCircularPath` |
-| no heading => cardinal | ناجح — وحدة للـmath | `cardinalNamesAreStable`; UI ميداني باقٍ |
-| no GPS => انتظار GPS | compile ناجح | `SavedPlacesDialog` |
-| no reorder تحت touch | compile ناجح؛ touch acceptance باقٍ | touch flag + reorder on UP/CANCEL |
-| edit/delete/undo | compile ناجح | `PlaceRepository.restore` + panel |
-| reboot persistence | غير مختبر ميدانيًا | يحتاج T3 |
+## المحفوظات والأيقونات
+- ✅ compile: حفظ icon-first والاسم اختياري وauto-label مؤرخ.
+- ✅ compile: Canvas icons ثابتة، ومنها طير السمان، دون الاعتماد على Emoji.
+- ✅ compile/integration: filters، nearest، direct distance، no-GPS state، undo delete.
+- ✅ unit: اتجاه 359↔0 صحيح وcircular smoothing.
+- ✅ unit: اتجاهات جغرافية عربية fallback عند غياب heading موثوق.
+- ⬜ ميداني: حفظ 3 سمان بلا أسماء + نوع آخر، reboot، touch no-reorder، توجيه للإحداثيات الفعلية.
 
-## 4) التوجيه والرجوع
-| قبول | النتيجة | الدليل |
-|---|---|---|
-| direct navigation لا يدعي وجود طريق | compile ناجح | UI message “الخط لا يعني وجود طريق صالح” |
-| فقد GPS يوقف الإرشاد القديم | كان مغلقًا في remediation 0.8.1 | يحتاج T3 إعادة تأكيد |
-| backtrack لا يعبر gap | ناجح — وحدة سابقًا | `TrackNavigatorTest` |
-| لا default target بلا connected segment | test مضاف | يجب تأكيد دخوله في Final Candidate 0.9.0 |
-| navigation لا يوقف recorder | بنيويًا منفصل؛ ميداني باقي | separate service/state |
+## التوجيه والعودة
+- ✅ compile: التوجيه المباشر يوضح أنه خط هدف لا طريق صالح مضمون.
+- ✅ unit: backtrack لا يعبر gaps.
+- ✅ unit: لا يختار هدفًا افتراضيًا إذا لا يوجد connected segment.
+- ⬜ ميداني: GPS stale/loss أثناء التوجيه والعودة.
 
-## 5) حماية البيانات/الخريطة
-| قبول | النتيجة | الدليل |
-|---|---|---|
-| LegacyMigration يفحص قبل live state | منفذ؛ Android fault tests باقية | staged temp + identity + space |
-| migration rollback | منفذ؛ forced-failure acceptance باقٍ | original prefs + imported track cleanup |
-| recorder/migration serialization | منفذ | `DataStoreLock` |
-| map backup retained until verified replacement | منفذ | full length/Mapsforge/SHA check |
-| interrupted map copy/reboot | لم ينفذ fault test | يحتاج test |
+## حماية البيانات والخريطة
+- ✅ compile/lint: LegacyMigration يفحص إلى staging قبل live state، يتحقق من الهوية/الحجم/المساحة، ويستخدم rollback وlock مشترك.
+- ✅ compile/lint: runtime recording prefs القديمة لا تستورد.
+- ✅ compile/lint: map replacement لا يحذف backup إلا بعد تحقق البديل كاملًا.
+- ⬜ fault: corrupted archive/wrong identity/space failure/forced replacement failure على Android.
+- ⬜ fault: انقطاع نسخ الخريطة ثم reboot.
 
-## 6) Build / release / signing
-- Final Candidate 0.9.0 يجب أن ينجح من commit واحد في: unit tests + release lint + assembleRelease.
-- workflow صار يشتق اسم artifact من `versionName/versionCode` بدل الاسم الثابت 0.8.0.
-- **التوقيع Production غير مغلق**: لم نفحص شهادة APK المثبت فعليًا على الشاشة في هذه الجولة.
-- أي APK unsigned هو artifact للاختبار/الفحص فقط، وليس update مثبتًا يحافظ على البيانات.
-- `update-manifest.json` لا يفتح لقناة Production قبل signed APK متحقق منه.
+## Final Candidate 0.9.0
+workflow `34884270566` نفذ من نفس source commit:
+- ✅ `testDebugUnitTest`
+- ✅ `lintRelease`
+- ✅ `assembleRelease`
+- ✅ candidate metadata + SHA
+- ✅ artifact upload
 
-## 7) بيئة الاختبار
-- CI: GitHub Actions / Ubuntu / Temurin Java 17 / Gradle project tests.
-- الجهاز المستهدف الفعلي: Allwinner T3 Android 7.1 1024×600 ~1GB.
-- **لم يتم في هذه الجولة تشغيل اختبارات Android emulator أو شاشة T3 الفعلية**؛ لذلك لا تسمى 0.9.0 نهائية حتى إكمال البنود الميدانية.
+Artifact CI: `DarbakMaps-0.9.0-vc21-unsigned`  
+SHA-256 للـAPK غير الموقع:  
+`adfec3b578aecf0060bd10df254d465ba3cd132f4ceac5fbde75798331b1f6c4`
+
+## التوقيع والتحديث
+- تم العثور على سلسلة توقيع Darbak stable خارج المستودع، وإنشاء **Field Candidate موقّع** منها والتحقق من سلامة توقيع JAR.
+- يوجد APK انتقال موقّع سابق في ملفات المشروع بنفس سلسلة Darbak stable، بينما يوجد APK أقدم في Drive بشهادة مختلفة.
+- **لم تُقرأ شهادة التطبيق المثبت فعليًا على شاشة السيارة في هذه الجولة**؛ لذلك لا يمكن وصف Field Candidate بأنه update-in-place مضمون.
+- لا تطلب إزالة النسخة الحالية. أول خطوة ميدانية هي قراءة شهادة APK المثبت/نسخة APK منه، ثم مقارنة الشهادة.
+- update manifest الخاص بـProduction يبقى hold حتى نجاح هذه الخطوة واختبار بقاء البيانات.
+
+Field Candidate الموقّع:
+- `DarbakMaps-0.9.0-vc21-field-signed.apk`
+- SHA-256: `650ca55ebf19b9381e277cdee68fde229d02160ac841144717d95132b926b376`
+
+## بيئة الاختبار وما لم يُنفذ
+- CI: GitHub Actions / Ubuntu / Temurin Java 17 / Gradle.
+- التوقيع: JDK jarsigner/keytool في بيئة خاصة؛ لم يوضع المفتاح أو كلمات المرور في المستودع.
+- الجهاز المستهدف: Allwinner T3 / Android 7.1 / 1024×600 / ~1GB.
+- لم يتم تشغيل Android emulator أو T3 فعلي في هذه الجولة، لذلك يبقى الوصف الصحيح: **مرشح اختبار ميداني**.
