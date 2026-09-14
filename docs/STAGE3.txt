@@ -1,0 +1,1 @@
+Long GPX and location validation stage.
