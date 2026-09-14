@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
+import android.os.StatFs;
 import android.provider.Settings;
 
 import androidx.core.content.FileProvider;
@@ -32,15 +33,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class UpdateManager {
+    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final long MAX_APK_BYTES = 100L * 1024L * 1024L;
+    private static final long SPACE_MARGIN_BYTES = 32L * 1024L * 1024L;
+
     public interface Callback {
         void onStatus(String message);
         void onUpdate(UpdateInfo update);
     }
 
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
-
-    private UpdateManager() {
-    }
+    private UpdateManager() {}
 
     public static void check(Callback callback) {
         if (BuildConfig.UPDATE_MANIFEST_URL.isEmpty()) {
@@ -54,11 +56,15 @@ public final class UpdateManager {
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setConnectTimeout(12000);
                 connection.setReadTimeout(12000);
-                BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8));
                 StringBuilder body = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) body.append(line);
-                reader.close();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        connection.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (body.length() > 256 * 1024) throw new IllegalStateException("Manifest too large");
+                        body.append(line);
+                    }
+                }
 
                 JSONObject manifest = new JSONObject(body.toString().trim());
                 int versionCode = manifest.getInt("versionCode");
@@ -79,15 +85,8 @@ public final class UpdateManager {
                     return;
                 }
                 secureUrl(apkUrl);
-
-                callback.onUpdate(new UpdateInfo(
-                        versionCode,
-                        manifest.getString("versionName"),
-                        apkUrl,
-                        expectedSha,
-                        packageName,
-                        minSdk
-                ));
+                callback.onUpdate(new UpdateInfo(versionCode, manifest.getString("versionName"),
+                        apkUrl, expectedSha, packageName, minSdk));
             } catch (Exception error) {
                 callback.onStatus("تعذر التحقق من التحديث الآن");
             } finally {
@@ -97,12 +96,21 @@ public final class UpdateManager {
     }
 
     public static void downloadAndInstall(Activity activity, UpdateInfo update, Callback callback) {
+        if (activity == null || activity.isFinishing()
+                || (Build.VERSION.SDK_INT >= 17 && activity.isDestroyed())) {
+            callback.onStatus("واجهة التطبيق أغلقت؛ أعد طلب التحديث");
+            return;
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !activity.getPackageManager().canRequestPackageInstalls()) {
             Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:" + activity.getPackageName()));
-            activity.startActivity(settings);
-            callback.onStatus("فعّل السماح بالتثبيت ثم أعد طلب التحديث");
+            try {
+                activity.startActivity(settings);
+                callback.onStatus("فعّل السماح بالتثبيت ثم أعد طلب التحديث");
+            } catch (RuntimeException error) {
+                callback.onStatus("تعذر فتح إعداد السماح بالتثبيت");
+            }
             return;
         }
 
@@ -116,20 +124,38 @@ public final class UpdateManager {
                 if (!directory.exists() && !directory.mkdirs()) {
                     throw new IllegalStateException("Update directory unavailable");
                 }
-                apk = new File(directory, "DarbakMaps-" + update.versionName + ".apk");
+                long free = new StatFs(directory.getAbsolutePath()).getAvailableBytes();
+                if (free < MAX_APK_BYTES + SPACE_MARGIN_BYTES) {
+                    callback.onStatus("المساحة غير كافية لتنزيل التحديث بأمان");
+                    return;
+                }
+                apk = new File(directory, "DarbakMaps-vc" + update.versionCode + ".apk");
                 if (apk.exists() && !apk.delete()) throw new IllegalStateException("Old update file unavailable");
 
                 connection = (HttpURLConnection) secureUrl(update.apkUrl).openConnection();
                 connection.setConnectTimeout(15000);
                 connection.setReadTimeout(30000);
-                BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
-                FileOutputStream output = new FileOutputStream(apk);
-                byte[] buffer = new byte[64 * 1024];
-                int read;
-                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-                output.getFD().sync();
-                output.close();
-                input.close();
+                connection.setInstanceFollowRedirects(true);
+                int response = connection.getResponseCode();
+                if (response < 200 || response >= 300) throw new IllegalStateException("HTTP " + response);
+                long announced = connection.getContentLengthLong();
+                if (announced > MAX_APK_BYTES) {
+                    callback.onStatus("ملف التحديث أكبر من الحد الآمن");
+                    return;
+                }
+
+                long total = 0L;
+                try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
+                     FileOutputStream output = new FileOutputStream(apk)) {
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        total += read;
+                        if (total > MAX_APK_BYTES) throw new IllegalStateException("APK exceeds size limit");
+                        output.write(buffer, 0, read);
+                    }
+                    output.getFD().sync();
+                }
 
                 String verificationError = verifyDownloadedApk(activity, apk, update);
                 if (verificationError != null) {
@@ -138,7 +164,7 @@ public final class UpdateManager {
                     return;
                 }
                 File finalApk = apk;
-                activity.runOnUiThread(() -> install(activity, finalApk));
+                activity.runOnUiThread(() -> install(activity, finalApk, callback));
             } catch (Exception error) {
                 if (apk != null) apk.delete();
                 callback.onStatus("تعذر تنزيل أو التحقق من التحديث");
@@ -150,35 +176,32 @@ public final class UpdateManager {
 
     @SuppressWarnings("deprecation")
     private static String verifyDownloadedApk(Activity activity, File apk, UpdateInfo update) throws Exception {
-        if (!apk.isFile() || apk.length() <= 0) return "ملف التحديث فارغ أو غير صالح";
+        if (!apk.isFile() || apk.length() <= 0 || apk.length() > MAX_APK_BYTES) return "ملف التحديث فارغ أو غير صالح";
         if (!sha256(apk).equalsIgnoreCase(update.sha256)) return "فشل التحقق من سلامة ملف التحديث (SHA-256)";
 
         PackageManager pm = activity.getPackageManager();
         int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                ? PackageManager.GET_SIGNING_CERTIFICATES
-                : PackageManager.GET_SIGNATURES;
+                ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
         PackageInfo archive = pm.getPackageArchiveInfo(apk.getAbsolutePath(), flags);
         if (archive == null) return "تعذر قراءة هوية ملف التحديث";
         if (!update.packageName.equals(archive.packageName) || !activity.getPackageName().equals(archive.packageName)) {
             return "حزمة ملف التحديث لا تطابق تطبيق دربك Maps";
         }
-
         long archiveVersion = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                ? archive.getLongVersionCode()
-                : archive.versionCode;
+                ? archive.getLongVersionCode() : archive.versionCode;
         if (archiveVersion != update.versionCode || archiveVersion <= BuildConfig.VERSION_CODE) {
             return "رقم إصدار ملف التحديث غير صحيح";
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
                 && archive.applicationInfo != null
                 && archive.applicationInfo.minSdkVersion > Build.VERSION.SDK_INT) {
             return "ملف التحديث غير متوافق مع نسخة أندرويد في الشاشة";
         }
-
         PackageInfo installed = pm.getPackageInfo(activity.getPackageName(), flags);
-        if (!signatureDigests(installed).equals(signatureDigests(archive)) || signatureDigests(archive).isEmpty()) {
-            return "توقيع ملف التحديث مختلف. يلزم تثبيت نسخة Production المعتمدة يدويًا مرة واحدة";
+        Set<String> installedDigests = signatureDigests(installed);
+        Set<String> archiveDigests = signatureDigests(archive);
+        if (archiveDigests.isEmpty() || !installedDigests.equals(archiveDigests)) {
+            return "توقيع ملف التحديث مختلف. يلزم انتقال Production موثق مرة واحدة";
         }
         return null;
     }
@@ -199,31 +222,38 @@ public final class UpdateManager {
         return values;
     }
 
-    private static void install(Activity activity, File apk) {
-        Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".files", apk);
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(uri, "application/vnd.android.package-archive");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-        activity.startActivity(intent);
+    private static void install(Activity activity, File apk, Callback callback) {
+        if (activity.isFinishing() || (Build.VERSION.SDK_INT >= 17 && activity.isDestroyed())) {
+            callback.onStatus("اكتمل التنزيل لكن الواجهة أغلقت؛ أعد طلب التثبيت");
+            return;
+        }
+        try {
+            Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".files", apk);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (intent.resolveActivity(activity.getPackageManager()) == null) {
+                callback.onStatus("لا يوجد مثبت APK متاح على الجهاز");
+                return;
+            }
+            activity.startActivity(intent);
+        } catch (RuntimeException error) {
+            callback.onStatus("تعذر فتح مثبت التحديث");
+        }
     }
 
     private static URL secureUrl(String value) throws Exception {
         URL url = new URL(value);
-        if (!"https".equalsIgnoreCase(url.getProtocol())) {
-            throw new IllegalArgumentException("HTTPS required");
-        }
+        if (!"https".equalsIgnoreCase(url.getProtocol())) throw new IllegalArgumentException("HTTPS required");
         return url;
     }
 
     private static String sha256(File file) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        FileInputStream input = new FileInputStream(file);
-        try {
+        try (FileInputStream input = new FileInputStream(file)) {
             byte[] buffer = new byte[64 * 1024];
             int read;
             while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
-        } finally {
-            input.close();
         }
         return hex(digest.digest());
     }
