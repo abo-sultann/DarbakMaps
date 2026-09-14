@@ -1,0 +1,37 @@
+name: Apply 0.9.1 compatibility repair
+
+on:
+  push:
+    branches: [darbakmaps-review-0.9.1]
+    paths:
+      - 'tools/apply_review_091_compat.py'
+      - '.github/workflows/apply-review-091-compat.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply compatibility patch
+        run: python3 tools/apply_review_091_compat.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests and compile
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:compileDebugJavaWithJavac
+      - name: Commit repair
+        run: |
+          git config user.name 'Darbak Review CI'
+          git config user.email 'actions@github.com'
+          git add app/src/main
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: restore 0.9.1 source compatibility after review merge'
+            git push
+          fi
