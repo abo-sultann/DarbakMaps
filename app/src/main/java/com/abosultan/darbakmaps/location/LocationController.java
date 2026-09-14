@@ -14,9 +14,8 @@ import android.os.SystemClock;
 import androidx.core.content.ContextCompat;
 
 public final class LocationController implements LocationListener {
-    private static final long MAX_FIX_AGE_MS = 15_000L;
-    // Kept permissive until the real T3 antenna is measured; freshness is enforced independently.
-    private static final float MAX_ACCEPTABLE_ACCURACY_METERS = 250f;
+    private static final long MAX_FIX_AGE_MS = FixQuality.MAX_AGE_MS;
+    private static final float MAX_ACCEPTABLE_ACCURACY_METERS = FixQuality.MAX_ACCURACY_METERS;
 
     public interface Callback {
         void onLocation(Location location);
@@ -69,7 +68,7 @@ public final class LocationController implements LocationListener {
             Location cached = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             if (usable(cached)) onLocationChanged(cached);
             else scheduleStaleTimeout(MAX_FIX_AGE_MS);
-        } catch (SecurityException | RuntimeException ignored) {
+        } catch (RuntimeException ignored) {
             clearUnavailable();
         }
     }
@@ -110,7 +109,6 @@ public final class LocationController implements LocationListener {
     public void onProviderEnabled(String provider) {
         if (!LocationManager.GPS_PROVIDER.equals(provider)) return;
         callback.onProviderState(true);
-        // The listener is already registered; do not manufacture a fresh fix.
         lastLocation = null;
         scheduleStaleTimeout(MAX_FIX_AGE_MS);
     }
