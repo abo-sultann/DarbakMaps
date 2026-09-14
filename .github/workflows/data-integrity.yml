@@ -1,0 +1,39 @@
+name: Data Integrity Validation
+on:
+  push:
+    branches: [darbakmaps-data-integrity-stage1]
+    paths:
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle/**'
+      - '.github/workflows/data-integrity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: data-integrity-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile Android sources and run JVM regression tests
+        run: bash ./gradlew --no-daemon :app:compileDebugJavaWithJavac :app:testDebugUnitTest
+      - name: Retain test reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-integrity-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          retention-days: 1
+          if-no-files-found: ignore

@@ -1,15 +1,6 @@
 name: Darbak Maps App + Offline Map Bundle
 
 on:
-  push:
-    paths:
-      - '.github/workflows/app-map-bundle.yml'
-      - 'app/**'
-      - 'build.gradle'
-      - 'settings.gradle'
-      - 'gradle/**'
-      - 'gradlew'
-      - 'gradle.properties'
   workflow_dispatch:
 
 permissions:
