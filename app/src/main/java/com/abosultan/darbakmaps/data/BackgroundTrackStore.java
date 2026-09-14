@@ -17,7 +17,7 @@ import java.util.Locale;
 
 /** Incremental crash-safe storage for the currently recording track. */
 public final class BackgroundTrackStore {
-    private static final int MAX_POINTS = 50_000;
+    private static final int MAX_DISPLAY_POINTS = 50_000;
     private static final String ACTIVE_FILE = "active-track.csv";
 
     private BackgroundTrackStore() {}
@@ -39,13 +39,24 @@ public final class BackgroundTrackStore {
         }
     }
 
+    /** Lightweight restore path for drawing the active track on the map. */
     public static synchronized List<GeoPoint> loadActive(Context context) {
+        return load(context, MAX_DISPLAY_POINTS);
+    }
+
+    /** Complete restore path used only when finalizing the GPX so no recorded points are lost. */
+    public static synchronized List<GeoPoint> loadActiveComplete(Context context) {
+        return load(context, 0);
+    }
+
+    private static List<GeoPoint> load(Context context, int maxPoints) {
         List<GeoPoint> points = new ArrayList<>();
         File file = activeFile(context);
         if (!file.isFile()) return points;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
-            while ((line = reader.readLine()) != null && points.size() < MAX_POINTS) {
+            while ((line = reader.readLine()) != null) {
+                if (maxPoints > 0 && points.size() >= maxPoints) break;
                 String[] parts = line.split(",");
                 if (parts.length != 3) continue;
                 try {
@@ -66,7 +77,7 @@ public final class BackgroundTrackStore {
     }
 
     public static synchronized File finalizeActive(Context context) throws IOException {
-        List<GeoPoint> points = loadActive(context);
+        List<GeoPoint> points = loadActiveComplete(context);
         File active = activeFile(context);
         if (points.size() < 2) {
             if (active.exists()) active.delete();
