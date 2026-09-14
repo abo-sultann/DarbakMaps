@@ -37,23 +37,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Restore stable debug signing key
-        id: signing-key-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: darbakmaps-debug-signing-v1
-
-      - name: Verify stable signing key
+      - name: Restore protected signing key
         shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.DARBAK_MAPS_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.DARBAK_MAPS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DARBAK_MAPS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.DARBAK_MAPS_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          KEY="$HOME/.android/debug.keystore"
-          if [ ! -s "$KEY" ]; then
-            echo '::error::Darbak Maps signing key is missing. Refusing to build with a newly generated Android debug key.'
+          if [ -z "${KEYSTORE_B64:-}" ] || [ -z "${KEYSTORE_PASSWORD:-}" ] || [ -z "${KEY_ALIAS:-}" ] || [ -z "${KEY_PASSWORD:-}" ]; then
+            echo '::error::Darbak Maps signing secrets are not configured. Refusing to build with an unstable key.'
             exit 1
           fi
-          keytool -list -keystore "$KEY" -storepass android -alias androiddebugkey >/dev/null
+          KEY="$RUNNER_TEMP/darbak-maps-stable.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEY"
+          test -s "$KEY"
+          keytool -list -keystore "$KEY" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "DARBAK_KEYSTORE_PATH=$KEY" >> "$GITHUB_ENV"
+          echo "DARBAK_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "DARBAK_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "DARBAK_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
