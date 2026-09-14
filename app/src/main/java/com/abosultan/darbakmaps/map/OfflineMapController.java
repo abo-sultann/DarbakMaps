@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.view.MotionEvent;
 
 import com.abosultan.darbakmaps.MapRuntimeBridge;
 import com.abosultan.darbakmaps.MapUiPreferences;
@@ -35,30 +36,41 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class OfflineMapController {
+    private static final int MAX_ACTIVE_DRAW_POINTS = 4000;
+    private static final int MAX_STORED_DRAW_POINTS = 10000;
+
     private final MapView mapView;
     private final TileCache tileCache;
     private final TileRendererLayer rendererLayer;
     private final XmlRenderTheme darbakTheme;
     private final List<Marker> savedMarkers = new ArrayList<>();
+    private final List<Polyline> activeTrackSegments = new ArrayList<>();
+    private final List<Polyline> storedTrackSegments = new ArrayList<>();
     private Marker locationMarker;
     private Marker selectedMarker;
     private Marker navigationMarker;
     private Polyline navigationLine;
     private Polyline activeTrack;
-    private Polyline storedTrack;
+    private int activeTrackPointCount;
     private int lastArrowBucket = Integer.MIN_VALUE;
     private int lastMapBearingBucket = Integer.MIN_VALUE;
     private boolean centeredOnFirstFix;
+    private boolean followSuspended;
     private int orientationMode;
     private LatLong lastLocation;
     private LatLong navigationTarget;
     private float lastBearing;
+    private boolean hasLastBearing;
     private int navigationMode = MapUiPreferences.ROUTING_DIRECT;
 
     public OfflineMapController(Context context, File file) {
         MapsforgeRuntime.ensureInitialized(context);
         mapView = new MapView(context);
         mapView.setClickable(true);
+        mapView.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) followSuspended = true;
+            return false;
+        });
         mapView.setBuiltInZoomControls(false);
         mapView.getMapScaleBar().setVisible(false);
 
@@ -111,6 +123,16 @@ public final class OfflineMapController {
         }
     }
 
+    public void resumeFollow() {
+        followSuspended = false;
+        if (lastLocation != null) {
+            mapView.getModel().mapViewPosition.setCenter(lastLocation);
+            if (mapView.getModel().mapViewPosition.getZoomLevel() < 13) {
+                mapView.getModel().mapViewPosition.setZoomLevel((byte) 13);
+            }
+        }
+    }
+
     public void setDesertMode(boolean ignored) {
         rendererLayer.setXmlRenderTheme(darbakTheme);
         tileCache.purge();
@@ -136,9 +158,13 @@ public final class OfflineMapController {
 
     public void updateLocation(double latitude, double longitude, float bearing) {
         lastLocation = new LatLong(latitude, longitude);
-        lastBearing = normalize(bearing);
+        boolean bearingValid = !Float.isNaN(bearing) && !Float.isInfinite(bearing);
+        if (bearingValid) {
+            lastBearing = normalize(bearing);
+            hasLastBearing = true;
+        }
 
-        if (orientationMode == MapUiPreferences.ORIENTATION_HEADING) {
+        if (orientationMode == MapUiPreferences.ORIENTATION_HEADING && bearingValid) {
             int bearingBucket = Math.round(lastBearing / 10f) * 10;
             if (bearingBucket != lastMapBearingBucket) {
                 lastMapBearingBucket = bearingBucket;
@@ -146,10 +172,10 @@ public final class OfflineMapController {
             }
         }
 
-        updateLocationMarker(lastLocation, lastBearing);
+        updateLocationMarker(lastLocation, bearingValid ? lastBearing : Float.NaN);
         updateNavigationLine();
 
-        if (MapUiPreferences.followVehicle(mapView.getContext()) && centeredOnFirstFix) {
+        if (MapUiPreferences.followVehicle(mapView.getContext()) && !followSuspended && centeredOnFirstFix) {
             mapView.getModel().mapViewPosition.setCenter(lastLocation);
         }
         if (!centeredOnFirstFix) {
@@ -160,26 +186,27 @@ public final class OfflineMapController {
     }
 
     private void refreshOrientationFromLastFix() {
-        if (orientationMode == MapUiPreferences.ORIENTATION_HEADING && lastLocation != null) {
+        if (orientationMode == MapUiPreferences.ORIENTATION_HEADING && lastLocation != null && hasLastBearing) {
             rotateMapTo(-lastBearing);
         } else if (orientationMode == MapUiPreferences.ORIENTATION_NORTH) {
             rotateMapTo(0f);
         }
-        if (lastLocation != null) updateLocationMarker(lastLocation, lastBearing);
+        if (lastLocation != null) updateLocationMarker(lastLocation, hasLastBearing ? lastBearing : Float.NaN);
     }
 
     private void updateLocationMarker(LatLong position, float bearing) {
-        float screenBearing = normalize(bearing + mapView.getMapRotation().degrees);
-        int bucket = Math.round(screenBearing / 10f) * 10;
+        boolean bearingValid = !Float.isNaN(bearing) && !Float.isInfinite(bearing);
+        float screenBearing = bearingValid ? normalize(bearing + mapView.getMapRotation().degrees) : 0f;
+        int bucket = bearingValid ? Math.round(screenBearing / 10f) * 10 : Integer.MIN_VALUE;
         if (locationMarker == null) {
-            locationMarker = new Marker(position, createArrow(bucket), 0, 0);
+            locationMarker = new Marker(position, bearingValid ? createArrow(bucket) : createLocationDot(), 0, 0);
             locationMarker.setBillboard(true);
             mapView.getLayerManager().getLayers().add(locationMarker);
             lastArrowBucket = bucket;
         } else {
             locationMarker.setLatLong(position);
             if (bucket != lastArrowBucket) {
-                locationMarker.setBitmap(createArrow(bucket));
+                locationMarker.setBitmap(bearingValid ? createArrow(bucket) : createLocationDot());
                 lastArrowBucket = bucket;
             }
         }
@@ -197,6 +224,7 @@ public final class OfflineMapController {
     }
 
     public void showPoint(double latitude, double longitude) {
+        followSuspended = true;
         LatLong position = new LatLong(latitude, longitude);
         if (selectedMarker == null) {
             selectedMarker = new Marker(position, createPin(), 0, -24);
@@ -237,7 +265,7 @@ public final class OfflineMapController {
             navigationMarker.setLatLong(navigationTarget);
         }
         updateNavigationLine();
-        centerOn(latitude, longitude);
+        showPoint(latitude, longitude);
         mapView.getLayerManager().redrawLayers();
     }
 
@@ -271,57 +299,100 @@ public final class OfflineMapController {
     }
 
     public void showStoredTrack(List<GeoPoint> points) {
-        if (storedTrack != null) mapView.getLayerManager().getLayers().remove(storedTrack);
-        org.mapsforge.core.graphics.Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
-        paint.setColor(AndroidGraphicFactory.INSTANCE.createColor(230, 8, 62, 45));
-        paint.setStrokeWidth(8f);
-        paint.setStyle(Style.STROKE);
-        storedTrack = new Polyline(paint, AndroidGraphicFactory.INSTANCE);
-
-        int step = Math.max(1, points.size() / 10_000);
-        for (int index = 0; index < points.size(); index += step) {
-            GeoPoint point = points.get(index);
-            storedTrack.addPoint(new LatLong(point.latitude, point.longitude));
-        }
-        if (!points.isEmpty() && (points.size() - 1) % step != 0) {
+        clearStoredTrack();
+        drawSegmentedTrack(points, storedTrackSegments, MAX_STORED_DRAW_POINTS, 230, 8, 62, 45, 8f);
+        if (points != null && !points.isEmpty()) {
             GeoPoint last = points.get(points.size() - 1);
-            storedTrack.addPoint(new LatLong(last.latitude, last.longitude));
-        }
-        mapView.getLayerManager().getLayers().add(storedTrack);
-        if (!points.isEmpty()) {
-            GeoPoint last = points.get(points.size() - 1);
+            followSuspended = true;
             centerOn(last.latitude, last.longitude);
         }
         mapView.getLayerManager().redrawLayers();
     }
 
     public void clearStoredTrack() {
-        if (storedTrack != null) {
-            mapView.getLayerManager().getLayers().remove(storedTrack);
-            storedTrack = null;
-            mapView.getLayerManager().redrawLayers();
-        }
+        removeTrackLayers(storedTrackSegments);
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    public void showActiveTrack(List<GeoPoint> points) {
+        clearActiveTrackLayers();
+        drawSegmentedTrack(points, activeTrackSegments, MAX_ACTIVE_DRAW_POINTS, 255, 236, 122, 37, 7f);
+        activeTrack = activeTrackSegments.isEmpty() ? null : activeTrackSegments.get(activeTrackSegments.size() - 1);
+        activeTrackPointCount = countPolylinePoints(points, MAX_ACTIVE_DRAW_POINTS);
+        mapView.getLayerManager().redrawLayers();
     }
 
     public void beginTrack() {
-        if (activeTrack != null) mapView.getLayerManager().getLayers().remove(activeTrack);
-        org.mapsforge.core.graphics.Paint trackPaint = AndroidGraphicFactory.INSTANCE.createPaint();
-        trackPaint.setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 236, 122, 37));
-        trackPaint.setStrokeWidth(7f);
-        trackPaint.setStyle(Style.STROKE);
-        activeTrack = new Polyline(trackPaint, AndroidGraphicFactory.INSTANCE);
+        clearActiveTrackLayers();
+        startTrackSegment();
+    }
+
+    public void startTrackSegment() {
+        activeTrack = newTrackPolyline(255, 236, 122, 37, 7f);
+        activeTrackSegments.add(activeTrack);
         mapView.getLayerManager().getLayers().add(activeTrack);
     }
 
     public void addTrackPoint(double latitude, double longitude) {
-        if (activeTrack != null) {
-            activeTrack.addPoint(new LatLong(latitude, longitude));
-            mapView.getLayerManager().redrawLayers();
+        if (activeTrack == null) startTrackSegment();
+        if (activeTrackPointCount >= MAX_ACTIVE_DRAW_POINTS) {
+            // Bound only the live representation. The authoritative journal/GPX remains complete.
+            clearActiveTrackLayers();
+            startTrackSegment();
+            activeTrackPointCount = 0;
         }
+        activeTrack.addPoint(new LatLong(latitude, longitude));
+        activeTrackPointCount++;
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    private void drawSegmentedTrack(List<GeoPoint> points, List<Polyline> targetLayers, int maxPoints,
+                                    int alpha, int red, int green, int blue, float width) {
+        if (points == null || points.isEmpty()) return;
+        int step = Math.max(1, (int) Math.ceil(points.size() / (double) maxPoints));
+        Polyline segment = null;
+        for (int index = 0; index < points.size(); index++) {
+            GeoPoint point = points.get(index);
+            boolean boundary = point.segmentStart || index == 0;
+            boolean keep = boundary || index == points.size() - 1 || index % step == 0
+                    || (index + 1 < points.size() && points.get(index + 1).segmentStart);
+            if (!keep) continue;
+            if (segment == null || boundary) {
+                segment = newTrackPolyline(alpha, red, green, blue, width);
+                targetLayers.add(segment);
+                mapView.getLayerManager().getLayers().add(segment);
+            }
+            segment.addPoint(new LatLong(point.latitude, point.longitude));
+        }
+    }
+
+    private int countPolylinePoints(List<GeoPoint> points, int maxPoints) {
+        return points == null ? 0 : Math.min(points.size(), maxPoints);
+    }
+
+    private Polyline newTrackPolyline(int alpha, int red, int green, int blue, float width) {
+        org.mapsforge.core.graphics.Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
+        paint.setColor(AndroidGraphicFactory.INSTANCE.createColor(alpha, red, green, blue));
+        paint.setStrokeWidth(width);
+        paint.setStyle(Style.STROKE);
+        return new Polyline(paint, AndroidGraphicFactory.INSTANCE);
+    }
+
+    private void clearActiveTrackLayers() {
+        removeTrackLayers(activeTrackSegments);
+        activeTrack = null;
+        activeTrackPointCount = 0;
+    }
+
+    private void removeTrackLayers(List<Polyline> layers) {
+        for (Polyline line : layers) mapView.getLayerManager().getLayers().remove(line);
+        layers.clear();
     }
 
     public void destroy() {
         MapRuntimeBridge.detach(this);
+        clearStoredTrack();
+        clearActiveTrackLayers();
         mapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
     }
@@ -391,6 +462,19 @@ public final class OfflineMapController {
         Paint inner = new Paint(Paint.ANTI_ALIAS_FLAG);
         inner.setColor(Color.rgb(7, 17, 29));
         canvas.drawCircle(size / 2f, size / 2f, 8f, inner);
+        return new AndroidBitmap(bitmap);
+    }
+
+    private org.mapsforge.core.graphics.Bitmap createLocationDot() {
+        int size = 44;
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint outer = new Paint(Paint.ANTI_ALIAS_FLAG);
+        outer.setColor(Color.WHITE);
+        canvas.drawCircle(size / 2f, size / 2f, 15f, outer);
+        Paint inner = new Paint(Paint.ANTI_ALIAS_FLAG);
+        inner.setColor(Color.rgb(57, 169, 255));
+        canvas.drawCircle(size / 2f, size / 2f, 10f, inner);
         return new AndroidBitmap(bitmap);
     }
 
