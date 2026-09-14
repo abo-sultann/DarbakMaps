@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Triggered after workflow installation; keep this script idempotent to preserve CI quota.
 path = Path('app/src/main/java/com/abosultan/darbakmaps/MainActivity.java')
 s = path.read_text(encoding='utf-8')
 
