@@ -10,8 +10,8 @@ android {
         applicationId 'com.abosultan.darbakmaps'
         minSdk 24
         targetSdk 35
-        versionCode 22
-        versionName '0.9.1'
+        versionCode 23
+        versionName '0.9.2'
 
         buildConfigField 'String', 'ACTIVATION_URL', '""'
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
@@ -44,9 +44,9 @@ android {
             buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://raw.githubusercontent.com/abo-sultann/DarbakMaps/main/update-manifest-debug.json"'
         }
         release {
-            // 0.9.1 closes the owner review around committed-track rendering, saved-place interaction,
-            // crash-safe migration recovery and bounded pageable offline search. Keep the historical
-            // car-screen package suffix until installed-signature compatibility is proven.
+            // 0.9.2 keeps the 0.9.1 data/search/track fixes and rebuilds the car-screen UI around
+            // the approved Darbak green/gold/sand identity with one action path per task.
+            // Keep the historical car-screen package suffix until installed-signature compatibility is proven.
             applicationIdSuffix '.debug'
             minifyEnabled true
             shrinkResources true
