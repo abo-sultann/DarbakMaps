@@ -64,4 +64,17 @@ public class TrackNavigatorTest {
         assertTrue(navigator.stoppedAtGap());
         assertEquals(2, navigator.targetIndex());
     }
+
+    @Test
+    public void refusesDefaultTargetWhenEveryPointStartsANewSegment() {
+        List<GeoPoint> points = Arrays.asList(
+                new GeoPoint(25.0000, 45.0000, 1L, true),
+                new GeoPoint(26.0000, 46.0000, 2L, true),
+                new GeoPoint(27.0000, 47.0000, 3L, true)
+        );
+        TrackNavigator navigator = new TrackNavigator(points);
+        assertNull(navigator.update(26.5, 46.5));
+        assertEquals(-1, navigator.targetIndex());
+        assertTrue(navigator.stoppedAtGap());
+    }
 }
