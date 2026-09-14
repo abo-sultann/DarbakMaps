@@ -17,14 +17,19 @@ adb shell pm grant "$PKG" android.permission.ACCESS_FINE_LOCATION || true
 adb shell pm grant "$PKG" android.permission.ACCESS_COARSE_LOCATION || true
 
 # Seed realistic app-private QA data before first launch.
-adb shell run-as "$PKG" mkdir -p shared_prefs
 cat > /tmp/darbak_places.xml <<'EOF'
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
   <string name="places">[{"id":"qa-quail","name":"QA Camp","lat":26.3500,"lon":43.9700,"createdAt":1789430400000,"icon":"quail","category":"سمان","note":"موقع تجريبي للمراجعة البصرية"},{"id":"qa-tree","name":"شجرة الطلح","lat":26.3610,"lon":43.9850,"createdAt":1789430460000,"icon":"tree","category":"شجرة","note":"ظل وموقع محفوظ"},{"id":"qa-water","name":"مورد الماء","lat":26.3380,"lon":43.9520,"createdAt":1789430520000,"icon":"water","category":"ماء","note":"موقع قريب"}]</string>
 </map>
 EOF
-adb shell run-as "$PKG" sh -c 'cat > shared_prefs/darbak_places.xml' < /tmp/darbak_places.xml
+APP_DIR="$(adb shell run-as "$PKG" pwd | tr -d '\r')"
+test -n "$APP_DIR"
+adb shell run-as "$PKG" mkdir -p "$APP_DIR/shared_prefs"
+adb push /tmp/darbak_places.xml /data/local/tmp/darbak_places.xml >/dev/null
+adb shell chmod 644 /data/local/tmp/darbak_places.xml
+adb shell run-as "$PKG" cp /data/local/tmp/darbak_places.xml "$APP_DIR/shared_prefs/darbak_places.xml"
+adb shell rm -f /data/local/tmp/darbak_places.xml
 
 # Qassim-like sample position so distance/save UI can render realistically.
 adb emu geo fix 43.9700 26.3500 || true
