@@ -14,7 +14,7 @@ import android.widget.Toast;
 
 import com.abosultan.darbakmaps.data.PlaceRepository;
 
-/** One editor for current-position saves, map long-press saves and future edits. */
+/** One editor for current-position saves, map long-press saves and edits. */
 final class PointEditor {
     private PointEditor() {}
 
@@ -23,16 +23,21 @@ final class PointEditor {
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(24, 12, 24, 12);
         form.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        form.setFocusableInTouchMode(true);
+        form.requestFocus();
 
         TextView coords = new TextView(activity);
         coords.setText(String.format(java.util.Locale.US, "%.6f, %.6f", latitude, longitude));
         form.addView(coords, new LinearLayout.LayoutParams(-1, 40));
 
-        String[] labels = {"مخيم", "بيت / استراحة", "موقع السمان", "ماء / بئر", "شجرة / روضة", "سيارة", "مدخل / بوابة", "عام"};
+        String[] labels = {"سمان", "مخيم", "ماء / بئر", "شجرة / روضة", "موقع صيد", "علامة عامة"};
         String[] keys = {
-                PlaceRepository.ICON_CAMP, PlaceRepository.ICON_HOME, PlaceRepository.ICON_QUAIL,
-                PlaceRepository.ICON_WATER, PlaceRepository.ICON_TREE, PlaceRepository.ICON_CAR,
-                PlaceRepository.ICON_GATE, PlaceRepository.ICON_STAR
+                PlaceRepository.ICON_QUAIL,
+                PlaceRepository.ICON_CAMP,
+                PlaceRepository.ICON_WATER,
+                PlaceRepository.ICON_TREE,
+                PlaceRepository.ICON_HUNTING,
+                PlaceRepository.ICON_STAR
         };
 
         Spinner type = new Spinner(activity);
@@ -41,16 +46,17 @@ final class PointEditor {
 
         EditText name = new EditText(activity);
         name.setSingleLine(true);
-        name.setHint("اسم الموقع");
+        name.setHint("اسم اختياري — اتركه فارغًا للحفظ مباشرة");
         form.addView(name, new LinearLayout.LayoutParams(-1, 58));
 
         EditText note = new EditText(activity);
-        note.setHint("ملاحظة اختيارية — طريق الدخول أو علامة قريبة");
+        note.setHint("ملاحظة اختيارية");
         note.setMaxLines(3);
         form.addView(note, new LinearLayout.LayoutParams(-1, 84));
 
         if (existing != null) {
-            name.setText(existing.name);
+            String autoPrefix = PlaceRepository.iconLabel(existing.iconKey) + " — ";
+            if (existing.name != null && !existing.name.startsWith(autoPrefix)) name.setText(existing.name);
             note.setText(existing.note);
             for (int i = 0; i < keys.length; i++) {
                 if (keys[i].equals(existing.iconKey)) {
@@ -63,24 +69,28 @@ final class PointEditor {
         ScrollView scroll = new ScrollView(activity);
         scroll.addView(form);
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle(existing == null ? "حفظ موقع" : "تعديل الموقع")
+                .setTitle(existing == null ? "حفظ موقع بالأيقونة" : "تعديل الموقع")
+                .setMessage(existing == null ? "اختر الأيقونة واضغط حفظ. الاسم غير مطلوب." : null)
                 .setView(scroll)
                 .setNegativeButton("إلغاء", null)
                 .setPositiveButton("حفظ", null)
                 .create();
         dialog.show();
         if (dialog.getWindow() != null) {
-            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
             int selected = Math.max(0, Math.min(type.getSelectedItemPosition(), keys.length - 1));
-            String title = name.getText().toString().trim();
-            if (title.isEmpty()) title = labels[selected];
+            String typedName = name.getText().toString().trim();
+            String iconKey = keys[selected];
             try {
                 PlaceRepository repository = new PlaceRepository(activity);
                 if (existing == null) {
-                    repository.addDetailed(title, latitude, longitude, keys[selected], labels[selected], note.getText().toString());
-                } else if (!repository.update(existing.id, title, keys[selected], labels[selected], note.getText().toString())) {
+                    repository.addDetailed(typedName, latitude, longitude, iconKey,
+                            PlaceRepository.iconLabel(iconKey), note.getText().toString());
+                } else if (!repository.update(existing.id, typedName, iconKey,
+                        PlaceRepository.iconLabel(iconKey), note.getText().toString())) {
                     throw new IllegalStateException("الموقع لم يعد موجودًا");
                 }
                 MapRuntimeBridge.refreshSavedPlaces(activity);
