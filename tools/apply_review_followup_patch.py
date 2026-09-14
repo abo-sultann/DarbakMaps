@@ -7,7 +7,16 @@ def replace_once(text, old, new, label):
     return text.replace(old, new, 1)
 
 main = Path('app/src/main/java/com/abosultan/darbakmaps/MainActivity.java')
+panels = Path('app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java')
 s = main.read_text()
+p = panels.read_text()
+
+if ('REQUEST_MIGRATION = 703' in s
+        and 'showSearchResults(List<OfflineMapSearchEngine.Result> results, boolean complete, boolean failed)' in s
+        and 'استعادة بيانات نسخة قديمة' in p):
+    print('followup patch already applied')
+    raise SystemExit(0)
+
 s = replace_once(s,
     'import com.abosultan.darbakmaps.data.GeoPoint;\n',
     'import com.abosultan.darbakmaps.data.GeoPoint;\nimport com.abosultan.darbakmaps.data.LegacyMigration;\n',
@@ -40,8 +49,6 @@ new = '''        } else if (requestCode == REQUEST_MAP_FILE && resultCode == RES
 s = replace_once(s, old, new, 'migration activity result')
 main.write_text(s)
 
-panels = Path('app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java')
-p = panels.read_text()
 anchor = '''        TextView about = card(activity, "حول دربك", "الإصدار والهوية والتشخيص", () -> {'''
 insert = '''        TextView migration = card(activity, "استعادة بيانات نسخة قديمة", "استخدم ZIP الذي أنشأته أداة الانتقال قبل إزالة النسخة القديمة", () -> {\n            dialog.dismiss();\n            if (activity instanceof MainActivity) ((MainActivity) activity).chooseLegacyMigration();\n            else Toast.makeText(activity, "افتح الاستعادة من الشاشة الرئيسية", Toast.LENGTH_SHORT).show();\n        });\n        LinearLayout.LayoutParams migrationParams = new LinearLayout.LayoutParams(-1, dp(activity, 82));\n        migrationParams.setMargins(dp(activity, 6), dp(activity, 6), dp(activity, 6), 0);\n        root.addView(migration, migrationParams);\n\n'''
 if anchor not in p:
