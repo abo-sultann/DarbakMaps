@@ -69,6 +69,11 @@ public final class MapRuntimeBridge {
         if (activeController != null) activeController.clearStoredTrack();
     }
 
+    public static synchronized void resumeFollow() {
+        if (activeController == null) return;
+        MapUiPreferences.setFollowVehicle(activeController.view().getContext(), true);
+    }
+
     public static synchronized boolean hasActiveMap() {
         return activeController != null;
     }
