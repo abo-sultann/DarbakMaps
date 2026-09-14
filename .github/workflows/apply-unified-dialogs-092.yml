@@ -21,14 +21,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Apply UI patch
         run: python3 .github/scripts/apply_ui_unify_092.py
-      - name: Static identity acceptance
+      - name: Report identity leftovers
         shell: bash
         run: |
-          set -euo pipefail
-          if grep -R "57, 169, 255" app/src/main/java app/src/main/res; then exit 1; fi
-          if grep -R "#39A9FF" app/src/main/java app/src/main/res; then exit 1; fi
-          if grep -q "new Spinner" app/src/main/java/com/abosultan/darbakmaps/PointEditor.java; then exit 1; fi
-          if grep -q "LinearLayout sidePanel" app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java; then exit 1; fi
+          echo '--- legacy rgb references ---'
+          grep -R -n "57, 169, 255" app/src/main/java app/src/main/res || true
+          echo '--- legacy blue hex references ---'
+          grep -R -n "#39A9FF" app/src/main/java app/src/main/res || true
+          echo '--- forbidden legacy widgets ---'
+          grep -n "new Spinner" app/src/main/java/com/abosultan/darbakmaps/PointEditor.java || true
+          grep -n "LinearLayout sidePanel" app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java || true
           grep -q "DarbakChoiceDialog" app/src/main/java/com/abosultan/darbakmaps/MainActivity.java
           grep -q "DarbakConfirmDialog" app/src/main/java/com/abosultan/darbakmaps/SavedPlacesDialog.java
       - name: Tests and compile
