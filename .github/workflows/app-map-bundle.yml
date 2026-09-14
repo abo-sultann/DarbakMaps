@@ -34,8 +34,8 @@ jobs:
       - name: Prepare Gradle
         run: chmod +x ./gradlew
 
-      - name: Build debug APK
-        run: ./gradlew --no-daemon clean assembleDebug
+      - name: Test and build debug APK
+        run: ./gradlew --no-daemon clean testDebugUnitTest assembleDebug
 
       - name: Download verified offline map artifact
         env:
