@@ -27,6 +27,7 @@ import android.widget.Toast;
 import com.abosultan.darbakmaps.activation.ActivationActivity;
 import com.abosultan.darbakmaps.activation.LicenseManager;
 import com.abosultan.darbakmaps.data.GeoPoint;
+import com.abosultan.darbakmaps.data.LegacyMigration;
 import com.abosultan.darbakmaps.data.PlaceRepository;
 import com.abosultan.darbakmaps.data.TrackStorage;
 import com.abosultan.darbakmaps.data.BackgroundTrackStore;
@@ -52,6 +53,7 @@ public final class MainActivity extends Activity implements LocationController.C
     private static final int REQUEST_ACTIVATION = 700;
     private static final int REQUEST_LOCATION = 701;
     private static final int REQUEST_MAP_FILE = 702;
+    private static final int REQUEST_MIGRATION = 703;
 
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final OfflineMapSearchEngine searchEngine = new OfflineMapSearchEngine();
@@ -274,6 +276,50 @@ public final class MainActivity extends Activity implements LocationController.C
         startActivityForResult(intent, REQUEST_MAP_FILE);
     }
 
+    void chooseLegacyMigration() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(intent, REQUEST_MIGRATION);
+    }
+
+    private void importLegacyMigration(Uri uri) {
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("انتقال بيانات دربك");
+        progress.setMessage("جارٍ التحقق والاستعادة…");
+        progress.setIndeterminate(true);
+        progress.setCancelable(false);
+        showImmersive(progress);
+        ioExecutor.execute(() -> {
+            try {
+                LegacyMigration.Result result = LegacyMigration.importBackup(this, uri);
+                runOnUiThread(() -> {
+                    if (isActivityUnavailable()) return;
+                    progress.dismiss();
+                    placeRepository = new PlaceRepository(this);
+                    MapRuntimeBridge.refreshSavedPlaces(this);
+                    loadActiveMap();
+                    showImmersive(new AlertDialog.Builder(this)
+                            .setTitle("تمت استعادة بيانات دربك")
+                            .setMessage("المواقع المحفوظة: " + result.savedPlaces
+                                    + "\nملفات GPX: " + result.gpxTracks
+                                    + "\nملفات الإعدادات: " + result.preferenceFiles
+                                    + "\nملفات المسارات المستعادة: " + result.trackFiles)
+                            .setPositiveButton("حسنًا", null)
+                            .create());
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        progress.dismiss();
+                        toast(error.getMessage() == null ? "تعذر استعادة بيانات النسخة القديمة" : error.getMessage());
+                    }
+                });
+            }
+        });
+    }
+
     private void importMap(Uri uri) {
         ProgressDialog progress = new ProgressDialog(this);
         progress.setTitle("الخرائط");
@@ -395,22 +441,28 @@ public final class MainActivity extends Activity implements LocationController.C
                     longitude,
                     40
             );
+            boolean complete = searchEngine.isComplete();
+            boolean failed = searchEngine.hasFailed();
             runOnUiThread(() -> {
                 searchRunning = false;
-                if (isActivityUnavailable()) {
-                    return;
-                }
+                if (isActivityUnavailable()) return;
                 progress.dismiss();
-                showSearchResults(results);
+                showSearchResults(results, complete, failed);
             });
         });
     }
 
-    private void showSearchResults(List<OfflineMapSearchEngine.Result> results) {
+    private void showSearchResults(List<OfflineMapSearchEngine.Result> results, boolean complete, boolean failed) {
         if (results.isEmpty()) {
-            toast(MapStorage.activeMap(this).isFile()
-                    ? "لا توجد نتائج مطابقة داخل الخريطة"
-                    : "لا توجد نتائج؛ أضف خريطة دربك للبحث في المدن والمعالم");
+            if (!complete) {
+                toast("البحث ما زال يفهرس الخريطة؛ أعد البحث لاستكمال بقية المناطق");
+            } else if (failed) {
+                toast("اكتمل البحث جزئيًا وتعذر قراءة بعض أجزاء الخريطة");
+            } else {
+                toast(MapStorage.activeMap(this).isFile()
+                        ? "لا توجد نتائج مطابقة بعد اكتمال الفهرسة"
+                        : "لا توجد نتائج؛ أضف خريطة دربك للبحث في المدن والمعالم");
+            }
             return;
         }
         String[] labels = new String[results.size()];
@@ -420,7 +472,7 @@ public final class MainActivity extends Activity implements LocationController.C
             labels[index] = result.name + "\n" + result.source + (distance.isEmpty() ? "" : " • " + distance);
         }
         showImmersive(new AlertDialog.Builder(this)
-                .setTitle("نتائج البحث")
+                .setTitle(complete ? (failed ? "نتائج البحث — بعض أجزاء الخريطة تعذرت" : "نتائج البحث") : "نتائج جزئية — أعد البحث للاستكمال")
                 .setItems(labels, (dialog, which) -> {
                     OfflineMapSearchEngine.Result result = results.get(which);
                     if (mapController == null) {
@@ -910,6 +962,8 @@ public final class MainActivity extends Activity implements LocationController.C
                 // Some file providers grant access only during this import operation.
             }
             importMap(uri);
+        } else if (requestCode == REQUEST_MIGRATION && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            importLegacyMigration(data.getData());
         }
     }
 

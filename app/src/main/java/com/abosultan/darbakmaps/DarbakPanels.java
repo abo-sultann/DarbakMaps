@@ -71,6 +71,15 @@ final class DarbakPanels {
         }), weightedCard());
         root.addView(row2);
 
+        TextView migration = card(activity, "استعادة بيانات نسخة قديمة", "استخدم ZIP الذي أنشأته أداة الانتقال قبل إزالة النسخة القديمة", () -> {
+            dialog.dismiss();
+            if (activity instanceof MainActivity) ((MainActivity) activity).chooseLegacyMigration();
+            else Toast.makeText(activity, "افتح الاستعادة من الشاشة الرئيسية", Toast.LENGTH_SHORT).show();
+        });
+        LinearLayout.LayoutParams migrationParams = new LinearLayout.LayoutParams(-1, dp(activity, 82));
+        migrationParams.setMargins(dp(activity, 6), dp(activity, 6), dp(activity, 6), 0);
+        root.addView(migration, migrationParams);
+
         TextView about = card(activity, "حول دربك", "الإصدار والهوية والتشخيص", () -> {
             dialog.dismiss();
             showAbout(activity);
