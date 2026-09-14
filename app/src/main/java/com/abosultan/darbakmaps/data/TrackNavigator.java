@@ -6,6 +6,7 @@ import java.util.List;
 public final class TrackNavigator {
     private final List<GeoPoint> points;
     private int cursor = -1;
+    private boolean stoppedAtGap;
 
     public TrackNavigator(List<GeoPoint> points) {
         this.points = points;
@@ -15,8 +16,12 @@ public final class TrackNavigator {
         return cursor;
     }
 
+    public boolean stoppedAtGap() {
+        return stoppedAtGap;
+    }
+
     public GeoPoint update(double latitude, double longitude) {
-        if (points == null || points.size() < 2) return null;
+        if (stoppedAtGap || points == null || points.size() < 2) return null;
         if (cursor < 0) {
             double best = Double.MAX_VALUE;
             int bestIndex = points.size() - 2;
@@ -30,9 +35,16 @@ public final class TrackNavigator {
             }
             cursor = bestIndex;
         }
+
         while (cursor > 0
                 && distance(latitude, longitude,
                 points.get(cursor).latitude, points.get(cursor).longitude) < 30d) {
+            // Reaching the first point of a recorded segment is a hard stop. Never direct the
+            // driver across the missing GPS/pause gap to the previous segment.
+            if (points.get(cursor).segmentStart) {
+                stoppedAtGap = true;
+                return null;
+            }
             cursor--;
         }
         return points.get(cursor);
