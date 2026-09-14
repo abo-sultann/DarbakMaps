@@ -27,6 +27,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.content.ContextCompat;
+
 import com.abosultan.darbakmaps.activation.ActivationActivity;
 import com.abosultan.darbakmaps.activation.LicenseManager;
 import com.abosultan.darbakmaps.data.GeoPoint;
@@ -112,14 +114,11 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void initializeApp() {
-        if (initialized) {
-            return;
-        }
+        if (initialized) return;
         initialized = true;
         startupPhase = "إنشاء واجهة شاشة السيارة";
         setContentView(CarScreenLayout.create(this));
         immersive();
-
         startupPhase = "ربط عناصر الواجهة";
         mapContainer = findViewById(R.id.map_container);
         noMapPanel = findViewById(R.id.no_map_panel);
@@ -130,7 +129,6 @@ public final class MainActivity extends Activity implements LocationController.C
         actionRecord = findViewById(R.id.action_record);
         modeDesert = findViewById(R.id.mode_desert);
         modeCity = findViewById(R.id.mode_city);
-
         startupPhase = "استعادة اتساق البيانات";
         try { LegacyMigration.recoverInterrupted(this); }
         catch (java.io.IOException recoveryError) { throw new IllegalStateException(recoveryError.getMessage(), recoveryError); }
@@ -143,11 +141,8 @@ public final class MainActivity extends Activity implements LocationController.C
         startupPhase = "تجهيز شاشة الخريطة";
         loadActiveMap();
         startupPhase = "تشغيل GPS";
-        try {
-            ensureLocationPermission();
-        } catch (RuntimeException error) {
-            gpsStatus.setText("GPS متاح بعد منح الصلاحية من إعدادات الجهاز");
-        }
+        try { ensureLocationPermission(); }
+        catch (RuntimeException error) { gpsStatus.setText("GPS متاح بعد منح الصلاحية من إعدادات الجهاز"); }
         BackgroundTrackService.ensureRunning(this);
         syncBackgroundTrackUi();
         startupPhase = "اكتمل";
@@ -159,58 +154,38 @@ public final class MainActivity extends Activity implements LocationController.C
         panel.setGravity(Gravity.CENTER);
         panel.setPadding(48, 32, 48, 32);
         panel.setBackgroundColor(Color.rgb(255, 249, 235));
-
         TextView title = new TextView(this);
         title.setText("دربك — وضع التشغيل الآمن");
         title.setTextColor(Color.rgb(3, 39, 30));
         title.setTextSize(24f);
         title.setGravity(Gravity.CENTER);
-        panel.addView(title, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
+        panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
         TextView message = new TextView(this);
         String detail = error.getClass().getSimpleName();
-        if (error.getMessage() != null && !error.getMessage().trim().isEmpty()) {
-            detail += ": " + error.getMessage();
-        }
+        if (error.getMessage() != null && !error.getMessage().trim().isEmpty()) detail += ": " + error.getMessage();
         message.setText("تم منع انهيار التطبيق.\nالمرحلة: " + startupPhase + "\nالسبب: " + detail);
         message.setTextColor(Color.rgb(92, 110, 103));
         message.setTextSize(17f);
         message.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        messageParams.setMargins(0, 20, 0, 24);
-        panel.addView(message, messageParams);
-
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, -2);
+        mp.setMargins(0, 20, 0, 24);
+        panel.addView(message, mp);
         Button retry = new Button(this);
         retry.setText("إعادة المحاولة");
-        retry.setOnClickListener(view -> initializeSafely());
+        retry.setOnClickListener(v -> initializeSafely());
         panel.addView(retry, new LinearLayout.LayoutParams(280, 64));
         setContentView(panel);
     }
 
     private void saveStartupFailure(Throwable error) {
         File report = new File(getFilesDir(), "last_startup_failure.txt");
-        try (PrintWriter writer = new PrintWriter(new FileOutputStream(report, false))) {
-            error.printStackTrace(writer);
-        } catch (Exception ignored) {
-            // The recovery screen is still useful when the vendor ROM blocks file writes.
-        }
+        try (PrintWriter writer = new PrintWriter(new FileOutputStream(report, false))) { error.printStackTrace(writer); }
+        catch (Exception ignored) {}
     }
 
     private void bindActions() {
-        findViewById(R.id.zoom_in).setOnClickListener(view -> {
-            if (mapController != null) {
-                mapController.zoomIn();
-            }
-        });
-        findViewById(R.id.zoom_out).setOnClickListener(view -> {
-            if (mapController != null) {
-                mapController.zoomOut();
-            }
-        });
+        findViewById(R.id.zoom_in).setOnClickListener(view -> { if (mapController != null) mapController.zoomIn(); });
+        findViewById(R.id.zoom_out).setOnClickListener(view -> { if (mapController != null) mapController.zoomOut(); });
         findViewById(R.id.center_location).setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.import_map).setOnClickListener(view -> chooseMapFile());
         findViewById(R.id.download_map).setOnClickListener(view -> confirmRecommendedMapDownload());
@@ -218,229 +193,63 @@ public final class MainActivity extends Activity implements LocationController.C
         findViewById(R.id.action_save).setOnClickListener(view -> QuickPointDialog.show(this, placeRepository,
                 locationController == null ? null : locationController.getLastLocation()));
         actionRecord.setOnClickListener(view -> toggleTrackPause());
-        actionRecord.setOnLongClickListener(view -> {
-            saveAutomaticTrackSnapshot();
-            return true;
-        });
+        actionRecord.setOnLongClickListener(view -> { saveAutomaticTrackSnapshot(); return true; });
         View navStop = findViewById(R.id.nav_stop);
-        if (navStop != null) navStop.setOnClickListener(view -> {
-            BacktrackGuidance.stop(this);
-            NavigationGuidance.stop(this);
-        });
+        if (navStop != null) navStop.setOnClickListener(view -> { BacktrackGuidance.stop(this); NavigationGuidance.stop(this); });
         findViewById(R.id.action_saved).setOnClickListener(view -> showSavedPlacesPanel());
-        findViewById(R.id.action_saved).setOnLongClickListener(view -> {
-            showSavedHub();
-            return true;
-        });
+        findViewById(R.id.action_saved).setOnLongClickListener(view -> { showSavedHub(); return true; });
         findViewById(R.id.action_more).setOnClickListener(view -> DarbakPanels.showMore(this));
-
         modeDesert.setOnClickListener(view -> selectMapMode(true));
         modeCity.setOnClickListener(view -> selectMapMode(false));
-
         EditText search = findViewById(R.id.search_input);
         search.setOnEditorActionListener((view, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                hideKeyboard(search);
-                performSearch(search.getText().toString());
-                return true;
+                hideKeyboard(search); performSearch(search.getText().toString()); return true;
             }
             return false;
         });
     }
 
     private void loadActiveMap() {
-        try {
-            RecommendedMapDownloader.recoverInterruptedInstall(this);
-        } catch (Exception recoveryError) {
-            toast(recoveryError.getMessage() == null ? "تعذر استعادة الخريطة السابقة" : recoveryError.getMessage());
-        }
+        try { RecommendedMapDownloader.recoverInterruptedInstall(this); }
+        catch (Exception recoveryError) { toast(recoveryError.getMessage() == null ? "تعذر استعادة الخريطة السابقة" : recoveryError.getMessage()); }
         searchEngine.clear();
-        if (mapController != null) {
-            mapController.destroy();
-            mapController = null;
-        }
-        mapContainer.removeAllViews();
         File mapFile = MapStorage.activeMap(this);
-        if (mapFile.isFile() && mapFile.length() > 0) {
-            try {
-                mapController = new OfflineMapController(this, mapFile);
-                mapController.setSavedPlaceTapListener(new OfflineMapController.SavedPlaceTapListener() {
-                    @Override public void onSavedPlaceTap(PlaceRepository.Place place) {
-                        startDirectNavigation(place.name, place.latitude, place.longitude);
-                    }
-                    @Override public void onSavedPlaceClusterTap(List<PlaceRepository.Place> places) {
-                        showSavedPlaceCluster(places);
-                    }
-                });
-                mapContainer.addView(mapController.view(), new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT
-                ));
-                noMapPanel.setVisibility(View.GONE);
-                MapRuntimeBridge.refreshSavedPlaces(this);
-                NavigationGuidance.restore(this);
-                BacktrackGuidance.restore(this);
-                restoreActiveTrack();
-                return;
-            } catch (RuntimeException error) {
-                toast("تعذر فتح حزمة الخريطة");
-            }
+        if (!mapFile.isFile()) {
+            if (mapController != null) { mapController.destroy(); mapController = null; }
+            mapContainer.removeAllViews();
+            noMapPanel.setVisibility(View.VISIBLE);
+            return;
         }
-        mapContainer.addView(new DarbakPreviewMapView(this), new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-        ));
-        noMapPanel.setVisibility(View.VISIBLE);
-    }
-
-    private void chooseMapFile() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_MAP_FILE);
-    }
-
-    void chooseLegacyMigration() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/zip");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_MIGRATION);
-    }
-
-    private void importLegacyMigration(Uri uri) {
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("انتقال بيانات دربك");
-        progress.setMessage("جارٍ التحقق والاستعادة…");
-        progress.setIndeterminate(true);
-        progress.setCancelable(false);
-        showImmersive(progress);
-        ioExecutor.execute(() -> {
-            try {
-                LegacyMigration.Result result = LegacyMigration.importBackup(this, uri);
-                runOnUiThread(() -> {
-                    if (isActivityUnavailable()) return;
-                    progress.dismiss();
-                    placeRepository = new PlaceRepository(this);
-                    MapRuntimeBridge.refreshSavedPlaces(this);
-                    loadActiveMap();
-                    showImmersive(new AlertDialog.Builder(this)
-                            .setTitle("تمت استعادة بيانات دربك")
-                            .setMessage("المواقع المحفوظة: " + result.savedPlaces
-                                    + "\nملفات GPX: " + result.gpxTracks
-                                    + "\nملفات الإعدادات: " + result.preferenceFiles
-                                    + "\nملفات المسارات المستعادة: " + result.trackFiles)
-                            .setPositiveButton("حسنًا", null)
-                            .create());
-                });
-            } catch (Exception error) {
-                runOnUiThread(() -> {
-                    if (!isActivityUnavailable()) {
-                        progress.dismiss();
-                        toast(error.getMessage() == null ? "تعذر استعادة بيانات النسخة القديمة" : error.getMessage());
-                    }
-                });
-            }
-        });
-    }
-
-    private void importMap(Uri uri) {
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("الخرائط");
-        progress.setMessage("جارٍ التجهيز…");
-        progress.setIndeterminate(true);
-        progress.setCancelable(false);
-        showImmersive(progress);
-        ioExecutor.execute(() -> {
-            try {
-                MapStorage.importMap(this, uri);
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    toast("تمت إضافة الخريطة وأصبحت جاهزة أوفلاين");
-                    loadActiveMap();
-                });
-            } catch (Exception error) {
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    toast(error.getMessage() == null ? "تعذر إضافة الخريطة" : error.getMessage());
-                });
-            }
-        });
-    }
-
-    private void confirmRecommendedMapDownload() {
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("خريطة دربك السعودية")
-                .setMessage(RecommendedMapDownloader.DISPLAY_SIZE + " • Wi‑Fi")
-                .setNegativeButton("إلغاء", null)
-                .setPositiveButton("تنزيل", (dialog, which) -> downloadRecommendedMap())
-                .create());
-    }
-
-    private void downloadRecommendedMap() {
-        mapDownloadCancelled = false;
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("خرائط دربك");
-        progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
-        progress.setMax(100);
-        progress.setProgress(0);
-        progress.setMessage("بدء تنزيل خريطة دربك السعودية…");
-        progress.setCancelable(true);
-        progress.setCanceledOnTouchOutside(false);
-        progress.setOnCancelListener(dialog -> mapDownloadCancelled = true);
-        showImmersive(progress);
-
-        ioExecutor.execute(() -> {
-            try {
-                RecommendedMapDownloader.download(this, new RecommendedMapDownloader.Listener() {
-                    @Override
-                    public void onProgress(int percent, String message) {
-                        runOnUiThread(() -> {
-                            if (!isActivityUnavailable()) {
-                                progress.setProgress(percent);
-                                progress.setMessage(message);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public boolean isCancelled() {
-                        return mapDownloadCancelled || Thread.currentThread().isInterrupted();
-                    }
-                });
-                runOnUiThread(() -> {
-                    if (isActivityUnavailable()) {
-                        return;
-                    }
-                    progress.dismiss();
-                    toast("تمت إضافة خريطة دربك السعودية وأصبحت جاهزة أوفلاين");
-                    loadActiveMap();
-                });
-            } catch (RecommendedMapDownloader.CancelledException cancelled) {
-                runOnUiThread(() -> {
-                    if (!isActivityUnavailable()) {
-                        progress.dismiss();
-                        toast(cancelled.getMessage());
-                    }
-                });
-            } catch (Exception error) {
-                runOnUiThread(() -> {
-                    if (!isActivityUnavailable()) {
-                        progress.dismiss();
-                        toast(error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage());
-                    }
-                });
-            }
-        });
+        noMapPanel.setVisibility(View.GONE);
+        try {
+            if (mapController != null) mapController.destroy();
+            mapController = new OfflineMapController(this, mapFile);
+            mapController.setSavedPlaceTapListener(new OfflineMapController.SavedPlaceTapListener() {
+                @Override public void onSavedPlaceTap(PlaceRepository.Place place) {
+                    startDirectNavigation(place.name, place.latitude, place.longitude);
+                }
+                @Override public void onSavedPlaceClusterTap(List<PlaceRepository.Place> places) { showSavedPlaceCluster(places); }
+            });
+            mapContainer.removeAllViews();
+            mapContainer.addView(mapController.view(), new FrameLayout.LayoutParams(-1, -1));
+            mapController.showSavedPlaces(placeRepository.all(), MapUiPreferences.showSavedNames(this));
+            restoreActiveTrack();
+            NavigationGuidance.restore(this);
+        } catch (Throwable error) {
+            if (mapController != null) { mapController.destroy(); mapController = null; }
+            mapContainer.removeAllViews();
+            noMapPanel.setVisibility(View.VISIBLE);
+            toast("تعذر فتح ملف الخريطة");
+        }
     }
 
     private void performSearch(String rawQuery) {
         String query = rawQuery == null ? "" : rawQuery.trim();
         if (query.isEmpty()) { toast("اكتب اسم مدينة أو مكان للبحث"); return; }
         Location current = locationController == null ? null : locationController.getLastLocation();
-        OfflineMapSearchEngine.SearchRequest request = new OfflineMapSearchEngine.SearchRequest(
-                query, OfflineMapSearchEngine.CATEGORY_ALL,
+        OfflineMapSearchEngine.SearchRequest request = new OfflineMapSearchEngine.SearchRequest(query,
+                OfflineMapSearchEngine.CATEGORY_ALL,
                 current == null ? null : current.getLatitude(), current == null ? null : current.getLongitude(),
                 0f, false, 40, 0);
         executeSearch(request, "بحث");
@@ -453,7 +262,9 @@ public final class MainActivity extends Activity implements LocationController.C
         ProgressDialog progress = new ProgressDialog(this);
         progress.setTitle(title);
         progress.setMessage(request.offset > 0 ? "جارٍ تحميل الصفحة التالية…" : "جارٍ البحث…");
-        progress.setIndeterminate(true); progress.setCancelable(false); showImmersive(progress);
+        progress.setIndeterminate(true);
+        progress.setCancelable(false);
+        showImmersive(progress);
         File activeMap = MapStorage.activeMap(this);
         ioExecutor.execute(() -> {
             List<OfflineMapSearchEngine.Result> results = searchEngine.search(request,
@@ -481,9 +292,10 @@ public final class MainActivity extends Activity implements LocationController.C
             return;
         }
         String[] labels = new String[results.size()];
-        for (int i=0;i<results.size();i++) {
-            OfflineMapSearchEngine.Result result=results.get(i); String distance=formatDistance(result.distanceMeters);
-            labels[i]=result.name+"\n"+result.source+(distance.isEmpty()?"":" • "+distance);
+        for (int i = 0; i < results.size(); i++) {
+            OfflineMapSearchEngine.Result result = results.get(i);
+            String distance = formatDistance(result.distanceMeters);
+            labels[i] = result.name + "\n" + result.source + (distance.isEmpty() ? "" : " • " + distance);
         }
         String state = complete ? "نتائج البحث" : "نتائج من الجزء المفهرس — الفهرسة مستمرة";
         if (failed) state += " • تعذر جزء من الخريطة";
@@ -499,14 +311,16 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void showSearchResultActions(OfflineMapSearchEngine.Result result) {
+        String distance = formatDistance(result.distanceMeters);
         String[] actions = {"عرض على الخريطة", "حفظ بالأيقونة", "توجيه مباشر", "البحث حول هذا المعلم"};
+        String message = result.source + (distance.isEmpty() ? "" : " • " + distance)
+                + "\n" + coordinates(result.latitude, result.longitude);
         showImmersive(new AlertDialog.Builder(this)
                 .setTitle(result.name)
-                .setMessage(result.source + (result.distanceMeters == null ? "" : " • " + formatDistance(result.distanceMeters)))
+                .setMessage(message)
                 .setItems(actions, (dialog, which) -> {
                     if (which == 0) {
                         if (mapController != null) mapController.showPoint(result.latitude, result.longitude);
-                        else toast("الخريطة غير جاهزة");
                     } else if (which == 1) {
                         PointEditor.show(this, result.latitude, result.longitude, null);
                     } else if (which == 2) {
@@ -515,47 +329,33 @@ public final class MainActivity extends Activity implements LocationController.C
                         showNearbySearchOptions(result.latitude, result.longitude, result.name);
                     }
                 })
-                .setNegativeButton("رجوع", null)
+                .setNegativeButton("إغلاق", null)
                 .create());
     }
 
-    void showNearbySearchFromCurrentLocation() {
-        Location current = locationController == null ? null : locationController.getLastLocation();
-        if (current == null) {
-            toast("بانتظار GPS للبحث حول موقعي");
-            return;
-        }
-        showNearbySearchOptions(current.getLatitude(), current.getLongitude(), "موقعي الحالي");
-    }
-
     private void showNearbySearchOptions(double latitude, double longitude, String centerLabel) {
-        String[] categories = {
-                OfflineMapSearchEngine.CATEGORY_ALL,
-                OfflineMapSearchEngine.CATEGORY_WADIS,
-                OfflineMapSearchEngine.CATEGORY_MOUNTAINS,
-                OfflineMapSearchEngine.CATEGORY_LANDMARKS,
-                OfflineMapSearchEngine.CATEGORY_VILLAGES,
-                OfflineMapSearchEngine.CATEGORY_WATER,
-                OfflineMapSearchEngine.CATEGORY_SERVICES
-        };
+        String[] categories = { OfflineMapSearchEngine.CATEGORY_ALL, OfflineMapSearchEngine.CATEGORY_WADIS,
+                OfflineMapSearchEngine.CATEGORY_MOUNTAINS, OfflineMapSearchEngine.CATEGORY_LANDMARKS,
+                OfflineMapSearchEngine.CATEGORY_VILLAGES, OfflineMapSearchEngine.CATEGORY_WATER,
+                OfflineMapSearchEngine.CATEGORY_SERVICES };
         showImmersive(new AlertDialog.Builder(this)
-                .setTitle("حول " + centerLabel)
-                .setItems(categories, (categoryDialog, categoryIndex) -> {
-                    int[] radii = {5, 10, 25, 50, 100};
-                    String[] radiusLabels = {"5 كم", "10 كم", "25 كم", "50 كم", "100 كم"};
-                    showImmersive(new AlertDialog.Builder(this)
-                            .setTitle("النطاق • " + categories[categoryIndex])
-                            .setItems(radiusLabels, (radiusDialog, radiusIndex) -> runNearbySearch(
-                                    latitude, longitude, centerLabel, categories[categoryIndex], radii[radiusIndex]))
-                            .setNegativeButton("إلغاء", null)
-                            .create());
-                })
+                .setTitle("بحث حول " + centerLabel)
+                .setItems(categories, (dialog, categoryIndex) -> showNearbyRadiusPicker(latitude, longitude, centerLabel, categories[categoryIndex]))
                 .setNegativeButton("إلغاء", null)
                 .create());
     }
 
-    private void runNearbySearch(double latitude, double longitude, String centerLabel,
-                                 String category, int radiusKm) {
+    private void showNearbyRadiusPicker(double latitude, double longitude, String centerLabel, String category) {
+        int[] radii = {5, 10, 25, 50, 100};
+        String[] labels = {"5 كم", "10 كم", "25 كم", "50 كم", "100 كم"};
+        showImmersive(new AlertDialog.Builder(this)
+                .setTitle(category + " • حول " + centerLabel)
+                .setItems(labels, (dialog, which) -> runNearbySearch(latitude, longitude, centerLabel, category, radii[which]))
+                .setNegativeButton("إلغاء", null)
+                .create());
+    }
+
+    private void runNearbySearch(double latitude, double longitude, String centerLabel, String category, int radiusKm) {
         OfflineMapSearchEngine.SearchRequest request = new OfflineMapSearchEngine.SearchRequest(
                 "", category, latitude, longitude, radiusKm * 1000f, true, 120, 0);
         executeSearch(request, "بحث قريب • " + centerLabel + " • " + radiusKm + " كم");
@@ -566,8 +366,7 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void showSavedPlacesPanel() {
-        Location current = locationController == null ? null : locationController.getLastLocation();
-        SavedPlacesDialog.show(this, placeRepository, current,
+        SavedPlacesDialog.show(this, placeRepository, locationController == null ? null : locationController.getLastLocation(),
                 place -> startDirectNavigation(place.name, place.latitude, place.longitude));
     }
 
@@ -586,100 +385,10 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void startDirectNavigation(String name, double latitude, double longitude) {
-        if (mapController == null) {
-            toast("الخريطة غير جاهزة");
-            return;
-        }
-        BacktrackGuidance.stop(this);
         NavigationGuidance.start(this, name, latitude, longitude);
-        toast("توجيه مباشر في البر — الخط لا يعني وجود طريق صالح للعبور");
-    }
-
-    private void selectMapMode(boolean desert) {
-        modeDesert.setBackgroundColor(desert ? getColor(R.color.darbak_gold) : Color.TRANSPARENT);
-        modeCity.setBackgroundColor(desert ? Color.TRANSPARENT : getColor(R.color.darbak_gold));
-        modeDesert.setTextColor(getColor(desert ? R.color.darbak_green_deep : R.color.darbak_muted));
-        modeCity.setTextColor(getColor(desert ? R.color.darbak_muted : R.color.darbak_green_deep));
-        if (mapController != null) {
-            mapController.setDesertMode(desert);
-        }
-    }
-
-    private void centerOnCurrentLocation() {
-        Location location = locationController == null ? null : locationController.getLastLocation();
-        if (location == null) {
-            toast("بانتظار إشارة GPS");
-            return;
-        }
-        if (mapController != null) {
-            mapController.resumeFollow();
-            mapController.centerOn(location.getLatitude(), location.getLongitude());
-        }
-    }
-
-    private void saveCurrentPlace() {
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("حفظ موقع بدقة")
-                .setMessage("أخفِ الأدوات بلمسة على الخريطة، ثم اضغط مطولاً على النقطة المطلوبة.\n\nسيظهر نموذج الحفظ لاختيار الأيقونة والنوع والاسم المختصر والملاحظة، وتبقى العلامة ظاهرة على الخريطة.")
-                .setNegativeButton("إلغاء", null)
-                .setPositiveButton("فهمت", null)
-                .create());
-    }
-
-    private void toggleTrackPause() {
-        if (!MapUiPreferences.backgroundTrackEnabled(this)) {
-            MapUiPreferences.setBackgroundTrackEnabled(this, true);
-            TrackSessionState.beginIfNeeded(this);
-            BackgroundTrackService.ensureRunning(this);
-            onBackgroundTrackSettingChanged(true);
-        }
-        boolean paused = TrackSessionState.togglePaused(this);
-        syncBackgroundTrackUi();
-        toast(paused
-                ? "توقف التسجيل التلقائي مؤقتًا — السجل محفوظ"
-                : "استؤنف تسجيل آخر 1000 كم تلقائيًا");
-    }
-
-    private void saveAutomaticTrackSnapshot() {
-        toast("جارٍ حفظ نسخة من المسار التلقائي…");
-        ioExecutor.execute(() -> {
-            try {
-                File saved = BackgroundTrackStore.snapshotActive(this);
-                runOnUiThread(() -> {
-                    if (!isActivityUnavailable()) toast("تم حفظ نسخة: " + saved.getName());
-                });
-            } catch (Exception error) {
-                runOnUiThread(() -> {
-                    if (!isActivityUnavailable()) {
-                        toast(error.getMessage() == null ? "تعذر حفظ نسخة المسار" : error.getMessage());
-                    }
-                });
-            }
-        });
-    }
-
-    void onBackgroundTrackSettingChanged(boolean enabled) {
-        if (enabled) {
-            if (mapController != null) {
-                mapController.beginTrack();
-                restoreActiveTrack();
-            }
-        }
-        // retain active track until finalize result: on failure the user must still see
-        // the recoverable path instead of losing the visual context before persistence ends.
-        syncBackgroundTrackUi();
-    }
-
-    private void syncBackgroundTrackUi() {
-        if (actionRecord == null) return;
-        TrackSessionState.updateActionLabel(actionRecord, this);
-        View statsPanel = findViewById(R.id.track_stats_panel);
-        TextView statsText = findViewById(R.id.track_stats_text);
-        boolean showStats = MapUiPreferences.backgroundTrackEnabled(this) && MapUiPreferences.showTrackStats(this);
-        if (statsPanel != null) statsPanel.setVisibility(showStats ? View.VISIBLE : View.GONE);
-        if (statsText != null && showStats) {
-            statsText.setText(TrackSessionState.summary(this) + (TrackSessionState.isPaused(this) ? " • متوقف مؤقتًا" : ""));
-        }
+        BacktrackGuidance.stop(this);
+        if (mapController != null) mapController.setNavigationTarget(latitude, longitude, MapUiPreferences.ROUTING_DIRECT);
+        toast("توجيه مباشر في البر — الخط لا يعني وجود طريق صالح");
     }
 
     private void restoreActiveTrack() {
@@ -700,429 +409,251 @@ public final class MainActivity extends Activity implements LocationController.C
         });
     }
 
-    private void showSavedHub() {
-        if (placeRepository.hasCorruptStore()) {
-            showImmersive(new AlertDialog.Builder(this)
-                    .setTitle("تعذر قراءة المواقع المحفوظة")
-                    .setMessage("احتفظ التطبيق بالبيانات الأصلية ولم يكتب فوقها. لا تضف أو تحذف مواقع قبل الاستعادة أو التصدير.")
-                    .setPositiveButton("حسنًا", null)
-                    .create());
-            return;
-        }
-        String[] items = {
-                "المواقع المحفوظة (" + placeRepository.all().size() + ")",
-                "الأقرب إلى موقعي",
-                "حفظ نسخة من آخر 1000 كم",
-                "المسارات السابقة (" + TrackStorage.list(this).length + ")"
-        };
+    private void selectMapMode(boolean desert) {
+        modeDesert.setBackgroundColor(desert ? getColor(R.color.darbak_gold) : Color.TRANSPARENT);
+        modeCity.setBackgroundColor(desert ? Color.TRANSPARENT : getColor(R.color.darbak_gold));
+        modeDesert.setTextColor(getColor(desert ? R.color.darbak_green_deep : R.color.darbak_muted));
+        modeCity.setTextColor(getColor(desert ? R.color.darbak_muted : R.color.darbak_green_deep));
+        if (mapController != null) mapController.setDesertMode(desert);
+    }
+
+    private void centerOnCurrentLocation() {
+        Location location = locationController == null ? null : locationController.getLastLocation();
+        if (location == null) { toast("بانتظار إشارة GPS"); return; }
+        if (mapController != null) { mapController.resumeFollow(); mapController.centerOn(location.getLatitude(), location.getLongitude()); }
+    }
+
+    private void saveCurrentPlace() {
         showImmersive(new AlertDialog.Builder(this)
-                .setTitle("محفوظاتي")
+                .setTitle("حفظ موقع بدقة")
+                .setMessage("أخفِ الأدوات بلمسة على الخريطة، ثم اضغط مطولاً على النقطة المطلوبة.\n\nسيظهر نموذج الحفظ لاختيار الأيقونة والنوع والاسم المختصر والملاحظة، وتبقى العلامة ظاهرة على الخريطة.")
+                .setNegativeButton("إلغاء", null).setPositiveButton("فهمت", null).create());
+    }
+
+    private void toggleTrackPause() {
+        if (!MapUiPreferences.backgroundTrackEnabled(this)) {
+            MapUiPreferences.setBackgroundTrackEnabled(this, true);
+            TrackSessionState.beginIfNeeded(this);
+            BackgroundTrackService.ensureRunning(this);
+            onBackgroundTrackSettingChanged(true);
+        }
+        boolean paused = TrackSessionState.togglePaused(this);
+        syncBackgroundTrackUi();
+        toast(paused ? "توقف التسجيل التلقائي مؤقتًا — السجل محفوظ" : "استؤنف تسجيل آخر 1000 كم تلقائيًا");
+    }
+
+    private void saveAutomaticTrackSnapshot() {
+        toast("جارٍ حفظ نسخة من المسار التلقائي…");
+        ioExecutor.execute(() -> {
+            try {
+                File saved = BackgroundTrackStore.snapshotActive(this);
+                runOnUiThread(() -> { if (!isActivityUnavailable()) toast("تم حفظ نسخة: " + saved.getName()); });
+            } catch (Exception error) {
+                runOnUiThread(() -> { if (!isActivityUnavailable()) toast(error.getMessage() == null ? "تعذر حفظ نسخة المسار" : error.getMessage()); });
+            }
+        });
+    }
+
+    void onBackgroundTrackSettingChanged(boolean enabled) {
+        if (enabled && mapController != null) restoreActiveTrack();
+        syncBackgroundTrackUi();
+    }
+
+    private void syncBackgroundTrackUi() {
+        if (actionRecord == null) return;
+        TrackSessionState.updateActionLabel(actionRecord, this);
+        View statsPanel = findViewById(R.id.track_stats_panel);
+        TextView statsText = findViewById(R.id.track_stats_text);
+        boolean showStats = MapUiPreferences.backgroundTrackEnabled(this) && MapUiPreferences.showTrackStats(this);
+        if (statsPanel != null) statsPanel.setVisibility(showStats ? View.VISIBLE : View.GONE);
+        if (statsText != null && showStats) statsText.setText(TrackSessionState.summary(this) + (TrackSessionState.isPaused(this) ? " • متوقف مؤقتًا" : ""));
+    }
+
+    private void showSavedHub() {
+        String[] items = { "المواقع المحفوظة (" + placeRepository.all().size() + ")", "الأقرب إلى موقعي",
+                "حفظ نسخة من آخر 1000 كم", "المسارات السابقة (" + TrackStorage.list(this).length + ")" };
+        showImmersive(new AlertDialog.Builder(this).setTitle("المحفوظات والمسارات")
                 .setItems(items, (dialog, which) -> {
-                    if (which == 0) {
-                        showPlaces(placeRepository.all(), "المواقع المحفوظة");
-                    } else if (which == 1) {
-                        showNearbyPlaces();
-                    } else if (which == 2) {
-                        saveAutomaticTrackSnapshot();
-                    } else {
-                        showTracks();
-                    }
-                })
-                .setNegativeButton("إغلاق", null)
-                .create());
+                    if (which == 0) showPlaces(placeRepository.all(), "المواقع المحفوظة");
+                    else if (which == 1) showNearbyPlaces();
+                    else if (which == 2) saveAutomaticTrackSnapshot();
+                    else showTracks();
+                }).setNegativeButton("إغلاق", null).create());
     }
 
     private void showPlaces(List<PlaceRepository.Place> places, String title) {
-        if (places.isEmpty()) {
-            toast("لا توجد مواقع مطابقة");
-            return;
-        }
+        if (places.isEmpty()) { toast("لا توجد مواقع محفوظة بعد"); return; }
         String[] labels = new String[places.size()];
-        for (int i = 0; i < places.size(); i++) {
-            PlaceRepository.Place place = places.get(i);
-            labels[i] = PlaceRepository.iconGlyph(place.iconKey) + "  " + place.name
-                    + "\n" + place.category + " • " + coordinates(place.latitude, place.longitude);
-        }
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setItems(labels, (dialog, which) -> showPlaceActions(places.get(which)))
-                .setNegativeButton("إغلاق", null)
-                .create());
-    }
-
-    private void showPlaceActions(PlaceRepository.Place selected) {
-        int routingMode = MapUiPreferences.routingMode(this);
-        String routingLabel = MapRuntimeBridge.routingLabel(routingMode);
-        String[] actions = {"عرض على الخريطة", "توجيه — " + routingLabel, "تعديل الموقع", "حذف الموقع"};
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(PlaceRepository.iconGlyph(selected.iconKey) + "  " + selected.name)
-                .setMessage(selected.note == null || selected.note.isEmpty()
-                        ? selected.category
-                        : selected.category + "\n" + selected.note)
-                .setItems(actions, (dialog, which) -> {
-                    if (which == 0) {
-                        if (mapController != null) mapController.showPoint(selected.latitude, selected.longitude);
-                        else toast("الخريطة غير جاهزة");
-                    } else if (which == 1) {
-                        if (mapController == null) {
-                            toast("الخريطة غير جاهزة");
-                            return;
-                        }
-                        BacktrackGuidance.stop(this);
-                        NavigationGuidance.start(this, selected.name, selected.latitude, selected.longitude);
-                        if (routingMode == MapUiPreferences.ROUTING_ROADS) {
-                            toast("وضع الطرق تجريبي في هذه النسخة؛ سيبقى خط الهدف ظاهرًا حتى اكتمال محرك الطرق");
-                        } else {
-                            toast("بدأ التوجيه المباشر إلى " + selected.name);
-                        }
-                    } else if (which == 2) {
-                        PointEditor.show(this, selected.latitude, selected.longitude, selected);
-                    } else {
-                        AlertDialog confirm = new AlertDialog.Builder(this)
-                                .setTitle("حذف الموقع؟")
-                                .setMessage(selected.name)
-                                .setNegativeButton("إلغاء", null)
-                                .setPositiveButton("حذف", (d, w) -> {
-                                    try {
-                                        if (!placeRepository.delete(selected.id)) {
-                                            throw new IllegalStateException("الموقع لم يعد موجودًا");
-                                        }
-                                        MapRuntimeBridge.refreshSavedPlaces(this);
-                                        toast("تم حذف الموقع");
-                                    } catch (RuntimeException error) {
-                                        toast(error.getMessage() == null ? "تعذر حذف الموقع" : error.getMessage());
-                                    }
-                                }).create();
-                        showImmersive(confirm);
-                    }
-                })
-                .setNegativeButton("رجوع", null)
-                .create());
-    }
-
-    private void showTracks() {
-        File[] tracks = TrackStorage.list(this);
-        if (tracks.length == 0) {
-            toast("لا توجد مسارات محفوظة");
-            return;
-        }
-        String[] labels = new String[tracks.length];
-        for (int i = 0; i < tracks.length; i++) {
-            labels[i] = tracks[i].getName().replace(".gpx", "").replace('_', ' ');
-        }
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("المسارات السابقة")
-                .setItems(labels, (dialog, which) -> showTrackActions(tracks[which]))
-                .setNegativeButton("إغلاق", null)
-                .create());
-    }
-
-    private void loadStoredTrack(File track) {
-        if (mapController == null) {
-            toast("أضف حزمة خريطة لعرض المسار");
-            return;
-        }
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("المسارات");
-        progress.setMessage("جارٍ الفتح…");
-        progress.setIndeterminate(true);
-        progress.setCancelable(false);
-        showImmersive(progress);
-        ioExecutor.execute(() -> {
-            try {
-                List<GeoPoint> points = TrackStorage.load(track);
-                runOnUiThread(() -> {
-                    if (isActivityUnavailable()) {
-                        return;
-                    }
-                    progress.dismiss();
-                    mapController.showStoredTrack(points);
-                    toast("تم عرض المسار على الخريطة");
-                });
-            } catch (Exception error) {
-                runOnUiThread(() -> {
-                    if (!isActivityUnavailable()) {
-                        progress.dismiss();
-                        toast(error.getMessage() == null ? "تعذر فتح المسار" : error.getMessage());
-                    }
-                });
-            }
-        });
+        for (int i = 0; i < places.size(); i++) labels[i] = places.get(i).name + "\n" + coordinates(places.get(i).latitude, places.get(i).longitude);
+        showImmersive(new AlertDialog.Builder(this).setTitle(title)
+                .setItems(labels, (dialog, which) -> { PlaceRepository.Place place = places.get(which); startDirectNavigation(place.name, place.latitude, place.longitude); })
+                .setNegativeButton("إغلاق", null).create());
     }
 
     private void showNearbyPlaces() {
         Location current = locationController == null ? null : locationController.getLastLocation();
-        if (current == null) {
-            toast("بانتظار إشارة GPS");
-            return;
-        }
-        List<PlaceRepository.Place> places = new java.util.ArrayList<>(placeRepository.all());
-        java.util.Collections.sort(places, (a, b) -> Float.compare(distanceTo(current, a), distanceTo(current, b)));
-        if (places.size() > 30) places = new java.util.ArrayList<>(places.subList(0, 30));
-        showPlaces(places, "أقرب المواقع إليك");
+        if (current == null) { toast("بانتظار GPS لترتيب المواقع حسب القرب"); return; }
+        List<PlaceRepository.Place> places = placeRepository.nearest(current.getLatitude(), current.getLongitude(), 40);
+        showPlaces(places, "الأقرب إلى موقعي");
     }
 
-    private float distanceTo(Location current, PlaceRepository.Place place) {
-        float[] out = new float[1];
-        Location.distanceBetween(current.getLatitude(), current.getLongitude(), place.latitude, place.longitude, out);
-        return out[0];
+    private void showTracks() {
+        File[] tracks = TrackStorage.list(this);
+        if (tracks.length == 0) { toast("لا توجد مسارات محفوظة بعد"); return; }
+        String[] names = new String[tracks.length];
+        for (int i = 0; i < tracks.length; i++) names[i] = tracks[i].getName();
+        showImmersive(new AlertDialog.Builder(this).setTitle("المسارات السابقة")
+                .setItems(names, (dialog, which) -> openTrack(tracks[which])).setNegativeButton("إغلاق", null).create());
     }
 
-    private void showTrackActions(File track) {
-        String[] actions = {"عرض المسار على الخريطة", "الرجوع على نفس الطريق", "إخفاء المسار المعروض"};
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(track.getName().replace(".gpx", "").replace('_', ' '))
-                .setItems(actions, (dialog, which) -> {
-                    if (which == 0) loadStoredTrack(track);
-                    else if (which == 1) startBacktrack(track);
-                    else {
-                        BacktrackGuidance.stop(this);
-                        MapRuntimeBridge.clearStoredTrack();
-                        toast("تم إخفاء المسار");
-                    }
-                })
-                .setNegativeButton("إلغاء", null)
-                .create());
-    }
-
-    private void startBacktrack(File track) {
-        if (mapController == null) {
-            toast("أضف حزمة خريطة لعرض المسار");
-            return;
-        }
+    private void openTrack(File file) {
         ioExecutor.execute(() -> {
             try {
-                List<GeoPoint> points = TrackStorage.load(track);
-                if (points.size() < 2) throw new IllegalStateException("المسار قصير");
-                GeoPoint start = points.get(0);
+                List<GeoPoint> points = TrackStorage.readDisplay(file, 7000);
                 runOnUiThread(() -> {
-                    BacktrackGuidance.start(this, track, points);
-                    toast("اتبع الخط الظاهر للرجوع على نفس الطريق");
+                    if (points.size() < 2) { toast("المسار فارغ أو غير صالح"); return; }
+                    if (mapController == null) { toast("أضف الخريطة أولًا لعرض المسار"); return; }
+                    mapController.showStoredTrack(points);
+                    promptBacktrack(file);
                 });
-            } catch (Exception error) {
-                runOnUiThread(() -> toast("تعذر بدء الرجوع على المسار"));
-            }
+            } catch (Exception error) { runOnUiThread(() -> toast("تعذر قراءة المسار")); }
         });
     }
 
-    private void showMore() {
-        String[] items = {
-                "الإعدادات",
-                "الخرائط",
-                "الإحداثيات",
-                "التحديث",
-                "الترخيص",
-                "حول دربك"
-        };
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("المزيد")
-                .setItems(items, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
-                            showStartupSettings();
-                            break;
-                        case 1:
-                            showMapManager();
-                            break;
-                        case 2:
-                            showCoordinates();
-                            break;
-                        case 3:
-                            checkForUpdates();
-                            break;
-                        case 4:
-                            showDeviceLicense();
-                            break;
-                        default:
-                            showAbout();
-                    }
-                })
-                .setNegativeButton("إغلاق", null)
-                .create());
+    private void promptBacktrack(File file) {
+        showImmersive(new AlertDialog.Builder(this).setTitle("مسار محفوظ")
+                .setMessage("يمكن عرض المسار فقط، أو تشغيل وضع العودة لاتباع نفس الأثر بالعكس دون حساب طريق جديد.")
+                .setNegativeButton("عرض فقط", null)
+                .setPositiveButton("ابدأ العودة", (dialog, which) -> startBacktrack(file)).create());
     }
 
-    private void showStartupSettings() {
-        DarbakPanels.showSettings(this);
+    private void startBacktrack(File file) {
+        ioExecutor.execute(() -> {
+            try {
+                List<GeoPoint> points = TrackStorage.readForNavigation(file);
+                if (points.size() < 2) { runOnUiThread(() -> toast("المسار لا يحتوي نقاطًا كافية")); return; }
+                Location current = locationController == null ? null : locationController.getLastLocation();
+                if (current != null) {
+                    com.abosultan.darbakmaps.data.TrackNavigator probe = new com.abosultan.darbakmaps.data.TrackNavigator(points);
+                    if (probe.update(current.getLatitude(), current.getLongitude()) == null) {
+                        runOnUiThread(() -> toast("لا يوجد مقطع مسار متصل صالح للعودة من موقعك الحالي")); return;
+                    }
+                }
+                BacktrackGuidance.start(this, file);
+                NavigationGuidance.stop(this);
+                runOnUiThread(() -> {
+                    if (mapController != null) mapController.clearNavigationTarget();
+                    toast("اتبع الخط الظاهر للرجوع على نفس الطريق");
+                });
+            } catch (Exception error) { runOnUiThread(() -> toast("تعذر بدء الرجوع على المسار")); }
+        });
     }
+
+    private void showMore() { DarbakPanels.showMore(this); }
+    private void showStartupSettings() { DarbakPanels.showSettings(this); }
+    private void showAbout() { DarbakPanels.showAbout(this); }
 
     private void showMapManager() {
         File file = MapStorage.activeMap(this);
-        String status = file.isFile()
-                ? "الخريطة الحالية: " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب\nجاهزة للعمل بدون إنترنت"
-                : "لا توجد حزمة خريطة مضافة";
-        String[] actions = {
-                "تنزيل خريطة دربك السعودية (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
-                "إضافة خريطة من USB أو الذاكرة"
-        };
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("الخرائط الأوفلاين")
-                .setMessage(status)
-                .setItems(actions, (dialog, which) -> {
-                    if (which == 0) {
-                        confirmRecommendedMapDownload();
-                    } else {
-                        chooseMapFile();
-                    }
-                })
-                .setNegativeButton("إغلاق", null)
-                .create());
+        String status = file.isFile() ? "الخريطة الحالية: " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب\nجاهزة للعمل بدون إنترنت" : "لا توجد حزمة خريطة مضافة";
+        String[] actions = { "تنزيل خريطة دربك السعودية (" + RecommendedMapDownloader.DISPLAY_SIZE + ")", "إضافة خريطة من USB أو الذاكرة" };
+        showImmersive(new AlertDialog.Builder(this).setTitle("الخرائط الأوفلاين").setMessage(status)
+                .setItems(actions, (dialog, which) -> { if (which == 0) confirmRecommendedMapDownload(); else chooseMapFile(); })
+                .setNegativeButton("إغلاق", null).create());
     }
 
     private void showCoordinates() {
         Location location = locationController == null ? null : locationController.getLastLocation();
-        String message = location == null
-                ? "بانتظار إشارة GPS"
-                : coordinates(location.getLatitude(), location.getLongitude());
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("الإحداثيات الحالية")
-                .setMessage(message)
-                .setPositiveButton("حسنًا", null)
-                .create());
+        String message = location == null ? "بانتظار إشارة GPS" : coordinates(location.getLatitude(), location.getLongitude());
+        showImmersive(new AlertDialog.Builder(this).setTitle("الإحداثيات الحالية").setMessage(message).setPositiveButton("حسنًا", null).create());
     }
 
     private void showDeviceLicense() {
         String state = licenseManager.isLicensed() ? "مفعّل" : "غير مفعّل";
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("ترخيص الجهاز")
-                .setMessage("الحالة: " + state + "\nرمز الجهاز: " + licenseManager.deviceCode())
-                .setPositiveButton("حسنًا", null)
-                .create());
-    }
-
-    private void showAbout() {
-        DarbakPanels.showAbout(this);
+        showImmersive(new AlertDialog.Builder(this).setTitle("ترخيص الجهاز")
+                .setMessage("الحالة: " + state + "\nرمز الجهاز: " + licenseManager.deviceCode()).setPositiveButton("حسنًا", null).create());
     }
 
     private void checkForUpdates() {
         toast("جارٍ التحقق من التحديث…");
         UpdateManager.check(new UpdateManager.Callback() {
-            @Override
-            public void onStatus(String message) {
-                runOnUiThread(() -> toast(message));
-            }
-
-            @Override
-            public void onUpdate(UpdateManager.UpdateInfo update) {
+            @Override public void onStatus(String message) { runOnUiThread(() -> toast(message)); }
+            @Override public void onUpdate(UpdateManager.UpdateInfo update) {
                 runOnUiThread(() -> showImmersive(new AlertDialog.Builder(MainActivity.this)
-                        .setTitle("تحديث " + update.versionName)
-                        .setMessage("نسخة جديدة من دربك جاهزة للتثبيت")
-                        .setNegativeButton("لاحقًا", null)
-                        .setPositiveButton("تنزيل وتثبيت", (dialog, which) -> {
-                            toast("بدأ تنزيل التحديث");
-                            UpdateManager.downloadAndInstall(MainActivity.this, update, this);
-                        })
-                        .create()));
+                        .setTitle("تحديث " + update.versionName).setMessage("نسخة جديدة من دربك جاهزة للتثبيت")
+                        .setNegativeButton("لاحقًا", null).setPositiveButton("تنزيل وتثبيت", (dialog, which) -> {
+                            toast("بدأ تنزيل التحديث"); UpdateManager.downloadAndInstall(MainActivity.this, update, this);
+                        }).create()));
             }
         });
     }
 
     private void applyDisplayPreferences() {
-        if (MapUiPreferences.keepScreenOn(this)) {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        } else {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        }
+        if (MapUiPreferences.keepScreenOn(this)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     private void ensureLocationPermission() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
         } else {
-            MapUiPreferences.ensureAutomaticTracking(this);
-            locationController.start();
-            BackgroundTrackService.ensureRunning(this);
+            MapUiPreferences.ensureAutomaticTracking(this); locationController.start(); BackgroundTrackService.ensureRunning(this);
         }
     }
 
-    @Override
-    public void onLocation(Location location) {
+    @Override public void onLocation(Location location) {
         runOnUiThread(() -> {
-            if (location.hasSpeed()) {
-                int speed = Math.max(0, Math.round(location.getSpeed() * 3.6f));
-                speedValue.setText(String.valueOf(speed));
-            } else {
-                speedValue.setText("—");
-            }
+            if (location.hasSpeed()) speedValue.setText(String.valueOf(Math.max(0, Math.round(location.getSpeed() * 3.6f))));
+            else speedValue.setText("—");
             gpsStatus.setText("GPS متصل • أوفلاين");
-            if (mapController != null) {
-                mapController.updateLocation(location.getLatitude(), location.getLongitude(),
-                        location.hasBearing() ? location.getBearing() : Float.NaN);
-            }
-            NavigationGuidance.update(this, location);
-            BacktrackGuidance.update(this, location);
-            SavedPlacesDialog.updateLocation(location);
-            syncBackgroundTrackUi();
+            if (mapController != null) mapController.updateLocation(location.getLatitude(), location.getLongitude(), location.hasBearing() ? location.getBearing() : Float.NaN);
+            NavigationGuidance.update(this, location); BacktrackGuidance.update(this, location); SavedPlacesDialog.updateLocation(location); syncBackgroundTrackUi();
         });
     }
 
-    @Override
-    public void onProviderState(boolean enabled) {
+    @Override public void onProviderState(boolean enabled) {
         runOnUiThread(() -> {
-            gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح");
-            speedValue.setText("—");
+            gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح"); speedValue.setText("—");
             if (!enabled) {
-                SavedPlacesDialog.updateLocation(null);
-                NavigationGuidance.stop(this);
-                BacktrackGuidance.stop(this);
-                View nav = findViewById(R.id.nav_panel);
-                if (nav != null) nav.setVisibility(View.GONE);
+                SavedPlacesDialog.updateLocation(null); NavigationGuidance.stop(this); BacktrackGuidance.stop(this);
+                View nav = findViewById(R.id.nav_panel); if (nav != null) nav.setVisibility(View.GONE);
             }
         });
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_LOCATION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                MapUiPreferences.ensureAutomaticTracking(this);
-                locationController.start();
-                BackgroundTrackService.ensureRunning(this);
-            } else {
-                gpsStatus.setText("صلاحية GPS مطلوبة");
-            }
+                MapUiPreferences.ensureAutomaticTracking(this); locationController.start(); BackgroundTrackService.ensureRunning(this);
+            } else gpsStatus.setText("صلاحية GPS مطلوبة");
         }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_ACTIVATION) {
-            if (licenseManager.isLicensed()) {
-                initializeSafely();
-            } else {
-                finishAffinity();
-            }
+            if (licenseManager.isLicensed()) initializeSafely(); else finishAffinity();
         } else if (requestCode == REQUEST_MAP_FILE && resultCode == RESULT_OK && data != null && data.getData() != null) {
             Uri uri = data.getData();
-            try {
-                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } catch (SecurityException ignored) {
-                // Some file providers grant access only during this import operation.
-            }
+            try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (SecurityException ignored) {}
             importMap(uri);
         } else if (requestCode == REQUEST_MIGRATION && resultCode == RESULT_OK && data != null && data.getData() != null) {
             importLegacyMigration(data.getData());
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        immersive();
-        if (initialized && locationController != null && locationController.hasPermission()) {
-            MapUiPreferences.ensureAutomaticTracking(this);
-            locationController.start();
-        }
+    @Override protected void onResume() {
+        super.onResume(); immersive();
+        if (initialized && locationController != null && locationController.hasPermission()) { MapUiPreferences.ensureAutomaticTracking(this); locationController.start(); }
         if (initialized) {
             if (!trackReceiverRegistered) {
-                registerReceiver(trackCommitReceiver, new IntentFilter(BackgroundTrackService.ACTION_TRACK_COMMITTED));
+                ContextCompat.registerReceiver(this, trackCommitReceiver,
+                        new IntentFilter(BackgroundTrackService.ACTION_TRACK_COMMITTED),
+                        ContextCompat.RECEIVER_NOT_EXPORTED);
                 trackReceiverRegistered = true;
             }
-            BackgroundTrackService.ensureRunning(this);
-            syncBackgroundTrackUi();
-            restoreActiveTrack();
-            showPendingTrackResult();
+            BackgroundTrackService.ensureRunning(this); syncBackgroundTrackUi(); restoreActiveTrack(); showPendingTrackResult();
         }
     }
 
@@ -1131,26 +662,19 @@ public final class MainActivity extends Activity implements LocationController.C
         if (result != null) {
             TrackRuntimeState.clearResult(this);
             if (result.success) {
-                if (mapController != null && !MapUiPreferences.backgroundTrackEnabled(this)) {
-                    mapController.showActiveTrack(java.util.Collections.emptyList());
-                }
+                if (mapController != null && !MapUiPreferences.backgroundTrackEnabled(this)) mapController.showActiveTrack(java.util.Collections.emptyList());
                 toast(result.message);
             } else {
-                showImmersive(new AlertDialog.Builder(this)
-                        .setTitle("تعذر حفظ المسار")
+                showImmersive(new AlertDialog.Builder(this).setTitle("تعذر حفظ المسار")
                         .setMessage(result.message + "\n\nبقي التسجيل محفوظًا للاستعادة.")
-                        .setNegativeButton("لاحقًا", null)
-                        .setPositiveButton("إعادة المحاولة", (dialog, which) -> BackgroundTrackService.retryFinalize(this))
-                        .create());
+                        .setNegativeButton("لاحقًا", null).setPositiveButton("إعادة المحاولة", (dialog, which) -> BackgroundTrackService.retryFinalize(this)).create());
             }
         } else {
-            String writeError = TrackRuntimeState.writeError(this);
-            if (writeError != null && !writeError.isEmpty()) toast(writeError);
+            String writeError = TrackRuntimeState.writeError(this); if (writeError != null && !writeError.isEmpty()) toast(writeError);
         }
     }
 
-    @Override
-    protected void onPause() {
+    @Override protected void onPause() {
         if (trackReceiverRegistered) {
             try { unregisterReceiver(trackCommitReceiver); } catch (RuntimeException ignored) {}
             trackReceiverRegistered = false;
@@ -1159,89 +683,114 @@ public final class MainActivity extends Activity implements LocationController.C
         super.onPause();
     }
 
-    @Override
-    protected void onDestroy() {
-        mapDownloadCancelled = true;
-        if (mapController != null) {
-            mapController.destroy();
-        }
-        ioExecutor.shutdownNow();
-        super.onDestroy();
+    @Override protected void onDestroy() {
+        if (locationController != null) locationController.stop();
+        if (mapController != null) mapController.destroy();
+        searchEngine.clear(); ioExecutor.shutdownNow(); super.onDestroy();
     }
 
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) {
-            immersive();
-        }
+    private boolean isActivityUnavailable() {
+        return isFinishing() || (android.os.Build.VERSION.SDK_INT >= 17 && isDestroyed());
     }
 
-    private void immersive() {
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        View decor = getWindow().getDecorView();
-        decor.setSystemUiVisibility(immersiveFlags());
-        decor.setOnSystemUiVisibilityChangeListener(visibility -> {
-            if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0
-                    || (visibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0) {
-                decor.postDelayed(() -> decor.setSystemUiVisibility(immersiveFlags()), 250L);
+    private void chooseMapFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("*/*"); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent, REQUEST_MAP_FILE);
+    }
+
+    private void importMap(Uri uri) {
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("إضافة خريطة"); progress.setMessage("جارٍ نسخ وفحص ملف الخريطة…"); progress.setCancelable(false); showImmersive(progress);
+        ioExecutor.execute(() -> {
+            try {
+                MapStorage.importMap(this, uri);
+                runOnUiThread(() -> { progress.dismiss(); toast("تمت إضافة الخريطة للعمل بدون إنترنت"); loadActiveMap(); });
+            } catch (Exception error) {
+                runOnUiThread(() -> { progress.dismiss(); toast(error.getMessage() == null ? "تعذر إضافة الخريطة" : error.getMessage()); });
             }
         });
     }
 
-    private int immersiveFlags() {
-        return View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LOW_PROFILE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
+    private void importLegacyMigration(Uri uri) {
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("استعادة بيانات دربك"); progress.setMessage("جارٍ التحقق والاستعادة…"); progress.setCancelable(false); showImmersive(progress);
+        ioExecutor.execute(() -> {
+            try {
+                LegacyMigration.Result result = LegacyMigration.importBackup(this, uri);
+                runOnUiThread(() -> {
+                    progress.dismiss(); placeRepository = new PlaceRepository(this);
+                    if (mapController != null) mapController.showSavedPlaces(placeRepository.all(), MapUiPreferences.showSavedNames(this));
+                    toast("تمت الاستعادة: " + result.savedPlaces + " موقع و" + result.gpxTracks + " مسار");
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> { progress.dismiss(); showImmersive(new AlertDialog.Builder(this).setTitle("تعذر الاستعادة")
+                        .setMessage(error.getMessage() == null ? "لم تتغير بياناتك الحالية" : error.getMessage()).setPositiveButton("حسنًا", null).create()); });
+            }
+        });
     }
 
-    private <T extends Dialog> T showImmersive(T dialog) {
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setFlags(
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        }
-        dialog.show();
-        window = dialog.getWindow();
-        if (window != null) {
-            window.getDecorView().setSystemUiVisibility(immersiveFlags());
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-        }
-        return dialog;
+    private void confirmRecommendedMapDownload() {
+        String message = "سيتم تنزيل خريطة دربك السعودية كاملة للعمل بدون إنترنت.\nالحجم " + RecommendedMapDownloader.DISPLAY_SIZE + ".\nاترك التطبيق مفتوحًا حتى يكتمل التحقق.";
+        showImmersive(new AlertDialog.Builder(this).setTitle("تنزيل خريطة دربك السعودية").setMessage(message)
+                .setNegativeButton("إلغاء", null).setPositiveButton("تنزيل", (dialog, which) -> downloadRecommendedMap()).create());
+    }
+
+    private void downloadRecommendedMap() {
+        mapDownloadCancelled = false;
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("خريطة دربك السعودية"); progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL); progress.setMax(100); progress.setCancelable(true);
+        progress.setOnCancelListener(dialog -> mapDownloadCancelled = true); showImmersive(progress);
+        ioExecutor.execute(() -> {
+            try {
+                RecommendedMapDownloader.download(this, new RecommendedMapDownloader.Listener() {
+                    @Override public void onProgress(int percent, String message) { runOnUiThread(() -> { if (!isActivityUnavailable() && progress.isShowing()) { progress.setProgress(percent); progress.setMessage(message); } }); }
+                    @Override public boolean isCancelled() { return mapDownloadCancelled || Thread.currentThread().isInterrupted(); }
+                });
+                runOnUiThread(() -> { if (!isActivityUnavailable()) { progress.dismiss(); toast("تم تجهيز خريطة دربك السعودية للعمل أوفلاين"); loadActiveMap(); } });
+            } catch (RecommendedMapDownloader.CancelledException cancelled) {
+                runOnUiThread(() -> { if (!isActivityUnavailable()) { progress.dismiss(); toast("تم الإيقاف ويمكن استكمال التنزيل لاحقًا"); } });
+            } catch (Exception error) {
+                runOnUiThread(() -> { if (!isActivityUnavailable()) { progress.dismiss(); toast(error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage()); } });
+            }
+        });
+    }
+
+    private void immersive() {
+        Window window = getWindow();
+        window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
     }
 
     private void hideKeyboard(View view) {
-        InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-        if (inputMethodManager != null) {
-            inputMethodManager.hideSoftInputFromWindow(view.getWindowToken(), 0);
-        }
+        InputMethodManager manager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (manager != null) manager.hideSoftInputFromWindow(view.getWindowToken(), 0);
     }
 
-    private String coordinates(double latitude, double longitude) {
-        return String.format(Locale.US, "%.6f, %.6f", latitude, longitude);
-    }
-
-    private String formatDistance(Float distanceMeters) {
-        if (distanceMeters == null) {
-            return "";
-        }
-        if (distanceMeters < 1000f) {
-            return Math.round(distanceMeters) + " م";
-        }
-        return String.format(Locale.US, "%.1f كم", distanceMeters / 1000f);
-    }
-
-    private boolean isActivityUnavailable() {
-        return isFinishing() || isDestroyed();
+    private void showImmersive(Dialog dialog) {
+        if (dialog == null || isActivityUnavailable()) return;
+        Window window = dialog.getWindow();
+        if (window != null) window.setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        dialog.setOnShowListener(ignored -> {
+            Window shown = dialog.getWindow();
+            if (shown != null) { shown.getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility()); shown.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); }
+        });
+        try { dialog.show(); } catch (WindowManager.BadTokenException ignored) {}
     }
 
     private void toast(String message) {
+        if (isActivityUnavailable()) return;
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    private String formatDistance(Float meters) {
+        if (meters == null) return "";
+        if (meters < 1000f) return Math.max(1, Math.round(meters)) + " م";
+        return String.format(Locale.US, "%.1f كم", meters / 1000f);
+    }
+
+    private String coordinates(double latitude, double longitude) {
+        return String.format(Locale.US, "%.5f, %.5f", latitude, longitude);
     }
 }
