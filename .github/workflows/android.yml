@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, darbak-platform-v1, production-hardening-v1, darbakmaps-0.2.4-ui, darbakmaps-0.2.5-owner-fix, darbakmaps-0.3.0]
+    branches: [main, maintenance-0.7.2, darbak-platform-v1, production-hardening-v1, darbakmaps-0.2.4-ui, darbakmaps-0.2.5-owner-fix, darbakmaps-0.3.0]
     paths-ignore:
       - 'tools/map/**'
       - '.github/workflows/map-build.yml'
@@ -43,16 +43,25 @@ jobs:
           path: ~/.android/debug.keystore
           key: darbakmaps-debug-signing-v1
 
+      - name: Verify stable debug signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ~/.android/debug.keystore || {
+            echo "::error::Stable debug signing key missing; refusing incompatible update build."
+            exit 1
+          }
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+      - name: Test and build debug APK
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DarbakMaps-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 1
+          retention-days: 3
           if-no-files-found: error
