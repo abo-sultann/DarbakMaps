@@ -41,6 +41,7 @@ public final class LegacyMigration {
 
     public static Result importBackup(Context context, Uri uri) throws IOException {
         if (context == null || uri == null) throw new IOException("ملف الانتقال غير صالح");
+        recoverInterrupted(context);
         File stageRoot = new File(context.getCacheDir(), "migration-stage-" + UUID.randomUUID());
         File stagedTracks = new File(stageRoot, "tracks");
         if (!stagedTracks.mkdirs()) throw new IOException("تعذر تجهيز مساحة مؤقتة للاستعادة");
@@ -116,81 +117,174 @@ public final class LegacyMigration {
         return new Staged(prefs, tracks, total);
     }
 
+    private static final String TXN_DIR = ".migration-transaction";
+    private static final String TXN_STATE = "state.txt";
+    private static final String TXN_PREFS = "prefs.manifest";
+    private static final String TXN_TRACKS = "tracks.manifest";
+
+    /** Called at startup/import. An APPLYING transaction is rolled back before repositories open. */
+    public static void recoverInterrupted(Context context) throws IOException {
+        File txn = transactionDir(context);
+        if (!txn.exists()) return;
+        String state = readFirstLine(new File(txn, TXN_STATE));
+        DataStoreLock.lock();
+        try {
+            if ("COMMITTED".equals(state)) {
+                deleteTree(txn);
+                return;
+            }
+            rollbackFromTransaction(context, txn);
+            deleteTree(txn);
+        } finally {
+            DataStoreLock.unlock();
+        }
+    }
+
     private static Result applyAtomically(Context context, Staged staged) throws IOException {
         DataStoreLock.lock();
         File tracksDir = new File(context.getFilesDir(), "tracks");
-        File backupDir = new File(context.getFilesDir(), ".migration-backup-" + UUID.randomUUID());
-        Map<String, Map<String, ?>> originalPrefs = new HashMap<>();
-        List<AppliedTrack> appliedTracks = new ArrayList<>();
+        File txn = transactionDir(context);
         int restoredTracks = 0;
         try {
+            if (txn.exists()) throw new IOException("توجد عملية استعادة سابقة تحتاج تعافيًا");
             if (!tracksDir.exists() && !tracksDir.mkdirs()) throw new IOException("تعذر إنشاء مجلد المسارات");
-            if (!backupDir.mkdirs()) throw new IOException("تعذر تجهيز نسخة تراجع للاستعادة");
+            File prefBackup = new File(txn, "prefs");
+            if (!prefBackup.mkdirs()) throw new IOException("تعذر تجهيز سجل تراجع دائم للاستعادة");
+            writeTextSync(new File(txn, TXN_STATE), "APPLYING\n", false);
 
+            // Persist every original preference file before the first live mutation.
+            StringBuilder prefManifest = new StringBuilder();
             for (StagedPreference pref : staged.preferences) {
-                originalPrefs.put(pref.name,
-                        new HashMap<>(context.getSharedPreferences(pref.name, Context.MODE_PRIVATE).getAll()));
+                prefManifest.append(pref.name).append('\n');
+                File live = sharedPrefsFile(context, pref.name);
+                File backup = new File(prefBackup, pref.name + ".xml");
+                if (live.isFile()) copyFile(live, backup);
+                else writeTextSync(new File(prefBackup, pref.name + ".absent"), "absent\n", false);
             }
+            writeTextSync(new File(txn, TXN_PREFS), prefManifest.toString(), false);
+            writeTextSync(new File(txn, TXN_TRACKS), "", false);
 
             for (StagedTrack stagedTrack : staged.trackFiles) {
+                File target;
                 if ("active-track.csv".equals(stagedTrack.originalName)) {
-                    File converted = uniqueTrackTarget(tracksDir, "مسار-مستعاد-قديم.gpx");
-                    TrackJournal.export(stagedTrack.file, converted, "مسار مستعاد من نسخة قديمة");
-                    appliedTracks.add(new AppliedTrack(converted, null));
-                    restoredTracks++;
-                    continue;
+                    target = uniqueTrackTarget(tracksDir, "مسار-مستعاد-قديم.gpx");
+                    appendTrackManifest(txn, target.getName());
+                    TrackJournal.export(stagedTrack.file, target, "مسار مستعاد من نسخة قديمة");
+                } else {
+                    target = uniqueTrackTarget(tracksDir, stagedTrack.originalName);
+                    appendTrackManifest(txn, target.getName());
+                    File pending = new File(target.getAbsolutePath() + ".migration-pending");
+                    copyFile(stagedTrack.file, pending);
+                    if (!pending.renameTo(target)) {
+                        pending.delete();
+                        throw new IOException("تعذر تثبيت ملف مسار أثناء الاستعادة");
+                    }
                 }
-
-                File target = uniqueTrackTarget(tracksDir, stagedTrack.originalName);
-                File pending = new File(target.getAbsolutePath() + ".migration-pending");
-                copyFile(stagedTrack.file, pending);
-                if (!pending.renameTo(target)) {
-                    pending.delete();
-                    throw new IOException("تعذر تثبيت ملف مسار أثناء الاستعادة");
-                }
-                appliedTracks.add(new AppliedTrack(target, null));
                 restoredTracks++;
             }
 
-            for (StagedPreference pref : staged.preferences) {
-                replacePreferences(context, pref.name, pref.values);
-            }
+            for (StagedPreference pref : staged.preferences) replacePreferences(context, pref.name, pref.values);
 
-            deleteTree(backupDir);
+            // COMMITTED is fsync'ed before evidence is removed. A crash after this point keeps new data.
+            writeTextSync(new File(txn, TXN_STATE), "COMMITTED\n", false);
             int places = new PlaceRepository(context).all().size();
             int gpx = TrackStorage.list(context).length;
+            deleteTree(txn);
             return new Result(staged.preferences.size(), restoredTracks, places, gpx);
         } catch (Exception error) {
-            IOException rollbackError = rollback(context, originalPrefs, appliedTracks);
+            IOException rollbackError = null;
+            try { rollbackFromTransaction(context, txn); } catch (IOException e) { rollbackError = e; }
+            if (rollbackError == null) deleteTree(txn);
             if (rollbackError != null) {
-                IOException combined = new IOException("فشلت الاستعادة وتعذر التراجع الكامل؛ لا تضف بيانات جديدة قبل الفحص", error);
+                IOException combined = new IOException("فشلت الاستعادة وتعذر التراجع الكامل؛ سيحاول دربك التعافي عند التشغيل التالي", error);
                 combined.addSuppressed(rollbackError);
                 throw combined;
             }
             if (error instanceof IOException) throw (IOException) error;
             throw new IOException("فشلت الاستعادة وتمت إعادة البيانات الأصلية", error);
         } finally {
-            deleteTree(backupDir);
             DataStoreLock.unlock();
         }
     }
 
-    private static IOException rollback(Context context, Map<String, Map<String, ?>> prefs,
-                                        List<AppliedTrack> appliedTracks) {
+    private static void rollbackFromTransaction(Context context, File txn) throws IOException {
+        if (txn == null || !txn.exists()) return;
         IOException first = null;
-        for (AppliedTrack track : appliedTracks) {
-            if (track.target.exists() && !track.target.delete() && first == null) {
-                first = new IOException("تعذر حذف ملف استعادة جزئي");
-            }
-        }
-        for (Map.Entry<String, Map<String, ?>> entry : prefs.entrySet()) {
+        File prefBackup = new File(txn, "prefs");
+        for (String name : readLines(new File(txn, TXN_PREFS))) {
+            if (name.isEmpty() || name.contains("/") || name.contains("\\")) continue;
             try {
-                replacePreferences(context, entry.getKey(), entry.getValue());
-            } catch (IOException error) {
-                if (first == null) first = error;
-            }
+                File backup = new File(prefBackup, name + ".xml");
+                File absent = new File(prefBackup, name + ".absent");
+                if (backup.isFile()) {
+                    replacePreferences(context, name, parsePreferences(readFile(backup, MAX_PREF_BYTES)));
+                } else if (absent.isFile()) {
+                    if (!context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()) {
+                        throw new IOException("تعذر إعادة إعدادات سابقة فارغة");
+                    }
+                }
+            } catch (IOException error) { if (first == null) first = error; }
         }
-        return first;
+        File tracksDir = new File(context.getFilesDir(), "tracks");
+        String root;
+        try { root = tracksDir.getCanonicalPath() + File.separator; }
+        catch (IOException error) { if (first == null) first = error; root = ""; }
+        for (String name : readLines(new File(txn, TXN_TRACKS))) {
+            if (name.isEmpty() || name.contains("/") || name.contains("\\")) continue;
+            try {
+                File target = new File(tracksDir, name);
+                if (!root.isEmpty() && target.getCanonicalPath().startsWith(root) && target.exists() && !target.delete() && first == null) {
+                    first = new IOException("تعذر حذف ملف استعادة جزئي");
+                }
+            } catch (IOException error) { if (first == null) first = error; }
+        }
+        if (first != null) throw first;
+    }
+
+    private static File transactionDir(Context context) { return new File(context.getFilesDir(), TXN_DIR); }
+
+    private static File sharedPrefsFile(Context context, String name) {
+        return new File(new File(context.getApplicationInfo().dataDir, "shared_prefs"), name + ".xml");
+    }
+
+    private static void appendTrackManifest(File txn, String name) throws IOException {
+        writeTextSync(new File(txn, TXN_TRACKS), name + "\n", true);
+    }
+
+    private static void writeTextSync(File file, String text, boolean append) throws IOException {
+        File parent = file.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) throw new IOException("تعذر تجهيز سجل الاستعادة");
+        try (FileOutputStream out = new FileOutputStream(file, append)) {
+            out.write(text.getBytes("UTF-8"));
+            out.getFD().sync();
+        }
+    }
+
+    private static String readFirstLine(File file) throws IOException {
+        if (!file.isFile()) return "";
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line = reader.readLine(); return line == null ? "" : line.trim();
+        }
+    }
+
+    private static List<String> readLines(File file) throws IOException {
+        List<String> lines = new ArrayList<>();
+        if (!file.isFile()) return lines;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line; while ((line = reader.readLine()) != null) lines.add(line.trim());
+        }
+        return lines;
+    }
+
+    private static byte[] readFile(File file, long max) throws IOException {
+        try (FileInputStream in = new FileInputStream(file); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[BUFFER]; long total = 0L; int read;
+            while ((read = in.read(buffer)) != -1) {
+                total += read; if (total > max) throw new IOException("نسخة إعدادات التراجع تجاوزت الحد الآمن");
+                out.write(buffer, 0, read);
+            }
+            return out.toByteArray();
+        }
     }
 
     private static void validateStagedTracks(List<StagedTrack> tracks) throws IOException {

@@ -130,6 +130,9 @@ public final class MainActivity extends Activity implements LocationController.C
         modeDesert = findViewById(R.id.mode_desert);
         modeCity = findViewById(R.id.mode_city);
 
+        startupPhase = "استعادة اتساق البيانات";
+        try { LegacyMigration.recoverInterrupted(this); }
+        catch (java.io.IOException recoveryError) { throw new IllegalStateException(recoveryError.getMessage(), recoveryError); }
         startupPhase = "فتح البيانات المحلية";
         placeRepository = new PlaceRepository(this);
         locationController = new LocationController(this, this);
