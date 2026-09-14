@@ -17,7 +17,7 @@ import java.util.Locale;
 
 /** Incremental crash-safe storage for the currently recording track. */
 public final class BackgroundTrackStore {
-    private static final int MAX_POINTS = 50_000;
+    private static final int DISPLAY_MAX_POINTS = 50_000;
     private static final String ACTIVE_FILE = "active-track.csv";
 
     private BackgroundTrackStore() {}
@@ -39,13 +39,25 @@ public final class BackgroundTrackStore {
         }
     }
 
+    /**
+     * Loads a bounded number of points for on-screen restoration so a very long expedition track
+     * does not exhaust the T3 head unit memory. Final GPX saving uses the unbounded loader below.
+     */
     public static synchronized List<GeoPoint> loadActive(Context context) {
+        return load(context, DISPLAY_MAX_POINTS);
+    }
+
+    private static List<GeoPoint> loadAllActive(Context context) {
+        return load(context, Integer.MAX_VALUE);
+    }
+
+    private static List<GeoPoint> load(Context context, int maxPoints) {
         List<GeoPoint> points = new ArrayList<>();
         File file = activeFile(context);
         if (!file.isFile()) return points;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
-            while ((line = reader.readLine()) != null && points.size() < MAX_POINTS) {
+            while ((line = reader.readLine()) != null && points.size() < maxPoints) {
                 String[] parts = line.split(",");
                 if (parts.length != 3) continue;
                 try {
@@ -66,7 +78,7 @@ public final class BackgroundTrackStore {
     }
 
     public static synchronized File finalizeActive(Context context) throws IOException {
-        List<GeoPoint> points = loadActive(context);
+        List<GeoPoint> points = loadAllActive(context);
         File active = activeFile(context);
         if (points.size() < 2) {
             if (active.exists()) active.delete();
@@ -74,8 +86,11 @@ public final class BackgroundTrackStore {
         }
         String name = "مسار تلقائي " + new SimpleDateFormat("dd-MM-yyyy HH-mm", Locale.US).format(new Date());
         File saved = TrackStorage.save(context, name, points);
+        if (saved == null || !saved.isFile() || saved.length() == 0L) {
+            throw new IOException("Track save verification failed");
+        }
         if (active.exists() && !active.delete()) {
-            active.deleteOnExit();
+            throw new IOException("Saved GPX but could not clear active track safely");
         }
         return saved;
     }
