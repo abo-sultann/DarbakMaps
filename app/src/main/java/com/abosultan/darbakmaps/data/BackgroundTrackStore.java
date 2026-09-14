@@ -40,52 +40,72 @@ public final class BackgroundTrackStore {
     public static synchronized void append(Context context, Location location, boolean newSegment,
                                            double connectedMeters) throws IOException {
         if (location == null) return;
-        File source = activeFile(context);
-        TrackJournal.recoverInterruptedTrim(source);
+        DataStoreLock.lock();
+        try {
+            File source = activeFile(context);
+            TrackJournal.recoverInterruptedTrim(source);
 
-        SharedPreferences state = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        double total = reconcileDistance(source, state);
+            SharedPreferences state = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            double total = reconcileDistance(source, state);
 
-        TrackJournal.append(source, location.getLatitude(), location.getLongitude(), location.getTime(), newSegment);
-        if (!newSegment && Double.isFinite(connectedMeters) && connectedMeters > 0d && connectedMeters < 2000d) {
-            total += connectedMeters;
+            TrackJournal.append(source, location.getLatitude(), location.getLongitude(), location.getTime(), newSegment);
+            if (!newSegment && Double.isFinite(connectedMeters) && connectedMeters > 0d && connectedMeters < 2000d) {
+                total += connectedMeters;
+            }
+
+            if (total > TRIM_TRIGGER_METERS) {
+                total = TrackJournal.trimToDistance(source, MAX_RETAINED_METERS);
+            }
+            persistState(state, source, total);
+        } finally {
+            DataStoreLock.unlock();
         }
-
-        if (total > TRIM_TRIGGER_METERS) {
-            total = TrackJournal.trimToDistance(source, MAX_RETAINED_METERS);
-        }
-        persistState(state, source, total);
     }
 
     public static synchronized List<GeoPoint> loadActive(Context context) {
-        File source = activeFile(context);
+        DataStoreLock.lock();
         try {
-            TrackJournal.recoverInterruptedTrim(source);
-            reconcileDistance(source, context.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
-            return TrackJournal.preview(source, 5000);
-        } catch (IOException error) {
-            // Display failure cannot modify the authoritative journal.
-            return Collections.emptyList();
+            File source = activeFile(context);
+            try {
+                TrackJournal.recoverInterruptedTrim(source);
+                reconcileDistance(source, context.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
+                return TrackJournal.preview(source, 5000);
+            } catch (IOException error) {
+                // Display failure cannot modify the authoritative journal.
+                return Collections.emptyList();
+            }
+        } finally {
+            DataStoreLock.unlock();
         }
     }
 
     public static synchronized double retainedDistanceMeters(Context context) throws IOException {
-        File source = activeFile(context);
-        TrackJournal.recoverInterruptedTrim(source);
-        return reconcileDistance(source, context.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
+        DataStoreLock.lock();
+        try {
+            File source = activeFile(context);
+            TrackJournal.recoverInterruptedTrim(source);
+            return reconcileDistance(source, context.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
+        } finally {
+            DataStoreLock.unlock();
+        }
     }
 
     /** Creates a consistent GPX copy without stopping or clearing automatic recording. */
     public static synchronized File snapshotActive(Context context) throws IOException {
-        File source = activeFile(context);
-        TrackJournal.recoverInterruptedTrim(source);
-        if (!source.isFile() || source.length() == 0L) {
-            throw new IOException("لا يوجد مسار تلقائي محفوظ حتى الآن");
+        DataStoreLock.lock();
+        try {
+            File source = activeFile(context);
+            TrackJournal.recoverInterruptedTrim(source);
+            if (!source.isFile() || source.length() == 0L) {
+                throw new IOException("لا يوجد مسار تلقائي محفوظ حتى الآن");
+            }
+            File saved = new File(source.getParentFile(),
+                    "مسار-محفوظ-" + System.currentTimeMillis() + "-" + UUID.randomUUID() + ".gpx");
+            TrackJournal.export(source, saved, "نسخة من مسار دربك التلقائي");
+            return saved;
+        } finally {
+            DataStoreLock.unlock();
         }
-        File saved = new File(source.getParentFile(),
-                "مسار-محفوظ-" + System.currentTimeMillis() + "-" + UUID.randomUUID() + ".gpx");
-        TrackJournal.export(source, saved, "نسخة من مسار دربك التلقائي");
-        return saved;
     }
 
     /**
