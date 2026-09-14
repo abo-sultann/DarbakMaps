@@ -43,17 +43,50 @@ public final class RecommendedMapDownloader {
         File target = MapStorage.activeMap(context);
         File backup = new File(directory, "saudi-active.map.backup");
         File installing = new File(directory, "saudi-active.map.installing");
-        if ((!target.isFile() || target.length() == 0L) && backup.isFile() && backup.length() > 0L) {
-            if (target.exists()) target.delete();
+
+        if (!backup.exists() && !installing.exists()) return;
+
+        boolean targetApproved = isApprovedRecommendedMap(target);
+        if (targetApproved) {
+            // Only now is it safe to discard the previous map: replacement identity, length,
+            // Mapsforge structure and SHA-256 have all been verified.
+            if (installing.exists()) installing.delete();
+            if (backup.exists() && !backup.delete()) {
+                throw new IOException("الخريطة الجديدة سليمة لكن تعذر حذف نسخة الأمان القديمة");
+            }
+            return;
+        }
+
+        // A non-empty target is not proof of success. Preserve it only as a failed candidate and
+        // restore the last known valid backup when available.
+        if (backup.isFile() && isValidMap(backup)) {
+            File failed = new File(directory, "saudi-active.map.failed-install");
+            if (failed.exists()) failed.delete();
+            if (target.exists() && !target.renameTo(failed)) {
+                if (!target.delete()) throw new IOException("تعذر عزل الخريطة غير المكتملة");
+            }
             if (!backup.renameTo(target)) {
                 copyFile(backup, target);
-                if (!target.isFile() || target.length() == 0L) {
-                    throw new IOException("تعذر استعادة الخريطة السابقة");
-                }
+                if (!isValidMap(target)) throw new IOException("تعذر استعادة الخريطة السابقة");
             }
+            if (installing.exists()) installing.delete();
+            if (failed.exists()) failed.delete();
+            return;
         }
-        if (installing.exists()) installing.delete();
-        if (target.isFile() && target.length() > 0L && backup.exists()) backup.delete();
+
+        // If no usable backup exists, an installing file may be a complete approved replacement.
+        if (isApprovedRecommendedMap(installing)) {
+            if (target.exists() && !target.delete()) throw new IOException("تعذر إزالة ملف خريطة غير صالح");
+            if (!installing.renameTo(target)) {
+                copyFile(installing, target);
+                if (!isApprovedRecommendedMap(target)) throw new IOException("تعذر تفعيل الخريطة المستعادة");
+                installing.delete();
+            }
+            if (backup.exists()) backup.delete();
+            return;
+        }
+
+        throw new IOException("تعذر التحقق من استبدال خريطة سابق؛ احتفظ التطبيق بالملفات للفحص");
     }
 
     public static File download(Context context, Listener listener) throws IOException {
@@ -78,20 +111,21 @@ public final class RecommendedMapDownloader {
         }
 
         listener.onProgress(99, "جارٍ التحقق من سلامة خريطة دربك…");
-        if (!EXPECTED_SHA256.equalsIgnoreCase(sha256(pending))) {
+        if (!isApprovedRecommendedMap(pending)) {
             pending.delete();
             throw new IOException("فشل التحقق من خريطة دربك؛ لم تُستبدل الخريطة الحالية");
         }
-        validateMap(pending);
 
         File target = MapStorage.activeMap(context);
         File backup = new File(directory, "saudi-active.map.backup");
         File installing = new File(directory, "saudi-active.map.installing");
-        boolean hadTarget = target.isFile() && target.length() > 0L;
-        if (backup.exists() && !backup.delete()) {
-            throw new IOException("تعذر تجهيز نسخة أمان للخريطة الحالية");
+        boolean hadTarget = target.isFile() && isValidMap(target);
+        if (backup.exists()) {
+            throw new IOException("توجد عملية استبدال سابقة غير مغلقة؛ أعد فتح مدير الخرائط للاستعادة أولًا");
         }
-        if (installing.exists()) installing.delete();
+        if (installing.exists() && !installing.delete()) {
+            throw new IOException("تعذر تجهيز ملف تثبيت الخريطة");
+        }
         if (hadTarget && !target.renameTo(backup)) {
             throw new IOException("تعذر تجهيز الخريطة الحالية للاستبدال");
         }
@@ -102,14 +136,15 @@ public final class RecommendedMapDownloader {
                 activated = true;
             } else {
                 copyFile(pending, installing);
-                validateMap(installing);
+                if (!isApprovedRecommendedMap(installing)) {
+                    throw new IOException("نسخة تثبيت الخريطة غير مكتملة");
+                }
                 if (!installing.renameTo(target)) {
                     throw new IOException("تعذر تفعيل ملف الخريطة الجديد");
                 }
                 activated = true;
             }
-            validateMap(target);
-            if (!EXPECTED_SHA256.equalsIgnoreCase(sha256(target))) {
+            if (!isApprovedRecommendedMap(target)) {
                 throw new IOException("فشل التحقق بعد تفعيل الخريطة الجديدة");
             }
         } catch (IOException | RuntimeException error) {
@@ -118,6 +153,7 @@ public final class RecommendedMapDownloader {
                 if (!backup.renameTo(target)) {
                     try {
                         copyFile(backup, target);
+                        if (!isValidMap(target)) throw new IOException("الخريطة المستعادة غير صالحة");
                     } catch (IOException restoreError) {
                         IOException combined = new IOException("فشل تفعيل الخريطة وتعذر استعادة السابقة", error);
                         combined.addSuppressed(restoreError);
@@ -128,12 +164,15 @@ public final class RecommendedMapDownloader {
             if (error instanceof IOException) throw (IOException) error;
             throw new IOException("تعذر تفعيل الخريطة؛ تمت محاولة استعادة السابقة", error);
         } finally {
-            if (installing.exists()) installing.delete();
+            if (installing.exists() && activated) installing.delete();
         }
 
         if (!activated) throw new IOException("تعذر تفعيل الخريطة");
         pending.delete();
-        if (backup.exists()) backup.delete();
+        // Delete backup only after the active target has passed full validation.
+        if (backup.exists() && !backup.delete()) {
+            throw new IOException("تم تثبيت الخريطة لكن بقيت نسخة الأمان؛ يمكن حذفها بعد التحقق");
+        }
         listener.onProgress(100, "تم تجهيز خريطة دربك السعودية للعمل أوفلاين");
         return target;
     }
@@ -180,6 +219,26 @@ public final class RecommendedMapDownloader {
             }
         } finally {
             connection.disconnect();
+        }
+    }
+
+    private static boolean isApprovedRecommendedMap(File file) {
+        if (file == null || !file.isFile() || file.length() != EXPECTED_BYTES) return false;
+        try {
+            validateMap(file);
+            return EXPECTED_SHA256.equalsIgnoreCase(sha256(file));
+        } catch (IOException error) {
+            return false;
+        }
+    }
+
+    private static boolean isValidMap(File file) {
+        if (file == null || !file.isFile() || file.length() <= 0L) return false;
+        try {
+            validateMap(file);
+            return true;
+        } catch (IOException error) {
+            return false;
         }
     }
 
