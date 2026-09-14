@@ -10,8 +10,8 @@ android {
         applicationId 'com.abosultan.darbakmaps'
         minSdk 24
         targetSdk 35
-        versionCode 17
-        versionName '0.7.2'
+        versionCode 18
+        versionName '0.7.3'
 
         buildConfigField 'String', 'ACTIVATION_URL', '""'
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
@@ -37,6 +37,7 @@ android {
         debug {
             applicationIdSuffix '.debug'
             versionNameSuffix '-debug'
+            signingConfig signingConfigs.production
             buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'true'
             buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://raw.githubusercontent.com/abo-sultann/DarbakMaps/main/update-manifest-debug.json"'
         }
