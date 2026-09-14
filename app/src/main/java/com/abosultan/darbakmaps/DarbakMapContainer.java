@@ -1,6 +1,7 @@
 package com.abosultan.darbakmaps;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
@@ -78,7 +79,17 @@ final class DarbakMapContainer extends FrameLayout {
         if (point == null) return;
         Activity activity = (Activity) getContext();
         MapRuntimeBridge.showPoint(point.latitude, point.longitude);
-        PointEditor.show(activity, point.latitude, point.longitude, null);
+        String[] actions = {"حفظ موقع هنا", "البحث حول هذه النقطة"};
+        new AlertDialog.Builder(activity)
+                .setTitle("النقطة المحددة")
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) PointEditor.show(activity, point.latitude, point.longitude, null);
+                    else if (activity instanceof MainActivity) {
+                        ((MainActivity) activity).showNearbySearchAroundPoint(point.latitude, point.longitude);
+                    }
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
     }
 
     private void toggleTools() {

@@ -15,20 +15,29 @@ import org.mapsforge.map.reader.MapFile;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 
-/** Persistent, low-memory Arabic search over an installed Mapsforge map and saved places. */
+/**
+ * Persistent low-memory Arabic search for Mapsforge.
+ *
+ * The national index is split into fsync'ed tile shards. Progress is derived from validated
+ * shard filenames, so a stale state file cannot claim completion when index bytes are missing.
+ * Queries use bounded Top-K memory and real page offsets; no fixed item cap permanently stops
+ * indexing in the middle of a tile.
+ */
 public final class OfflineMapSearchEngine {
     public static final String CATEGORY_ALL = "الكل";
     public static final String CATEGORY_WADIS = "شعاب وأودية";
@@ -38,110 +47,94 @@ public final class OfflineMapSearchEngine {
     public static final String CATEGORY_WATER = "مياه وآبار";
     public static final String CATEGORY_SERVICES = "خدمات";
 
-    private static final int MAX_INDEX_ITEMS = 250_000;
     private static final int INDEX_ZOOM = 9;
+    private static final int TILES_PER_SHARD = 16;
     private static final long INDEX_BUDGET_NANOS = 1_400_000_000L;
-    private static final int MAX_LOCAL_TILES = 180;
+    private static final int MAX_LOCAL_TILES = 220;
+    private static final int MAX_PAGE_SIZE = 200;
+    private static final int MAX_QUERY_WINDOW = 2000;
 
     private volatile boolean complete;
     private volatile boolean failed;
-    private volatile boolean truncated;
+    private volatile boolean indexTruncated;
+    private volatile boolean queryTruncated;
     private volatile int indexedCount;
+    private volatile int nextOffset;
     private String mapIdentity;
 
     public synchronized boolean isComplete() { return complete; }
     public synchronized boolean hasFailed() { return failed; }
-    public synchronized boolean isTruncated() { return truncated; }
+    /** Index truncation means an external resource constraint stopped indexing, not page limiting. */
+    public synchronized boolean isTruncated() { return indexTruncated; }
+    public synchronized boolean isQueryTruncated() { return queryTruncated; }
+    public synchronized boolean hasMoreResults() { return queryTruncated; }
+    public synchronized int nextOffset() { return nextOffset; }
     public synchronized int indexedCount() { return indexedCount; }
 
     public synchronized void clear() {
-        complete = false;
-        failed = false;
-        truncated = false;
-        indexedCount = 0;
-        mapIdentity = null;
+        complete = false; failed = false; indexTruncated = false; queryTruncated = false;
+        indexedCount = 0; nextOffset = 0; mapIdentity = null;
     }
 
-    /** Compatibility entry point used by the main text search. */
     public synchronized List<Result> search(String query, File activeMap,
                                              List<PlaceRepository.Place> savedPlaces,
                                              Double currentLatitude, Double currentLongitude,
                                              int limit) {
-        SearchRequest request = new SearchRequest(query, CATEGORY_ALL,
-                currentLatitude, currentLongitude, 0f, false, limit);
-        return search(request, activeMap, savedPlaces);
+        return search(new SearchRequest(query, CATEGORY_ALL, currentLatitude, currentLongitude,
+                0f, false, limit, 0), activeMap, savedPlaces);
     }
 
     public synchronized List<Result> search(SearchRequest request, File activeMap,
                                              List<PlaceRepository.Place> savedPlaces) {
+        failed = false;
+        queryTruncated = false;
+        nextOffset = request.offset;
         String wanted = normalize(request.query);
-        if (activeMap != null && activeMap.isFile()) {
-            ensureIndex(activeMap);
-        } else {
-            complete = true;
-            failed = false;
-            truncated = false;
-            indexedCount = 0;
-        }
+        if (activeMap != null && activeMap.isFile()) ensureIndex(activeMap);
+        else { complete = true; indexTruncated = false; indexedCount = 0; }
 
-        List<RankedResult> ranked = new ArrayList<>();
+        int pageSize = Math.max(5, Math.min(MAX_PAGE_SIZE, request.limit));
+        int window = Math.min(MAX_QUERY_WINDOW, Math.max(pageSize + 1, request.offset + pageSize + 1));
+        BoundedMatches matches = new BoundedMatches(window, request);
+
         if (savedPlaces != null) {
             for (PlaceRepository.Place place : savedPlaces) {
                 Result result = new Result("saved:" + place.id,
                         place.name == null || place.name.trim().isEmpty() ? "موقع محفوظ" : place.name,
                         place.latitude, place.longitude, "موقع محفوظ", "محفوظات", true,
-                        distanceMeters(request.centerLatitude, request.centerLongitude,
-                                place.latitude, place.longitude));
-                addIfMatches(ranked, result, wanted, request);
+                        distanceMeters(request.centerLatitude, request.centerLongitude, place.latitude, place.longitude));
+                matches.offer(result, wanted);
             }
         }
 
         if (activeMap != null && activeMap.isFile()) {
-            readMatchesFromPersistentIndex(activeMap, ranked, wanted, request);
-            // Nearby searches must work even before the national index reaches this region.
-            if (request.centerLatitude != null && request.centerLongitude != null
-                    && request.radiusMeters > 0f) {
-                scanNearbyDirect(activeMap, ranked, wanted, request);
+            readMatchesFromShards(activeMap, matches, wanted);
+            if (request.centerLatitude != null && request.centerLongitude != null && request.radiusMeters > 0f) {
+                scanNearbyDirect(activeMap, matches, wanted, request);
             }
         }
 
-        ranked.sort((a, b) -> {
-            if (request.sortNearest) {
-                int byDistance = Float.compare(distanceOrMax(a.result), distanceOrMax(b.result));
-                if (byDistance != 0) return byDistance;
-            }
-            int byScore = Integer.compare(b.score, a.score);
-            if (byScore != 0) return byScore;
-            int byDistance = Float.compare(distanceOrMax(a.result), distanceOrMax(b.result));
-            if (byDistance != 0) return byDistance;
-            return a.result.name.compareTo(b.result.name);
-        });
-
-        int wantedLimit = Math.max(5, Math.min(200, request.limit));
-        LinkedHashMap<String, Result> dedup = new LinkedHashMap<>();
-        for (RankedResult item : ranked) {
-            String key = dedupeKey(item.result);
-            if (!dedup.containsKey(key)) dedup.put(key, item.result);
-            if (dedup.size() >= wantedLimit) break;
+        List<RankedResult> sorted = matches.sortedBest();
+        int from = Math.min(request.offset, sorted.size());
+        int to = Math.min(sorted.size(), from + pageSize);
+        List<Result> out = new ArrayList<>();
+        Set<String> emitted = new HashSet<>();
+        for (int i = from; i < to; i++) {
+            Result r = sorted.get(i).result;
+            if (emitted.add(dedupeKey(r))) out.add(r);
         }
-        return new ArrayList<>(dedup.values());
+        queryTruncated = matches.sawBeyondWindow() || sorted.size() > to;
+        nextOffset = queryTruncated ? request.offset + pageSize : request.offset;
+        return out;
     }
 
     private void ensureIndex(File map) {
         String identity = identity(map);
-        File index = indexFile(map, identity);
-        File state = stateFile(map);
-        IndexState saved = readState(state);
-        if (!identity.equals(saved.identity)) {
-            deleteOldIndexes(map, identity);
-            saved = new IndexState(identity, 0, 0, false, false);
-            writeState(state, saved);
-        }
         mapIdentity = identity;
-        complete = saved.complete;
-        truncated = saved.truncated;
-        indexedCount = saved.count;
-        if (complete || truncated) return;
+        File dir = indexDirectory(map, identity);
+        if (!dir.exists() && !dir.mkdirs()) { failed = true; complete = false; return; }
+        deleteOtherIndexDirectories(map, identity);
+        cleanupPendingShards(dir);
 
         MapFile mapFile = null;
         try {
@@ -153,84 +146,126 @@ public final class OfflineMapSearchEngine {
             long maxX = MercatorProjection.longitudeToTileX(bounds.maxLongitude, zoom);
             long minY = MercatorProjection.latitudeToTileY(bounds.maxLatitude, zoom);
             long maxY = MercatorProjection.latitudeToTileY(bounds.minLatitude, zoom);
-            long totalTiles = (maxX - minX + 1L) * (maxY - minY + 1L);
-            long deadline = System.nanoTime() + INDEX_BUDGET_NANOS;
-            Set<String> seen = readIds(index);
-            int next = saved.nextTile;
-            int count = saved.count;
+            long height = maxY - minY + 1L;
+            long totalTilesLong = (maxX - minX + 1L) * height;
+            if (totalTilesLong > Integer.MAX_VALUE) { failed = true; complete = false; return; }
+            int totalTiles = (int) totalTilesLong;
 
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(index, true))) {
-                while (next < totalTiles && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
-                    long width = maxY - minY + 1L;
-                    long offsetX = next / width;
-                    long offsetY = next % width;
-                    long x = minX + offsetX;
-                    long y = minY + offsetY;
-                    next++;
-                    Tile tile = new Tile((int) x, (int) y, zoom, tileSize);
-                    MapReadResult data;
-                    try {
-                        data = mapFile.readMapData(tile);
-                    } catch (Exception error) {
-                        failed = true;
-                        continue;
-                    }
-                    if (data == null) continue;
-                    for (PointOfInterest poi : data.pois) {
-                        IndexItem item = createItem(poi.tags, poi.position, "معلم");
-                        if (item != null && seen.add(item.id)) {
-                            writeIndexItem(writer, item);
-                            count++;
-                            if (count >= MAX_INDEX_ITEMS) break;
+            Progress progress = inspectShards(dir, totalTiles);
+            indexedCount = progress.itemCount;
+            int nextTile = progress.nextTile;
+            complete = nextTile >= totalTiles;
+            indexTruncated = false;
+            if (complete) return;
+
+            long deadline = System.nanoTime() + INDEX_BUDGET_NANOS;
+            while (nextTile < totalTiles && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
+                int shardStart = nextTile;
+                int shardEnd = Math.min(totalTiles, shardStart + TILES_PER_SHARD);
+                File pending = new File(dir, shardName(shardStart, shardEnd) + ".pending");
+                File target = new File(dir, shardName(shardStart, shardEnd));
+                int shardItems = 0;
+                Set<String> shardSeen = new HashSet<>();
+                try (FileOutputStream bytes = new FileOutputStream(pending);
+                     BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(bytes, "UTF-8"))) {
+                    writer.write("#darbak-search-v2\t" + identity + "\t" + shardStart + "\t" + shardEnd); writer.newLine();
+                    for (int tileIndex = shardStart; tileIndex < shardEnd; tileIndex++) {
+                        long offsetX = tileIndex / height;
+                        long offsetY = tileIndex % height;
+                        Tile tile = new Tile((int) (minX + offsetX), (int) (minY + offsetY), zoom, tileSize);
+                        MapReadResult data;
+                        try { data = mapFile.readMapData(tile); }
+                        catch (Exception error) { failed = true; continue; }
+                        if (data == null) continue;
+                        for (PointOfInterest poi : data.pois) {
+                            IndexItem item = createItem(poi.tags, poi.position, "معلم");
+                            if (item != null && shardSeen.add(item.id)) { writeIndexItem(writer, item); shardItems++; }
+                        }
+                        for (Way way : data.ways) {
+                            LatLong position = representativePosition(way);
+                            IndexItem item = position == null ? null : createItem(way.tags, position, "معلم");
+                            if (item != null && shardSeen.add(item.id)) { writeIndexItem(writer, item); shardItems++; }
                         }
                     }
-                    if (count >= MAX_INDEX_ITEMS) break;
-                    for (Way way : data.ways) {
-                        LatLong position = representativePosition(way);
-                        if (position == null) continue;
-                        IndexItem item = createItem(way.tags, position, "معلم");
-                        if (item != null && seen.add(item.id)) {
-                            writeIndexItem(writer, item);
-                            count++;
-                            if (count >= MAX_INDEX_ITEMS) break;
-                        }
-                    }
-                    writer.flush();
+                    writer.flush(); bytes.getFD().sync();
+                } catch (IOException error) {
+                    pending.delete(); failed = true; break;
                 }
+                if (!pending.renameTo(target)) { pending.delete(); failed = true; break; }
+                indexedCount += shardItems;
+                nextTile = shardEnd;
             }
-            boolean nowTruncated = count >= MAX_INDEX_ITEMS && next < totalTiles;
-            boolean nowComplete = next >= totalTiles;
-            IndexState nextState = new IndexState(identity, next, count, nowComplete, nowTruncated);
-            writeState(state, nextState);
-            complete = nowComplete;
-            truncated = nowTruncated;
-            indexedCount = count;
+            complete = nextTile >= totalTiles;
         } catch (Exception error) {
-            failed = true;
+            failed = true; complete = false;
         } finally {
             if (mapFile != null) mapFile.close();
         }
     }
 
-    private void readMatchesFromPersistentIndex(File map, List<RankedResult> out,
-                                                 String wanted, SearchRequest request) {
-        File index = indexFile(map, identity(map));
-        if (!index.isFile()) return;
-        try (BufferedReader reader = new BufferedReader(new FileReader(index))) {
+    private Progress inspectShards(File dir, int totalTiles) {
+        File[] files = dir.listFiles();
+        if (files == null) return new Progress(0, 0);
+        List<ShardMeta> shards = new ArrayList<>();
+        for (File file : files) {
+            if (!file.getName().startsWith("shard-") || !file.getName().endsWith(".idx")) continue;
+            ShardMeta meta = validateShard(file);
+            if (meta == null) { file.delete(); continue; }
+            shards.add(meta);
+        }
+        Collections.sort(shards, Comparator.comparingInt(a -> a.start));
+        int next = 0, count = 0;
+        for (ShardMeta shard : shards) {
+            if (shard.start != next || shard.end <= shard.start || shard.end > totalTiles) break;
+            next = shard.end;
+            count += shard.items;
+        }
+        // Delete shards after the first gap: they cannot be trusted as contiguous progress.
+        for (ShardMeta shard : shards) if (shard.start >= next && shard.start != 0 && shard.start != next) shard.file.delete();
+        return new Progress(next, count);
+    }
+
+    private ShardMeta validateShard(File file) {
+        int items = 0;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String header = reader.readLine();
+            if (header == null) return null;
+            String[] h = header.split("\\t");
+            if (h.length != 4 || !"#darbak-search-v2".equals(h[0]) || !identityFromHeaderMatches(h[1])) return null;
+            int start = Integer.parseInt(h[2]), end = Integer.parseInt(h[3]);
             String line;
             while ((line = reader.readLine()) != null) {
-                IndexItem item = parseIndexItem(line);
-                if (item == null) continue;
-                Result result = item.toResult(distanceMeters(request.centerLatitude, request.centerLongitude,
-                        item.latitude, item.longitude));
-                addIfMatches(out, result, wanted, request);
+                if (parseIndexItem(line) == null) return null;
+                items++;
             }
-        } catch (IOException error) {
-            failed = true;
+            return new ShardMeta(file, start, end, items);
+        } catch (Exception error) { return null; }
+    }
+
+    private boolean identityFromHeaderMatches(String value) { return mapIdentity != null && mapIdentity.equals(value); }
+
+    private void readMatchesFromShards(File map, BoundedMatches matches, String wanted) {
+        File dir = indexDirectory(map, identity(map));
+        File[] files = dir.listFiles((d, name) -> name.startsWith("shard-") && name.endsWith(".idx"));
+        if (files == null) return;
+        List<File> ordered = new ArrayList<>(); Collections.addAll(ordered, files);
+        Collections.sort(ordered, Comparator.comparing(File::getName));
+        for (File file : ordered) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                reader.readLine(); // header
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    IndexItem item = parseIndexItem(line);
+                    if (item == null) { failed = true; continue; }
+                    Result r = item.toResult(distanceMeters(matches.request.centerLatitude, matches.request.centerLongitude,
+                            item.latitude, item.longitude));
+                    matches.offer(r, wanted);
+                }
+            } catch (IOException error) { failed = true; }
         }
     }
 
-    private void scanNearbyDirect(File map, List<RankedResult> out, String wanted, SearchRequest request) {
+    private void scanNearbyDirect(File map, BoundedMatches matches, String wanted, SearchRequest request) {
         MapFile mapFile = null;
         try {
             mapFile = new MapFile(map, "ar");
@@ -246,91 +281,92 @@ public final class OfflineMapSearchEngine {
                     Tile tile = new Tile((int) (centerX + dx), (int) (centerY + dy), zoom, tileSize);
                     scanned++;
                     MapReadResult data;
-                    try {
-                        data = mapFile.readMapData(tile);
-                    } catch (Exception error) {
-                        continue;
-                    }
+                    try { data = mapFile.readMapData(tile); } catch (Exception error) { failed = true; continue; }
                     if (data == null) continue;
                     for (PointOfInterest poi : data.pois) {
                         IndexItem item = createItem(poi.tags, poi.position, "معلم");
-                        if (item != null) addIfMatches(out, item.toResult(distanceMeters(
-                                request.centerLatitude, request.centerLongitude, item.latitude, item.longitude)), wanted, request);
+                        if (item != null) matches.offer(item.toResult(distanceMeters(request.centerLatitude,
+                                request.centerLongitude, item.latitude, item.longitude)), wanted);
                     }
                     for (Way way : data.ways) {
-                        LatLong position = representativePosition(way);
-                        IndexItem item = position == null ? null : createItem(way.tags, position, "معلم");
-                        if (item != null) addIfMatches(out, item.toResult(distanceMeters(
-                                request.centerLatitude, request.centerLongitude, item.latitude, item.longitude)), wanted, request);
+                        NearestWayPoint nearest = nearestPointOnWay(request.centerLatitude, request.centerLongitude, way);
+                        LatLong representative = representativePosition(way);
+                        if (representative == null) continue;
+                        IndexItem item = createItem(way.tags, representative, "معلم");
+                        if (item == null) continue;
+                        if (nearest != null) {
+                            Result precise = new Result(item.id, item.name, nearest.latitude, nearest.longitude,
+                                    item.source, item.category, false, nearest.distanceMeters, item.searchText);
+                            matches.offer(precise, wanted);
+                        } else {
+                            matches.offer(item.toResult(distanceMeters(request.centerLatitude, request.centerLongitude,
+                                    item.latitude, item.longitude)), wanted);
+                        }
                     }
                 }
             }
-        } catch (Exception error) {
-            failed = true;
-        } finally {
-            if (mapFile != null) mapFile.close();
+        } catch (Exception error) { failed = true; }
+        finally { if (mapFile != null) mapFile.close(); }
+    }
+
+    private NearestWayPoint nearestPointOnWay(double lat, double lon, Way way) {
+        if (way == null || way.latLongs == null) return null;
+        NearestWayPoint best = null;
+        for (LatLong[] ring : way.latLongs) {
+            if (ring == null || ring.length == 0) continue;
+            for (int i = 0; i < ring.length; i++) {
+                LatLong a = ring[i];
+                if (a == null) continue;
+                double pointDistance = haversine(lat, lon, a.latitude, a.longitude);
+                if (best == null || pointDistance < best.distanceMeters) best = new NearestWayPoint(a.latitude, a.longitude, (float) pointDistance);
+                if (i + 1 < ring.length && ring[i + 1] != null) {
+                    NearestWayPoint segment = nearestOnSegment(lat, lon, a, ring[i + 1]);
+                    if (segment != null && (best == null || segment.distanceMeters < best.distanceMeters)) best = segment;
+                }
+            }
         }
+        return best;
     }
 
-    private void addIfMatches(List<RankedResult> out, Result result, String wanted, SearchRequest request) {
-        if (!CATEGORY_ALL.equals(request.category) && !request.category.equals(result.category)) return;
-        if (request.radiusMeters > 0f && result.distanceMeters != null && result.distanceMeters > request.radiusMeters) return;
-        if (request.radiusMeters > 0f && result.distanceMeters == null) return;
-        String haystack = normalize(result.name + " " + result.source + " " + result.searchText);
-        int score = wanted.isEmpty() ? 10 : matchScore(haystack, wanted);
-        if (score > 0) out.add(new RankedResult(result, score));
-    }
-
-    private int matchScore(String value, String query) {
-        if (query.isEmpty()) return 10;
-        if (value.equals(query)) return 100;
-        if (value.startsWith(query)) return 88;
-        if (value.contains(query)) return 70;
-        String[] words = query.split(" ");
-        for (String word : words) if (!word.isEmpty() && !value.contains(word)) return 0;
-        return 48;
+    static NearestWayPoint nearestOnSegment(double lat, double lon, LatLong a, LatLong b) {
+        double scale = Math.cos(Math.toRadians(lat));
+        double ax = (a.longitude - lon) * 111320d * scale, ay = (a.latitude - lat) * 111320d;
+        double bx = (b.longitude - lon) * 111320d * scale, by = (b.latitude - lat) * 111320d;
+        double dx = bx - ax, dy = by - ay;
+        double len2 = dx * dx + dy * dy;
+        double t = len2 <= 0d ? 0d : Math.max(0d, Math.min(1d, -(ax * dx + ay * dy) / len2));
+        double x = ax + t * dx, y = ay + t * dy;
+        double outLat = lat + y / 111320d;
+        double outLon = lon + x / (111320d * Math.max(0.01d, scale));
+        return new NearestWayPoint(outLat, outLon, (float) Math.hypot(x, y));
     }
 
     private IndexItem createItem(List<Tag> tags, LatLong position, String fallbackSource) {
         if (position == null) return null;
-        Classification classification = classify(tags, fallbackSource);
+        Classification c = classify(tags, fallbackSource);
         String primary = firstNotBlank(tagValue(tags, "name:ar"), tagValue(tags, "name"), tagValue(tags, "name:en"));
-        String aliases = joinNonBlank(tagValue(tags, "alt_name"), tagValue(tags, "old_name"),
-                tagValue(tags, "loc_name"), tagValue(tags, "short_name"), tagValue(tags, "official_name"),
-                tagValue(tags, "name:ar"), tagValue(tags, "name:en"));
-        if (primary == null && !classification.indexUnnamed) return null;
+        String aliases = joinNonBlank(tagValue(tags, "alt_name"), tagValue(tags, "old_name"), tagValue(tags, "loc_name"),
+                tagValue(tags, "short_name"), tagValue(tags, "official_name"), tagValue(tags, "name:ar"), tagValue(tags, "name:en"));
+        if (primary == null && !c.indexUnnamed) return null;
         String shown = primary == null ? "بدون اسم" : primary.trim();
-        String searchable = shown + " " + aliases + " " + classification.source + " " + classification.category;
-        String id = normalize(shown + "|" + classification.source) + ':'
-                + Math.round(position.latitude * 10000d) + ':' + Math.round(position.longitude * 10000d);
-        return new IndexItem(id, shown, classification.source, classification.category,
-                position.latitude, position.longitude, searchable);
+        String searchable = shown + " " + aliases + " " + c.source + " " + c.category;
+        String id = normalize(shown + "|" + c.source) + ':' + Math.round(position.latitude * 10000d) + ':' + Math.round(position.longitude * 10000d);
+        return new IndexItem(id, shown, c.source, c.category, position.latitude, position.longitude, searchable);
     }
 
     private Classification classify(List<Tag> tags, String fallback) {
-        String amenity = lower(tagValue(tags, "amenity"));
-        String healthcare = lower(tagValue(tags, "healthcare"));
-        String shop = lower(tagValue(tags, "shop"));
-        String tourism = lower(tagValue(tags, "tourism"));
-        String office = lower(tagValue(tags, "office"));
-        String place = lower(tagValue(tags, "place"));
-        String highway = lower(tagValue(tags, "highway"));
-        String waterway = lower(tagValue(tags, "waterway"));
-        String natural = lower(tagValue(tags, "natural"));
-        String leisure = lower(tagValue(tags, "leisure"));
-        String emergency = lower(tagValue(tags, "emergency"));
-        String publicTransport = lower(tagValue(tags, "public_transport"));
+        String amenity = lower(tagValue(tags, "amenity")), healthcare = lower(tagValue(tags, "healthcare"));
+        String shop = lower(tagValue(tags, "shop")), tourism = lower(tagValue(tags, "tourism"));
+        String office = lower(tagValue(tags, "office")), place = lower(tagValue(tags, "place"));
+        String highway = lower(tagValue(tags, "highway")), waterway = lower(tagValue(tags, "waterway"));
+        String natural = lower(tagValue(tags, "natural")), leisure = lower(tagValue(tags, "leisure"));
+        String emergency = lower(tagValue(tags, "emergency")), publicTransport = lower(tagValue(tags, "public_transport"));
         String manMade = lower(tagValue(tags, "man_made"));
-
-        if (waterway != null || oneOf(natural, "valley", "gully"))
-            return new Classification("وادي/شعيب", CATEGORY_WADIS, true);
-        if (oneOf(natural, "peak", "ridge", "cliff", "saddle"))
-            return new Classification("جبل/قمة", CATEGORY_MOUNTAINS, true);
-        if (oneOf(manMade, "water_well", "water_tower") || oneOf(natural, "spring", "water") || "drinking_water".equals(amenity))
-            return new Classification("ماء/بئر", CATEGORY_WATER, true);
+        if (waterway != null || oneOf(natural, "valley", "gully")) return new Classification("وادي/شعيب", CATEGORY_WADIS, true);
+        if (oneOf(natural, "peak", "ridge", "cliff", "saddle")) return new Classification("جبل/قمة", CATEGORY_MOUNTAINS, true);
+        if (oneOf(manMade, "water_well", "water_tower") || oneOf(natural, "spring", "water") || "drinking_water".equals(amenity)) return new Classification("ماء/بئر", CATEGORY_WATER, true);
         if (place != null) {
-            if (oneOf(place, "village", "hamlet", "town", "city", "isolated_dwelling"))
-                return new Classification("قرية/تجمع", CATEGORY_VILLAGES, false);
+            if (oneOf(place, "village", "hamlet", "town", "city", "isolated_dwelling")) return new Classification("قرية/تجمع", CATEGORY_VILLAGES, false);
             return new Classification("مكان", CATEGORY_LANDMARKS, false);
         }
         if ("fuel".equals(amenity)) return service("محطة وقود");
@@ -354,303 +390,121 @@ public final class OfflineMapSearchEngine {
         return new Classification(fallback, CATEGORY_LANDMARKS, false);
     }
 
-    private Classification service(String source) {
-        return new Classification(source, CATEGORY_SERVICES, false);
-    }
+    private Classification service(String source) { return new Classification(source, CATEGORY_SERVICES, false); }
 
     private LatLong representativePosition(Way way) {
         if (way == null) return null;
         if (way.labelPosition != null) return way.labelPosition;
         if (way.latLongs != null && way.latLongs.length > 0 && way.latLongs[0] != null && way.latLongs[0].length > 0) {
-            LatLong[] ring = way.latLongs[0];
-            double lat = 0d, lon = 0d;
-            int count = Math.min(ring.length, 64);
-            for (int i = 0; i < count; i++) {
-                lat += ring[i].latitude;
-                lon += ring[i].longitude;
-            }
+            LatLong[] ring = way.latLongs[0]; double lat = 0d, lon = 0d; int count = Math.min(ring.length, 64);
+            for (int i = 0; i < count; i++) { lat += ring[i].latitude; lon += ring[i].longitude; }
             return new LatLong(lat / count, lon / count);
         }
         return null;
     }
 
     private byte indexZoom(MapFile mapFile) {
-        int min = mapFile.getMapFileInfo().zoomLevelMin;
-        int max = mapFile.getMapFileInfo().zoomLevelMax;
+        int min = mapFile.getMapFileInfo().zoomLevelMin, max = mapFile.getMapFileInfo().zoomLevelMax;
         return (byte) Math.max(min, Math.min(max, INDEX_ZOOM));
     }
 
-    private Set<String> readIds(File index) throws IOException {
-        Set<String> ids = new HashSet<>();
-        if (!index.isFile()) return ids;
-        try (BufferedReader reader = new BufferedReader(new FileReader(index))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                int tab = line.indexOf('\t');
-                if (tab > 0) ids.add(line.substring(0, tab));
-            }
-        }
-        return ids;
-    }
-
     private void writeIndexItem(BufferedWriter writer, IndexItem item) throws IOException {
-        writer.write(clean(item.id)); writer.write('\t');
-        writer.write(clean(item.name)); writer.write('\t');
-        writer.write(clean(item.source)); writer.write('\t');
-        writer.write(clean(item.category)); writer.write('\t');
-        writer.write(Double.toString(item.latitude)); writer.write('\t');
-        writer.write(Double.toString(item.longitude)); writer.write('\t');
+        writer.write(clean(item.id)); writer.write('\t'); writer.write(clean(item.name)); writer.write('\t');
+        writer.write(clean(item.source)); writer.write('\t'); writer.write(clean(item.category)); writer.write('\t');
+        writer.write(Double.toString(item.latitude)); writer.write('\t'); writer.write(Double.toString(item.longitude)); writer.write('\t');
         writer.write(clean(item.searchText)); writer.newLine();
     }
 
     private IndexItem parseIndexItem(String line) {
         try {
-            String[] v = line.split("\\t", 7);
-            if (v.length != 7) return null;
-            return new IndexItem(v[0], v[1], v[2], v[3], Double.parseDouble(v[4]),
-                    Double.parseDouble(v[5]), v[6]);
-        } catch (RuntimeException error) {
-            return null;
-        }
+            String[] v = line.split("\\t", 7); if (v.length != 7) return null;
+            return new IndexItem(v[0], v[1], v[2], v[3], Double.parseDouble(v[4]), Double.parseDouble(v[5]), v[6]);
+        } catch (RuntimeException error) { return null; }
     }
 
-    private String identity(File map) {
-        return map.length() + "-" + map.lastModified();
-    }
+    private String identity(File map) { return map.length() + "-" + map.lastModified(); }
+    private File indexDirectory(File map, String id) { return new File(map.getParentFile(), ".darbak-search-v2-" + id); }
+    private String shardName(int start, int end) { return String.format(Locale.US, "shard-%08d-%08d.idx", start, end); }
 
-    private File indexFile(File map, String identity) {
-        return new File(map.getParentFile(), ".darbak-search-" + identity + ".idx");
+    private void cleanupPendingShards(File dir) {
+        File[] files = dir.listFiles((d,n) -> n.endsWith(".pending")); if (files != null) for (File f : files) f.delete();
     }
+    private void deleteOtherIndexDirectories(File map, String keep) {
+        File[] files = map.getParentFile().listFiles(); if (files == null) return;
+        String keepName = ".darbak-search-v2-" + keep;
+        for (File f : files) if (f.isDirectory() && f.getName().startsWith(".darbak-search-v2-") && !f.getName().equals(keepName)) deleteTree(f);
+    }
+    private void deleteTree(File file) { if (file == null || !file.exists()) return; File[] kids=file.listFiles(); if(kids!=null) for(File k:kids) deleteTree(k); file.delete(); }
 
-    private File stateFile(File map) {
-        return new File(map.getParentFile(), ".darbak-search.state");
-    }
-
-    private void deleteOldIndexes(File map, String keepIdentity) {
-        File[] files = map.getParentFile().listFiles();
-        if (files == null) return;
-        String keep = ".darbak-search-" + keepIdentity + ".idx";
-        for (File file : files) {
-            if (file.getName().startsWith(".darbak-search-") && file.getName().endsWith(".idx")
-                    && !keep.equals(file.getName())) file.delete();
-        }
-    }
-
-    private IndexState readState(File state) {
-        if (!state.isFile()) return IndexState.empty();
-        try (BufferedReader reader = new BufferedReader(new FileReader(state))) {
-            String identity = reader.readLine();
-            int next = Integer.parseInt(reader.readLine());
-            int count = Integer.parseInt(reader.readLine());
-            boolean done = Boolean.parseBoolean(reader.readLine());
-            boolean cut = Boolean.parseBoolean(reader.readLine());
-            return new IndexState(identity == null ? "" : identity, next, count, done, cut);
-        } catch (Exception error) {
-            return IndexState.empty();
-        }
-    }
-
-    private void writeState(File state, IndexState value) {
-        File pending = new File(state.getAbsolutePath() + ".pending");
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(pending))) {
-            writer.write(value.identity); writer.newLine();
-            writer.write(Integer.toString(value.nextTile)); writer.newLine();
-            writer.write(Integer.toString(value.count)); writer.newLine();
-            writer.write(Boolean.toString(value.complete)); writer.newLine();
-            writer.write(Boolean.toString(value.truncated)); writer.newLine();
-        } catch (IOException error) {
-            failed = true;
-            pending.delete();
-            return;
-        }
-        if (state.exists() && !state.delete()) {
-            pending.delete();
-            failed = true;
-            return;
-        }
-        if (!pending.renameTo(state)) {
-            pending.delete();
-            failed = true;
-        }
-    }
-
-    private String tagValue(List<Tag> tags, String key) {
-        if (tags == null) return null;
-        for (Tag tag : tags) if (key.equalsIgnoreCase(tag.key)) return tag.value;
-        return null;
-    }
-
-    private String firstNotBlank(String... values) {
-        for (String value : values) if (value != null && !value.trim().isEmpty()) return value;
-        return null;
-    }
-
-    private String joinNonBlank(String... values) {
-        StringBuilder out = new StringBuilder();
-        for (String value : values) {
-            if (value == null || value.trim().isEmpty()) continue;
-            if (out.length() > 0) out.append(' ');
-            out.append(value.trim());
-        }
-        return out.toString();
-    }
-
-    private boolean oneOf(String value, String... choices) {
-        if (value == null) return false;
-        for (String choice : choices) if (choice.equals(value)) return true;
-        return false;
-    }
-
-    private String lower(String value) {
-        return value == null || value.isEmpty() ? null : value.toLowerCase(Locale.ROOT);
-    }
-
-    private Float distanceMeters(Double fromLat, Double fromLon, double toLat, double toLon) {
-        if (fromLat == null || fromLon == null) return null;
-        double earthRadius = 6_371_000d;
-        double lat1 = Math.toRadians(fromLat);
-        double lat2 = Math.toRadians(toLat);
-        double deltaLat = Math.toRadians(toLat - fromLat);
-        double deltaLon = Math.toRadians(toLon - fromLon);
-        double sinLat = Math.sin(deltaLat / 2d);
-        double sinLon = Math.sin(deltaLon / 2d);
-        double a = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
-        return (float) (earthRadius * 2d * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0d, 1d - a))));
-    }
-
-    private float distanceOrMax(Result result) {
-        return result.distanceMeters == null ? Float.MAX_VALUE : result.distanceMeters;
-    }
-
-    private String dedupeKey(Result result) {
-        return normalize(result.name + "|" + result.source) + ':'
-                + Math.round(result.latitude * 10000d) + ':' + Math.round(result.longitude * 10000d);
-    }
-
-    private String clean(String value) {
-        return value == null ? "" : value.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
-    }
+    private String tagValue(List<Tag> tags, String key) { if(tags==null)return null; for(Tag t:tags) if(key.equalsIgnoreCase(t.key)) return t.value; return null; }
+    private String firstNotBlank(String... values) { for(String v:values) if(v!=null&&!v.trim().isEmpty()) return v; return null; }
+    private String joinNonBlank(String... values) { StringBuilder out=new StringBuilder(); for(String v:values){ if(v==null||v.trim().isEmpty())continue; if(out.length()>0)out.append(' '); out.append(v.trim()); } return out.toString(); }
+    private boolean oneOf(String value,String...choices){if(value==null)return false;for(String c:choices)if(c.equals(value))return true;return false;}
+    private String lower(String value){return value==null||value.isEmpty()?null:value.toLowerCase(Locale.ROOT);}
+    private Float distanceMeters(Double a,Double b,double c,double d){if(a==null||b==null)return null;return(float)haversine(a,b,c,d);}
+    private static double haversine(double lat1,double lon1,double lat2,double lon2){double dl=Math.toRadians(lat2-lat1),dn=Math.toRadians(lon2-lon1);double h=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(Math.toRadians(lat1))*Math.cos(Math.toRadians(lat2))*Math.sin(dn/2)*Math.sin(dn/2);return 6371000d*2d*Math.asin(Math.sqrt(Math.max(0d,Math.min(1d,h))));}
+    private String dedupeKey(Result r){return normalize(r.name+"|"+r.source)+':'+Math.round(r.latitude*10000d)+':'+Math.round(r.longitude*10000d);}
+    private String clean(String v){return v==null?"":v.replace('\t',' ').replace('\n',' ').replace('\r',' ');}
 
     static String normalize(String value) {
         if (value == null) return "";
         String out = value.trim().toLowerCase(Locale.ROOT)
-                .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
-                .replace('ٱ', 'ا').replace('ى', 'ي').replace('ة', 'ه')
-                .replace('ؤ', 'و').replace('ئ', 'ي').replace('ـ', ' ');
+                .replace('أ','ا').replace('إ','ا').replace('آ','ا').replace('ٱ','ا')
+                .replace('ى','ي').replace('ة','ه').replace('ؤ','و').replace('ئ','ي')
+                .replace("ـ", "");
         return out.replaceAll("[ًٌٍَُِّْٰ]", "").replaceAll("\\s+", " ").trim();
     }
 
-    public static final class SearchRequest {
-        public final String query;
-        public final String category;
-        public final Double centerLatitude;
-        public final Double centerLongitude;
-        public final float radiusMeters;
-        public final boolean sortNearest;
-        public final int limit;
+    private int matchScore(String value,String query){if(query.isEmpty())return 10;if(value.equals(query))return 100;if(value.startsWith(query))return 88;if(value.contains(query))return 70;for(String w:query.split(" "))if(!w.isEmpty()&&!value.contains(w))return 0;return 48;}
 
-        public SearchRequest(String query, String category, Double centerLatitude, Double centerLongitude,
-                             float radiusMeters, boolean sortNearest, int limit) {
-            this.query = query == null ? "" : query;
-            this.category = category == null ? CATEGORY_ALL : category;
-            this.centerLatitude = centerLatitude;
-            this.centerLongitude = centerLongitude;
-            this.radiusMeters = Math.max(0f, radiusMeters);
-            this.sortNearest = sortNearest;
-            this.limit = limit;
+    public static final class SearchRequest {
+        public final String query, category; public final Double centerLatitude, centerLongitude;
+        public final float radiusMeters; public final boolean sortNearest; public final int limit, offset;
+        public SearchRequest(String q,String c,Double lat,Double lon,float radius,boolean nearest,int limit){this(q,c,lat,lon,radius,nearest,limit,0);}
+        public SearchRequest(String q,String c,Double lat,Double lon,float radius,boolean nearest,int limit,int offset){
+            this.query=q==null?"":q; this.category=c==null?CATEGORY_ALL:c; centerLatitude=lat; centerLongitude=lon;
+            radiusMeters=Math.max(0f,radius); sortNearest=nearest; this.limit=limit; this.offset=Math.max(0,offset);
         }
+        public SearchRequest nextPage(){return new SearchRequest(query,category,centerLatitude,centerLongitude,radiusMeters,sortNearest,limit,offset+Math.max(5,Math.min(MAX_PAGE_SIZE,limit)));}
     }
 
     public static final class Result {
-        public final String id;
-        public final String name;
-        public final double latitude;
-        public final double longitude;
-        public final String source;
-        public final String category;
-        public final boolean saved;
-        public final Float distanceMeters;
-        final String searchText;
+        public final String id,name; public final double latitude,longitude; public final String source,category; public final boolean saved; public final Float distanceMeters; final String searchText;
+        Result(String id,String name,double lat,double lon,String source,String category,boolean saved,Float distance){this(id,name,lat,lon,source,category,saved,distance,name+" "+source+" "+category);}
+        Result(String id,String name,double lat,double lon,String source,String category,boolean saved,Float distance,String text){this.id=id;this.name=name;latitude=lat;longitude=lon;this.source=source;this.category=category;this.saved=saved;distanceMeters=distance;searchText=text==null?"":text;}
+    }
+    private static final class IndexItem { final String id,name,source,category,searchText; final double latitude,longitude; IndexItem(String i,String n,String s,String c,double a,double o,String t){id=i;name=n;source=s;category=c;latitude=a;longitude=o;searchText=t;} Result toResult(Float d){return new Result(id,name,latitude,longitude,source,category,false,d,searchText);} }
+    private static final class RankedResult { final Result result; final int score; RankedResult(Result r,int s){result=r;score=s;} }
+    private static final class Classification { final String source,category; final boolean indexUnnamed; Classification(String s,String c,boolean i){source=s;category=c;indexUnnamed=i;} }
+    private static final class Progress { final int nextTile,itemCount; Progress(int n,int c){nextTile=n;itemCount=c;} }
+    private static final class ShardMeta { final File file; final int start,end,items; ShardMeta(File f,int s,int e,int i){file=f;start=s;end=e;items=i;} }
+    static final class NearestWayPoint { final double latitude,longitude; final float distanceMeters; NearestWayPoint(double a,double o,float d){latitude=a;longitude=o;distanceMeters=d;} }
 
-        Result(String id, String name, double latitude, double longitude, String source,
-               String category, boolean saved, Float distanceMeters) {
-            this(id, name, latitude, longitude, source, category, saved, distanceMeters,
-                    name + " " + source + " " + category);
+    private final class BoundedMatches {
+        final int capacity; final SearchRequest request; final PriorityQueue<RankedResult> heap;
+        final Set<String> heapKeys = new HashSet<>(); boolean beyond;
+        BoundedMatches(int capacity, SearchRequest request) {
+            this.capacity=capacity; this.request=request;
+            this.heap=new PriorityQueue<>(Math.max(1,capacity), (a,b)->compareRank(a,b,request)); // best at head; replaced via explicit worst scan
         }
-
-        Result(String id, String name, double latitude, double longitude, String source,
-               String category, boolean saved, Float distanceMeters, String searchText) {
-            this.id = id;
-            this.name = name;
-            this.latitude = latitude;
-            this.longitude = longitude;
-            this.source = source;
-            this.category = category;
-            this.saved = saved;
-            this.distanceMeters = distanceMeters;
-            this.searchText = searchText == null ? "" : searchText;
+        void offer(Result result,String wanted){
+            if(!CATEGORY_ALL.equals(request.category)&&!request.category.equals(result.category)&&!"محفوظات".equals(result.category))return;
+            if(request.radiusMeters>0f&&(result.distanceMeters==null||result.distanceMeters>request.radiusMeters))return;
+            String haystack=normalize(result.name+" "+result.source+" "+result.searchText); int score=wanted.isEmpty()?10:matchScore(haystack,wanted); if(score<=0)return;
+            RankedResult candidate=new RankedResult(result,score); String key=dedupeKey(result); if(heapKeys.contains(key))return;
+            if(heap.size()<capacity){heap.add(candidate);heapKeys.add(key);return;}
+            beyond=true; RankedResult worst=null; for(RankedResult x:heap) if(worst==null||compareRank(x,worst,request)>0) worst=x;
+            if(worst!=null&&compareRank(candidate,worst,request)<0){heap.remove(worst);heapKeys.remove(dedupeKey(worst.result));heap.add(candidate);heapKeys.add(key);}
         }
+        List<RankedResult> sortedBest(){List<RankedResult> out=new ArrayList<>(heap);Collections.sort(out,(a,b)->compareRank(a,b,request));return out;}
+        boolean sawBeyondWindow(){return beyond;}
     }
 
-    private static final class IndexItem {
-        final String id;
-        final String name;
-        final String source;
-        final String category;
-        final double latitude;
-        final double longitude;
-        final String searchText;
-
-        IndexItem(String id, String name, String source, String category,
-                  double latitude, double longitude, String searchText) {
-            this.id = id;
-            this.name = name;
-            this.source = source;
-            this.category = category;
-            this.latitude = latitude;
-            this.longitude = longitude;
-            this.searchText = searchText;
-        }
-
-        Result toResult(Float distance) {
-            return new Result(id, name, latitude, longitude, source, category, false, distance, searchText);
-        }
+    private int compareRank(RankedResult a,RankedResult b,SearchRequest request){
+        if(request.sortNearest){int d=Float.compare(distanceOrMax(a.result),distanceOrMax(b.result));if(d!=0)return d;}
+        int s=Integer.compare(b.score,a.score);if(s!=0)return s;
+        int d=Float.compare(distanceOrMax(a.result),distanceOrMax(b.result));if(d!=0)return d;
+        return a.result.name.compareTo(b.result.name);
     }
-
-    private static final class RankedResult {
-        final Result result;
-        final int score;
-        RankedResult(Result result, int score) { this.result = result; this.score = score; }
-    }
-
-    private static final class Classification {
-        final String source;
-        final String category;
-        final boolean indexUnnamed;
-        Classification(String source, String category, boolean indexUnnamed) {
-            this.source = source;
-            this.category = category;
-            this.indexUnnamed = indexUnnamed;
-        }
-    }
-
-    private static final class IndexState {
-        final String identity;
-        final int nextTile;
-        final int count;
-        final boolean complete;
-        final boolean truncated;
-
-        IndexState(String identity, int nextTile, int count, boolean complete, boolean truncated) {
-            this.identity = identity;
-            this.nextTile = nextTile;
-            this.count = count;
-            this.complete = complete;
-            this.truncated = truncated;
-        }
-
-        static IndexState empty() {
-            return new IndexState("", 0, 0, false, false);
-        }
-    }
+    private float distanceOrMax(Result r){return r.distanceMeters==null?Float.MAX_VALUE:r.distanceMeters;}
 }

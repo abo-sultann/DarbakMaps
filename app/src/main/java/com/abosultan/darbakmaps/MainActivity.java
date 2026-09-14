@@ -85,6 +85,7 @@ public final class MainActivity extends Activity implements LocationController.C
     private boolean initialized;
     private volatile boolean mapDownloadCancelled;
     private volatile boolean searchRunning;
+    private OfflineMapSearchEngine.SearchRequest lastSearchRequest;
     private String startupPhase = "بدء التشغيل";
 
     @Override
@@ -436,75 +437,62 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void performSearch(String rawQuery) {
         String query = rawQuery == null ? "" : rawQuery.trim();
-        if (query.isEmpty()) {
-            toast("اكتب اسم مدينة أو مكان للبحث");
-            return;
-        }
-        if (searchRunning) {
-            toast("البحث السابق ما زال جاريًا");
-            return;
-        }
-        searchRunning = true;
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("بحث");
-        progress.setMessage("جارٍ البحث…");
-        progress.setIndeterminate(true);
-        progress.setCancelable(false);
-        showImmersive(progress);
-        File activeMap = MapStorage.activeMap(this);
+        if (query.isEmpty()) { toast("اكتب اسم مدينة أو مكان للبحث"); return; }
         Location current = locationController == null ? null : locationController.getLastLocation();
-        Double latitude = current == null ? null : current.getLatitude();
-        Double longitude = current == null ? null : current.getLongitude();
+        OfflineMapSearchEngine.SearchRequest request = new OfflineMapSearchEngine.SearchRequest(
+                query, OfflineMapSearchEngine.CATEGORY_ALL,
+                current == null ? null : current.getLatitude(), current == null ? null : current.getLongitude(),
+                0f, false, 40, 0);
+        executeSearch(request, "بحث");
+    }
 
+    private void executeSearch(OfflineMapSearchEngine.SearchRequest request, String title) {
+        if (searchRunning) { toast("البحث السابق ما زال جاريًا"); return; }
+        searchRunning = true;
+        lastSearchRequest = request;
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle(title);
+        progress.setMessage(request.offset > 0 ? "جارٍ تحميل الصفحة التالية…" : "جارٍ البحث…");
+        progress.setIndeterminate(true); progress.setCancelable(false); showImmersive(progress);
+        File activeMap = MapStorage.activeMap(this);
         ioExecutor.execute(() -> {
-            List<OfflineMapSearchEngine.Result> results = searchEngine.search(
-                    query,
-                    activeMap.isFile() ? activeMap : null,
-                    placeRepository.all(),
-                    latitude,
-                    longitude,
-                    40
-            );
+            List<OfflineMapSearchEngine.Result> results = searchEngine.search(request,
+                    activeMap.isFile() ? activeMap : null, placeRepository.all());
             boolean complete = searchEngine.isComplete();
             boolean failed = searchEngine.hasFailed();
+            boolean queryMore = searchEngine.hasMoreResults();
             runOnUiThread(() -> {
                 searchRunning = false;
                 if (isActivityUnavailable()) return;
                 progress.dismiss();
-                showSearchResults(results, complete, failed);
+                showSearchResults(request, results, complete, failed, queryMore);
             });
         });
     }
 
-    private void showSearchResults(List<OfflineMapSearchEngine.Result> results, boolean complete, boolean failed) {
+    private void showSearchResults(OfflineMapSearchEngine.SearchRequest request,
+                                   List<OfflineMapSearchEngine.Result> results,
+                                   boolean complete, boolean failed, boolean queryMore) {
+        if (mapController != null) mapController.showSearchResults(results);
         if (results.isEmpty()) {
-            if (!complete) {
-                toast("الفهرسة لم تكتمل بعد؛ أعد البحث لاستكمال بقية الخريطة");
-            } else if (failed) {
-                toast("اكتمل البحث جزئيًا وتعذر قراءة بعض أجزاء الخريطة");
-            } else {
-                toast(MapStorage.activeMap(this).isFile()
-                        ? "لا توجد نتائج مطابقة في البيانات المفهرسة"
-                        : "لا توجد نتائج؛ أضف خريطة دربك للبحث في المعالم");
-            }
+            if (!complete) toast("لا توجد نتائج في الجزء المفهرس حتى الآن؛ الفهرسة ما زالت جارية");
+            else if (failed) toast("اكتمل الفهرس مع تعذر قراءة بعض أجزاء الخريطة");
+            else toast(MapStorage.activeMap(this).isFile() ? "لا توجد نتائج مطابقة" : "أضف خريطة دربك للبحث في المعالم");
             return;
         }
         String[] labels = new String[results.size()];
-        for (int index = 0; index < results.size(); index++) {
-            OfflineMapSearchEngine.Result result = results.get(index);
-            String distance = formatDistance(result.distanceMeters);
-            labels[index] = result.name + "\n" + result.source
-                    + (distance.isEmpty() ? "" : " • " + distance);
+        for (int i=0;i<results.size();i++) {
+            OfflineMapSearchEngine.Result result=results.get(i); String distance=formatDistance(result.distanceMeters);
+            labels[i]=result.name+"\n"+result.source+(distance.isEmpty()?"":" • "+distance);
         }
-        String state = searchEngine.isTruncated()
-                ? "نتائج مقتطعة — ضيّق البحث أو استخدم البحث القريب"
-                : (!complete ? "نتائج جزئية — الفهرسة تستكمل تدريجيًا" : "نتائج البحث");
+        String state = complete ? "نتائج البحث" : "نتائج من الجزء المفهرس — الفهرسة مستمرة";
         if (failed) state += " • تعذر جزء من الخريطة";
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(state)
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(state + (request.offset > 0 ? " • صفحة " + (request.offset / Math.max(1, request.limit) + 1) : ""))
                 .setItems(labels, (dialog, which) -> showSearchResultActions(results.get(which)))
-                .setNegativeButton("إغلاق", null)
-                .create());
+                .setNegativeButton("إغلاق", null);
+        if (queryMore) builder.setPositiveButton("المزيد", (dialog, which) -> executeSearch(request.nextPage(), "بحث"));
+        showImmersive(builder.create());
     }
 
     private void showSearchResultActions(OfflineMapSearchEngine.Result result) {
@@ -565,32 +553,13 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void runNearbySearch(double latitude, double longitude, String centerLabel,
                                  String category, int radiusKm) {
-        if (searchRunning) {
-            toast("البحث السابق ما زال جاريًا");
-            return;
-        }
-        searchRunning = true;
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("بحث قريب");
-        progress.setMessage("حول " + centerLabel + " • " + radiusKm + " كم");
-        progress.setIndeterminate(true);
-        progress.setCancelable(false);
-        showImmersive(progress);
-        File activeMap = MapStorage.activeMap(this);
-        ioExecutor.execute(() -> {
-            OfflineMapSearchEngine.SearchRequest request = new OfflineMapSearchEngine.SearchRequest(
-                    "", category, latitude, longitude, radiusKm * 1000f, true, 120);
-            List<OfflineMapSearchEngine.Result> results = searchEngine.search(
-                    request, activeMap.isFile() ? activeMap : null, placeRepository.all());
-            boolean complete = searchEngine.isComplete();
-            boolean failed = searchEngine.hasFailed();
-            runOnUiThread(() -> {
-                searchRunning = false;
-                if (isActivityUnavailable()) return;
-                progress.dismiss();
-                showSearchResults(results, complete, failed);
-            });
-        });
+        OfflineMapSearchEngine.SearchRequest request = new OfflineMapSearchEngine.SearchRequest(
+                "", category, latitude, longitude, radiusKm * 1000f, true, 120, 0);
+        executeSearch(request, "بحث قريب • " + centerLabel + " • " + radiusKm + " كم");
+    }
+
+    void showNearbySearchAroundPoint(double latitude, double longitude) {
+        showNearbySearchOptions(latitude, longitude, "النقطة المحددة");
     }
 
     private void showSavedPlacesPanel() {

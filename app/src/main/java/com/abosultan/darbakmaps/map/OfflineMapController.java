@@ -56,6 +56,7 @@ public final class OfflineMapController {
     private final TileRendererLayer rendererLayer;
     private final XmlRenderTheme darbakTheme;
     private final List<Marker> savedMarkers = new ArrayList<>();
+    private final List<Marker> searchMarkers = new ArrayList<>();
     private final List<PlaceRepository.Place> allSavedPlaces = new ArrayList<>();
     private final List<PlaceRepository.Place> displayedSavedPlaces = new ArrayList<>();
     private SavedPlaceTapListener savedPlaceTapListener;
@@ -332,6 +333,24 @@ public final class OfflineMapController {
         return 6371000d * 2d * Math.asin(Math.sqrt(Math.max(0d, Math.min(1d, h))));
     }
 
+    public void showSearchResults(List<OfflineMapSearchEngine.Result> results) {
+        for (Marker marker : searchMarkers) mapView.getLayerManager().getLayers().remove(marker);
+        searchMarkers.clear();
+        if (results != null) {
+            int limit = Math.min(80, results.size());
+            for (int i = 0; i < limit; i++) {
+                OfflineMapSearchEngine.Result result = results.get(i);
+                Marker marker = new Marker(new LatLong(result.latitude, result.longitude), createPin(), 0, -24);
+                marker.setBillboard(true);
+                searchMarkers.add(marker);
+                mapView.getLayerManager().getLayers().add(marker);
+            }
+        }
+        mapView.getLayerManager().redrawLayers();
+    }
+
+    public void clearSearchResults() { showSearchResults(java.util.Collections.emptyList()); }
+
     public void setNavigationTarget(double latitude, double longitude, int mode) {
         navigationTarget = new LatLong(latitude, longitude);
         navigationMode = mode == MapUiPreferences.ROUTING_ROADS ? MapUiPreferences.ROUTING_ROADS : MapUiPreferences.ROUTING_DIRECT;
@@ -464,6 +483,7 @@ public final class OfflineMapController {
         MapRuntimeBridge.detach(this);
         clearStoredTrack();
         clearActiveTrackLayers();
+        clearSearchResults();
         mapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
     }
