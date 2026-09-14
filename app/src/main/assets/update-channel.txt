@@ -1,0 +1,4 @@
+Darbak Maps Private Stable Channel
+channel=stable
+policy=in-app-update
+baseline=0.7.1
