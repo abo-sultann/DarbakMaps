@@ -13,9 +13,13 @@ public final class BackgroundTrackStore {
     private BackgroundTrackStore() {}
 
     public static synchronized void append(Context context, Location location) throws IOException {
+        append(context, location, false);
+    }
+
+    public static synchronized void append(Context context, Location location, boolean newSegment) throws IOException {
         if (location == null) return;
         TrackJournal.append(activeFile(context), location.getLatitude(),
-                location.getLongitude(), location.getTime(), false);
+                location.getLongitude(), location.getTime(), newSegment);
     }
 
     public static synchronized List<GeoPoint> loadActive(Context context) {
