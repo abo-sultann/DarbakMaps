@@ -1,8 +1,8 @@
 {
-  "versionCode": 16,
-  "versionName": "0.7.1",
+  "versionCode": 17,
+  "versionName": "0.7.2",
   "packageName": "com.abosultan.darbakmaps.debug",
   "minSdk": 24,
   "apkUrl": "https://github.com/abo-sultann/DarbakMaps/releases/download/darbakmaps-test/DarbakMaps-debug.apk",
-  "sha256": "816138e3ef95ef1436e14084c08296ca20104c804d27c8c9324fe7ff395f39bc"
+  "sha256": "ecfac2c350caa8daff019b7b3d185a2363a604cd26f8a8285e3ee778839ce768"
 }
