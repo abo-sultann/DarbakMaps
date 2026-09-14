@@ -63,7 +63,7 @@
             android:foregroundServiceType="location" />
 
         <receiver
-            android:name=".StartupReceiver"
+            android:name=".BootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
