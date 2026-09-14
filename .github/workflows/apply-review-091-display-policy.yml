@@ -1,0 +1,36 @@
+name: Apply 0.9.1 display policies
+
+on:
+  push:
+    branches: [darbakmaps-review-0.9.1]
+    paths:
+      - 'tools/apply_review_091_display_policy.py'
+      - '.github/workflows/apply-review-091-display-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/apply_review_091_display_policy.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Display policy tests and compile
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:compileDebugJavaWithJavac
+      - name: Commit generated fixes
+        run: |
+          git config user.name 'Darbak Review CI'
+          git config user.email 'actions@github.com'
+          git add app/src/main app/src/test
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: bound map display without hiding track history or saved places'
+            git push
+          fi
