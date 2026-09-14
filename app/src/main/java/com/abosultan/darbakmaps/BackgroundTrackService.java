@@ -272,7 +272,12 @@ public final class BackgroundTrackService extends Service implements LocationLis
 
     private void updateNotification(String text) {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify(NOTIFICATION_ID, notification(text));
+        if (manager == null) return;
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        manager.notify(NOTIFICATION_ID, notification(text));
     }
 
     private Notification notification(String text) {
