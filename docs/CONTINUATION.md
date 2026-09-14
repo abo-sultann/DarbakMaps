@@ -1,60 +1,54 @@
 # DarbakMaps — CONTINUATION
 
 آخر تحديث: 2026-09-14  
-المرجع الأعلى: `docs/IMPLEMENTATION_ORDER.md`  
-الفرع: `darbakmaps-final-0.8.0`  
-الإصدار الجاري: **0.9.0 / versionCode 21**  
-الحزمة: `com.abosultan.darbakmaps.debug`
+الفرع: `darbakmaps-review-0.9.1`  
+القاعدة الأصلية لهذه الجولة: `7c30c5fdb394997c228a1efcb39cf11aff318841`  
+الحزمة: `com.abosultan.darbakmaps.debug`  
+الحالة: **مرشح اختبار ميداني قيد بوابة الإصدار؛ ليس Production**.
 
-> هذه نسخة تطوير مرشحة للاختبار الميداني، وليست Production حتى يثبت توافق التوقيع واختبار T3.
+## ما اكتمل في هذه الجولة
+- الرسم يتبع journal committed فقط؛ لا raw-GPS drawing من MainActivity.
+- journal generation + `TrackRenderGate` يمنع preview قديمًا من استبدال أحدث.
+- لا مسح كامل عند 4000 نقطة؛ preview محدود ويحافظ على bends/gaps.
+- سياسة طبقات واضحة لكثرة المقاطع: كل الحديث + عينة موزعة من التاريخ القديم.
+- العلامات المحفوظة spatial حسب viewport بدل أول 250، مع tap للوجهة الدقيقة وcluster chooser.
+- SavedPlacesDialog يستخدم stable IDs، ويحافظ على ترتيب الصفوف أثناء touch/scroll، ويصفر حالة GPS فور فقد الصلاحية.
+- Offline search انتقل إلى atomic disk shards بلا hard item cap، مع فصل index/query states وKeyset paging بذاكرة O(page).
+- التطويل العربي يحذف من الكلمة؛ Way nearby يعتمد أقرب نقطة من الهندسة.
+- نتائج البحث تظهر كطبقة محدودة على الخريطة، والضغط المطول على نقطة يتيح البحث حولها.
+- LegacyMigration يملك transaction evidence دائمًا وrollback/recovery عند startup؛ legacy active track يبقى GPX منفصلًا.
 
-## ما اكتمل في الكود
-- سجل تلقائي مستمر يحتفظ بأحدث ~1000 كم حسب المسافة المتصلة، مع trim تدريجي و`fsync` وpending/backup/recovery.
-- حفظ نسخة GPX دون إيقاف أو حذف السجل التلقائي.
-- خدمة GPS بخيط/Looper صحيح، عدم إسقاط writes المقبولة قبل الإيقاف، فجوة جديدة بعد restart، ومرشح للقفزات وانحراف الوقوف.
-- BootReceiver يعيد الخدمة فقط ولا يفتح Activity.
-- LegacyMigration بفحص كامل مؤقت قبل live state، تحقق هوية/حجم/مساحة، lock مشترك، sanitization للـruntime state، وrollback.
-- RecommendedMapDownloader لا يحذف backup إلا بعد تحقق كامل من البديل.
-- الرسم محدود النقاط والطبقات مع حفظ gaps، وأيقونات المحفوظات مرسومة Canvas ثابتة.
-- البحث بفهرس محلي متدرج على القرص مربوط بهوية map؛ يدعم POI وWay/area وaliases والتطبيع العربي والفئات والبحث القريب.
-- حفظ المواقع icon-first والاسم اختياري مع auto-label مؤرخ وundo delete.
-- لوحة المحفوظات: filters، nearest، distance، direction relative/smoothing، cardinal fallback، وعدم reorder أثناء touch.
-- البحث حول موقعي/حول معلم: 5/10/25/50/100 كم، مع عرض/حفظ/توجيه/بحث حول النتيجة.
-- Backtrack لا يختار هدفًا افتراضيًا إذا لا يوجد segment متصل.
+## أدلة ناجحة
+- Track source-of-truth: workflow `34887402112` SUCCESS.
+- Saved places/touch/GPS: `34887515362` SUCCESS.
+- Migration recovery code/tests/compile: `34887602753` SUCCESS.
+- Search shards/geometry/tatweel: `34888101861` SUCCESS. (Run سابق `34888034380` توقف في patch بسبب test directory مفقود ولم يصل Gradle؛ أصلح.)
+- Keyset paging: `34888316301` SUCCESS، 95 نتيجة عبر 40+40+15 بلا تكرار.
+- Whole-history display + >250 saved: `34888533307` SUCCESS.
+- Approved Saudi map acceptance: `34888782778` SUCCESS.
 
-## اختبارات مؤكدة
-- workflow `34883690007`: `testDebugUnitTest` + `compileDebugJavaWithJavac` = SUCCESS لتكامل التسجيل التلقائي.
-- workflow `34883845877`: tests + compile = SUCCESS للأيقونات الثابتة وحدود طبقات الرسم.
-- workflow `34884015788`: tests + compile = SUCCESS لتكامل المحفوظات والبحث القريب.
-- `TrackJournalRetentionTest`: رحلة صناعية >1200 كم، بقاء ~1000 كم، gap لا يحسب، واستعادة backup.
-- `DirectionMathTest`: 359↔0، smoothing الدائري، والاتجاهات الجغرافية.
-- `TrackNavigatorTest`: أضيف no-connected-segment؛ يجب إثبات دخوله في Final Candidate بعد `7f34fca`.
-
-## الخطوة التالية
-1. افحص Final Candidate الناتج عن `0.9.0/21` ويجب أن ينفذ من نفس commit:
+## نقطة الاستكمال الدقيقة
+1. ارفع `versionName/versionCode` إلى 0.9.1/22 فقط بعد بقاء جميع الاختبارات أعلاه ناجحة.
+2. شغّل من **commit واحد**:
 ```bash
 ./gradlew --no-daemon :app:testDebugUnitTest
 ./gradlew --no-daemon :app:lintRelease
 ./gradlew --no-daemon :app:assembleRelease
 ```
-2. أصلح أي regression قبل تسليم APK.
-3. حدّث `REPORT_IMPLEMENTATION_STATUS.md` و`RELEASE_ACCEPTANCE.md` برقم run/commit نفسه.
-4. لا تنشر `update-manifest.json` إلى APK unsigned.
-5. Production يتطلب فحص شهادة APK المثبت على الشاشة ثم signed build بنفس الشهادة واختبار update-in-place وبقاء البيانات.
+3. سجّل SHA وartifact metadata في `RELEASE_ACCEPTANCE.md`.
+4. وقّع Field Candidate خارج المستودع فقط؛ تحقق باستخدام `apksigner verify --print-certs` إن توفر Android build-tools.
+5. لا تفتح Production/update-manifest حتى مقارنة شهادة APK المثبت على T3 واختبار update-in-place مع بقاء البيانات.
 
-## عوائق/اختبارات غير مثبتة
-- شهادة النسخة المثبتة على T3: غير متحققة في هذه الجولة؛ حاجز Production.
-- update-in-place وبقاء البيانات: لم يُنفذ.
-- reboot/screen-off/force-stop/GPS loss/storage-full/process-kill أثناء trim على T3: لم يُنفذ ميدانيًا.
-- قياس RAM/زمن البحث بالخريطة السعودية الفعلية على T3: لم يُنفذ.
-- عينات مثبتة من ملف الخريطة لكل فئة بحث: لم توثق بعد.
-- clustering للعلامات الكثيفة: لم ينفذ بعد.
-- بوصلة موثوقة عند الوقوف: غير مستخدمة حاليًا؛ يعرض اتجاهًا جغرافيًا بدل سهم نسبي مضلل.
+## اختبارات لا يجوز الادعاء بنجاحها بعد
+- process kill فعلي وسط LegacyMigration.
+- screen-off/reboot/Force Stop/storage-full/power interruption على T3.
+- نقر 3 علامات سمان فعلية على الخريطة والتأكد من كل وجهة.
+- RAM طويل مع recording+search+navigation على T3.
+- شهادة التطبيق المثبت والتحديث فوقه مع بقاء البيانات.
 
 ## عدم التراجع
-- لا تحذف `active-track.csv` عند حفظ snapshot.
-- لا تعيد BootReceiver لفتح MainActivity.
-- لا تغير package suffix لتجاوز التوقيع.
-- لا تحذف backup الخريطة لمجرد وجود target غير فارغ.
-- لا تستورد runtime prefs القديمة في LegacyMigration.
-- لا تستبدل Canvas icons بإيموجي.
+- لا تعيد `mapController.addTrackPoint(raw GPS)` إلى MainActivity.
+- لا تعيد clear كامل للرسم عند 4000.
+- لا تعد لأول 250 محفوظًا.
+- لا تستخدم offset paging المتزايد الذاكرة بدل Keyset.
+- لا تغير package suffix لتجاوز التوقيع ولا تحذف النسخة القديمة.
