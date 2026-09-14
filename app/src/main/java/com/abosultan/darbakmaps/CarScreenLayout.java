@@ -61,8 +61,14 @@ final class CarScreenLayout {
         search.setInputType(InputType.TYPE_CLASS_TEXT);
         search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         searchBox.addView(search, new LinearLayout.LayoutParams(0, -1, 1f));
-        TextView searchMark = label(activity, "⌕", PRIMARY, 27f, Gravity.CENTER);
-        searchBox.addView(searchMark, new LinearLayout.LayoutParams(dp(activity, 36), -1));
+        TextView searchMark = label(activity, "◎", PRIMARY, 22f, Gravity.CENTER);
+        searchMark.setContentDescription("البحث حول موقعي");
+        searchMark.setOnClickListener(view -> {
+            if (activity instanceof MainActivity) {
+                ((MainActivity) activity).showNearbySearchFromCurrentLocation();
+            }
+        });
+        searchBox.addView(searchMark, new LinearLayout.LayoutParams(dp(activity, 42), -1));
         tools.addView(searchBox, frame(dp(activity, 520), dp(activity, 52), Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, dp(activity, 14), 0, 0));
 
         ImageView logo = new ImageView(activity);
