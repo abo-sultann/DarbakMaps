@@ -333,6 +333,15 @@ public final class MainActivity extends Activity implements LocationController.C
                 .create());
     }
 
+    void showNearbySearchFromCurrentLocation() {
+        Location current = locationController == null ? null : locationController.getLastLocation();
+        if (current == null) {
+            toast("بانتظار GPS للبحث حول موقعي");
+            return;
+        }
+        showNearbySearchOptions(current.getLatitude(), current.getLongitude(), "موقعي");
+    }
+
     private void showNearbySearchOptions(double latitude, double longitude, String centerLabel) {
         String[] categories = { OfflineMapSearchEngine.CATEGORY_ALL, OfflineMapSearchEngine.CATEGORY_WADIS,
                 OfflineMapSearchEngine.CATEGORY_MOUNTAINS, OfflineMapSearchEngine.CATEGORY_LANDMARKS,
@@ -697,6 +706,14 @@ public final class MainActivity extends Activity implements LocationController.C
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("*/*"); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(intent, REQUEST_MAP_FILE);
+    }
+
+    void chooseLegacyMigration() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(intent, REQUEST_MIGRATION);
     }
 
     private void importMap(Uri uri) {

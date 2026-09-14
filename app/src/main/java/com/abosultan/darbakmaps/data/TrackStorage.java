@@ -157,6 +157,15 @@ public final class TrackStorage {
         return points;
     }
 
+    public static List<GeoPoint> readDisplay(File file, int limit) throws IOException {
+        List<GeoPoint> points = load(file);
+        return points.size() <= limit ? points : reducePreservingGeometry(points, Math.max(2, limit));
+    }
+
+    public static List<GeoPoint> readForNavigation(File file) throws IOException {
+        return load(file);
+    }
+
     static List<GeoPoint> reducePreservingGeometry(List<GeoPoint> input, int limit) {
         if (input == null || input.size() <= limit) return input == null ? new ArrayList<>() : new ArrayList<>(input);
         int stride = Math.max(2, (int) Math.ceil(input.size() / (double) Math.max(2, limit - 2)));

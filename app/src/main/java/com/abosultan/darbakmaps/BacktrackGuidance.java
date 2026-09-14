@@ -29,6 +29,14 @@ public final class BacktrackGuidance {
 
     private BacktrackGuidance() {}
 
+    public static void start(Activity activity, File file) {
+        try {
+            start(activity, file, TrackStorage.readForNavigation(file));
+        } catch (Exception error) {
+            Toast.makeText(activity, "تعذر قراءة مسار الرجوع", Toast.LENGTH_LONG).show();
+        }
+    }
+
     public static void start(Activity activity, File file, List<GeoPoint> points) {
         if (file == null || points == null || points.size() < 2) return;
         cached = points;

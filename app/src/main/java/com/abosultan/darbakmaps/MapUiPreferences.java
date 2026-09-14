@@ -60,6 +60,11 @@ public final class MapUiPreferences {
         prefs(context).edit().putBoolean(KEY_SHOW_SAVED_LABELS, value).apply();
     }
 
+    /** Source-compatibility alias for review-era MainActivity. */
+    public static boolean showSavedNames(Context context) {
+        return showSavedLabels(context);
+    }
+
     public static boolean showSpeed(Context context) {
         return prefs(context).getBoolean(KEY_SHOW_SPEED, true);
     }

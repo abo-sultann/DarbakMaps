@@ -147,6 +147,25 @@ public final class PlaceRepository {
         return null;
     }
 
+    public List<Place> nearest(double latitude, double longitude, int limit) {
+        validateCoordinates(latitude, longitude);
+        List<Place> result = new ArrayList<>(all());
+        result.sort((a, b) -> Double.compare(
+                distanceMeters(latitude, longitude, a.latitude, a.longitude),
+                distanceMeters(latitude, longitude, b.latitude, b.longitude)));
+        int cap = Math.max(0, limit);
+        return result.size() <= cap ? result : new ArrayList<>(result.subList(0, cap));
+    }
+
+    private static double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double h = Math.sin(dLat / 2d) * Math.sin(dLat / 2d)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2d) * Math.sin(dLon / 2d);
+        return 6371000d * 2d * Math.asin(Math.sqrt(Math.max(0d, Math.min(1d, h))));
+    }
+
     public List<Place> search(String query) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) return all();
