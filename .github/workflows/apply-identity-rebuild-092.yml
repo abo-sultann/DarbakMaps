@@ -1,0 +1,174 @@
+name: Apply Darbak identity rebuild
+on:
+  push:
+    branches: [darbakmaps-review-0.9.1]
+    paths:
+      - '.github/workflows/apply-identity-rebuild-092.yml'
+permissions:
+  contents: write
+jobs:
+  rebuild-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: darbakmaps-review-0.9.1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Rebuild Darbak visual identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ROOT = Path('app/src/main/java/com/abosultan/darbakmaps')
+
+          def must_replace(text, old, new, label):
+              if old not in text:
+                  raise SystemExit('missing patch anchor: ' + label)
+              return text.replace(old, new)
+
+          # 1) Replace the accidental navy/blue UI palette everywhere in Darbak Java UI.
+          color_replacements = {
+              'Color.rgb(7, 17, 29)': 'Color.rgb(8, 39, 31)',
+              'Color.rgb(17, 29, 43)': 'Color.rgb(16, 52, 42)',
+              'Color.rgb(16, 30, 44)': 'Color.rgb(25, 72, 58)',
+              'Color.rgb(57, 169, 255)': 'Color.rgb(216, 180, 91)',
+              'Color.rgb(159, 176, 194)': 'Color.rgb(185, 179, 165)',
+              'Color.rgb(244, 247, 250)': 'Color.rgb(247, 242, 231)',
+              'Color.rgb(215, 173, 85)': 'Color.rgb(216, 180, 91)',
+              'Color.argb(100, 57, 169, 255)': 'Color.argb(100, 216, 180, 91)',
+              'Color.argb(75, 57, 169, 255)': 'Color.argb(75, 216, 180, 91)',
+              'Color.argb(105, 57, 169, 255)': 'Color.argb(105, 216, 180, 91)',
+              'Color.argb(65, 57, 169, 255)': 'Color.argb(65, 216, 180, 91)',
+              'Color.argb(80, 57, 169, 255)': 'Color.argb(80, 216, 180, 91)',
+              'Color.argb(90, 57, 169, 255)': 'Color.argb(90, 216, 180, 91)',
+          }
+          for p in ROOT.rglob('*.java'):
+              s = p.read_text()
+              original = s
+              for old, new in color_replacements.items():
+                  s = s.replace(old, new)
+              if s != original:
+                  p.write_text(s)
+
+          # 2) Main map shell: one clear action path, no duplicated side menu.
+          p = ROOT / 'CarScreenLayout.java'
+          s = p.read_text()
+          old_constants = '''    private static final int NIGHT = Color.rgb(7, 17, 29);\n    private static final int SURFACE = Color.rgb(17, 29, 43);\n    private static final int SURFACE_ALT = Color.rgb(16, 30, 44);\n    private static final int PRIMARY = Color.rgb(57, 169, 255);\n    private static final int GOLD = Color.rgb(215, 173, 85);\n    private static final int TEXT = Color.rgb(244, 247, 250);\n    private static final int MUTED = Color.rgb(159, 176, 194);'''
+          new_constants = '''    private static final int NIGHT = Color.rgb(8, 39, 31);\n    private static final int SURFACE = Color.rgb(16, 52, 42);\n    private static final int SURFACE_ALT = Color.rgb(25, 72, 58);\n    private static final int PRIMARY = Color.rgb(216, 180, 91);\n    private static final int GOLD = Color.rgb(241, 216, 142);\n    private static final int TEXT = Color.rgb(247, 242, 231);\n    private static final int MUTED = Color.rgb(185, 179, 165);'''
+          if old_constants in s:
+              s = s.replace(old_constants, new_constants)
+          # The global palette replacement may already have changed the anchors.
+          s = s.replace('tools.addView(searchBox, frame(dp(activity, 520), dp(activity, 52)',
+                        'tools.addView(searchBox, frame(dp(activity, 500), dp(activity, 52)')
+          s = s.replace('dock.addView(dockAction(activity, "موقعي", R.id.action_map), weighted());\n', '')
+          s = s.replace('dock.addView(dockAction(activity, "حفظ", R.id.action_save), weighted());',
+                        'dock.addView(dockAction(activity, "حفظ موقع", R.id.action_save), weighted());')
+          s = s.replace('dock.addView(dockAction(activity, "تسجيل مسار", R.id.action_record), weighted());',
+                        'dock.addView(dockAction(activity, "المسار", R.id.action_record), weighted());')
+          s = s.replace('dock.addView(dockAction(activity, "المزيد", R.id.action_more), weighted());',
+                        'dock.addView(dockAction(activity, "القائمة", R.id.action_more), weighted());')
+          s = s.replace('tools.addView(dock, frame(dp(activity, 570), dp(activity, 68)',
+                        'tools.addView(dock, frame(dp(activity, 500), dp(activity, 68)')
+          start = s.find('        LinearLayout sidePanel = new LinearLayout(activity);')
+          end = s.find('        LinearLayout speedPill = new LinearLayout(activity);')
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit('side panel anchors missing')
+          replacement = '''        // One menu entry only: the bottom dock opens the unified Darbak panel.\n        // The former floating side panel duplicated search/save/saved/settings and was removed.\n\n'''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s)
+
+          # 3) MainActivity must tolerate removal of the duplicate "my location" dock item.
+          p = ROOT / 'MainActivity.java'
+          s = p.read_text()
+          old = '        findViewById(R.id.action_map).setOnClickListener(view -> centerOnCurrentLocation());'
+          new = '        View mapAction = findViewById(R.id.action_map);\n        if (mapAction != null) mapAction.setOnClickListener(view -> centerOnCurrentLocation());'
+          s = must_replace(s, old, new, 'MainActivity action_map')
+          # Safe-mode fallback also follows the Darbak identity.
+          s = s.replace('panel.setBackgroundColor(Color.rgb(255, 249, 235));', 'panel.setBackgroundColor(Color.rgb(8, 39, 31));')
+          s = s.replace('title.setTextColor(Color.rgb(3, 39, 30));', 'title.setTextColor(Color.rgb(216, 180, 91));')
+          s = s.replace('message.setTextColor(Color.rgb(92, 110, 103));', 'message.setTextColor(Color.rgb(185, 179, 165));')
+          p.write_text(s)
+
+          # 4) Settings/more panels: green/gold identity and custom status pills instead of stock Android Switch.
+          p = ROOT / 'DarbakPanels.java'
+          s = p.read_text()
+          old_constants = '''    private static final int NIGHT = Color.rgb(7, 17, 29);\n    private static final int SURFACE = Color.rgb(17, 29, 43);\n    private static final int SURFACE_ALT = Color.rgb(16, 30, 44);\n    private static final int PRIMARY = Color.rgb(57, 169, 255);\n    private static final int GOLD = Color.rgb(215, 173, 85);\n    private static final int TEXT = Color.rgb(244, 247, 250);\n    private static final int MUTED = Color.rgb(159, 176, 194);'''
+          new_constants = '''    private static final int NIGHT = Color.rgb(8, 39, 31);\n    private static final int SURFACE = Color.rgb(16, 52, 42);\n    private static final int SURFACE_ALT = Color.rgb(25, 72, 58);\n    private static final int PRIMARY = Color.rgb(216, 180, 91);\n    private static final int GOLD = Color.rgb(241, 216, 142);\n    private static final int TEXT = Color.rgb(247, 242, 231);\n    private static final int MUTED = Color.rgb(185, 179, 165);'''
+          if old_constants in s:
+              s = s.replace(old_constants, new_constants)
+          s = s.replace('root.addView(title(activity, "دربك للبر"));', 'root.addView(title(activity, "دربك"));')
+          s = s.replace('root.addView(subtitle(activity, "واجهة دربك للبر — أوفلاين ومهيأة لشاشة السيارة"));',
+                        'root.addView(subtitle(activity, "خرائط البر الأوفلاين • شاشة السيارة"));')
+          settings_header = '''        root.addView(title(activity, "إعدادات دربك"));\n        root.addView(subtitle(activity, "التحكم بالخريطة والتوجيه والعلامات وشاشة السيارة"));'''
+          s = must_replace(s, settings_header, settings_header + '\n        root.addView(section(activity, "النظام"));', 'settings header')
+          s = must_replace(s, '        TextView routing = text(activity,',
+                           '        root.addView(section(activity, "التوجيه"));\n\n        TextView routing = text(activity,', 'routing section')
+          s = must_replace(s, '        root.addView(toggleCard(activity,\n                "علامات المواقع المحفوظة",',
+                           '        root.addView(section(activity, "الخريطة والعلامات"));\n\n        root.addView(toggleCard(activity,\n                "علامات المواقع المحفوظة",', 'map section')
+          s = must_replace(s, '        root.addView(toggleCard(activity,\n                "رسم وتسجيل المسار بالخلفية",',
+                           '        root.addView(section(activity, "القيادة والمسار"));\n\n        root.addView(toggleCard(activity,\n                "رسم وتسجيل المسار بالخلفية",', 'drive section')
+          start = s.find('    private static LinearLayout toggleCard(Activity activity, String title, String detail,')
+          end = s.find('    private static void showMaps(Activity activity) {', start)
+          if start < 0 or end < 0:
+              raise SystemExit('toggleCard anchors missing')
+          toggle = '''    private static LinearLayout toggleCard(Activity activity, String title, String detail,\n                                           boolean checked, ToggleAction action) {\n        LinearLayout settingCard = new LinearLayout(activity);\n        settingCard.setOrientation(LinearLayout.HORIZONTAL);\n        settingCard.setGravity(Gravity.CENTER_VERTICAL);\n        settingCard.setPadding(dp(activity, 18), dp(activity, 8), dp(activity, 18), dp(activity, 8));\n        settingCard.setBackground(round(SURFACE_ALT, dp(activity, 18), Color.argb(70, 216, 180, 91)));\n\n        LinearLayout labels = new LinearLayout(activity);\n        labels.setOrientation(LinearLayout.VERTICAL);\n        labels.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);\n        labels.addView(text(activity, title, TEXT, 16f, Gravity.RIGHT));\n        labels.addView(text(activity, detail, MUTED, 11.5f, Gravity.RIGHT));\n        settingCard.addView(labels, new LinearLayout.LayoutParams(0, dp(activity, 60), 1f));\n\n        final boolean[] state = { checked };\n        TextView status = text(activity, checked ? "مفعّل" : "متوقف", checked ? NIGHT : MUTED, 12.5f, Gravity.CENTER);\n        status.setBackground(round(checked ? PRIMARY : SURFACE, dp(activity, 14), checked ? PRIMARY : Color.argb(70, 216, 180, 91)));\n        settingCard.addView(status, new LinearLayout.LayoutParams(dp(activity, 84), dp(activity, 38)));\n\n        settingCard.setOnClickListener(v -> {\n            state[0] = !state[0];\n            status.setText(state[0] ? "مفعّل" : "متوقف");\n            status.setTextColor(state[0] ? NIGHT : MUTED);\n            status.setBackground(round(state[0] ? PRIMARY : SURFACE, dp(activity, 14),\n                    state[0] ? PRIMARY : Color.argb(70, 216, 180, 91)));\n            action.onChanged(state[0]);\n        });\n        return settingCard;\n    }\n\n'''
+          s = s[:start] + toggle + s[end:]
+          marker = '    private static TextView action(Activity activity, String value, int fill, int color) {'
+          section = '''    private static TextView section(Activity activity, String value) {\n        TextView view = text(activity, value, GOLD, 12.5f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);\n        view.setPadding(dp(activity, 6), dp(activity, 5), dp(activity, 6), 0);\n        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(activity, 30));\n        params.topMargin = dp(activity, 5);\n        view.setLayoutParams(params);\n        return view;\n    }\n\n'''
+          s = must_replace(s, marker, section + marker, 'section helper')
+          p.write_text(s)
+
+          # 5) Saved places: dark Darbak panel, custom filter chips, dark list rows.
+          p = ROOT / 'SavedPlacesDialog.java'
+          s = p.read_text()
+          s = must_replace(s, 'import android.graphics.Color;\n',
+                           'import android.graphics.Color;\nimport android.graphics.drawable.ColorDrawable;\nimport android.graphics.drawable.GradientDrawable;\n', 'saved imports')
+          s = must_replace(s, '            root.setPadding(10, 8, 10, 8);',
+                           '            root.setPadding(dp(14), dp(10), dp(14), dp(10));\n            root.setBackground(round(Color.rgb(8, 39, 31), dp(22), Color.argb(150, 216, 180, 91)));', 'saved root')
+          s = s.replace('help.setTextColor(Color.DKGRAY);', 'help.setTextColor(Color.rgb(185, 179, 165));')
+          s = must_replace(s, '            list.setDividerHeight(1);',
+                           '            list.setDivider(new ColorDrawable(Color.argb(55, 216, 180, 91)));\n            list.setDividerHeight(dp(1));\n            list.setBackgroundColor(Color.TRANSPARENT);', 'saved list divider')
+          old_filter_start = s.find('        private void addFilter(LinearLayout parent, String label, String key) {')
+          old_filter_end = s.find('        private void rebuild(boolean reorder) {', old_filter_start)
+          if old_filter_start < 0 or old_filter_end < 0:
+              raise SystemExit('saved filter anchors missing')
+          filter_method = '''        private void addFilter(LinearLayout parent, String label, String key) {\n            TextView button = new TextView(activity);\n            button.setText(label);\n            button.setTextSize(13f);\n            button.setGravity(Gravity.CENTER);\n            boolean selected = (iconFilter == null && key == null) || (iconFilter != null && iconFilter.equals(key));\n            button.setTextColor(selected ? Color.rgb(8, 39, 31) : Color.rgb(247, 242, 231));\n            button.setBackground(round(selected ? Color.rgb(216, 180, 91) : Color.rgb(25, 72, 58),\n                    dp(15), Color.argb(80, 216, 180, 91)));\n            button.setOnClickListener(v -> {\n                iconFilter = key;\n                for (int i = 0; i < parent.getChildCount(); i++) {\n                    View child = parent.getChildAt(i);\n                    if (child instanceof TextView) {\n                        ((TextView) child).setTextColor(Color.rgb(247, 242, 231));\n                        child.setBackground(round(Color.rgb(25, 72, 58), dp(15), Color.argb(80, 216, 180, 91)));\n                    }\n                }\n                button.setTextColor(Color.rgb(8, 39, 31));\n                button.setBackground(round(Color.rgb(216, 180, 91), dp(15), Color.rgb(216, 180, 91)));\n                rebuild(true);\n            });\n            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(92), dp(42));\n            params.setMargins(dp(4), dp(4), dp(4), dp(4));\n            parent.addView(button, params);\n        }\n\n'''
+          s = s[:old_filter_start] + filter_method + s[old_filter_end:]
+          s = s.replace('row.setPadding(dp(8), dp(4), dp(8), dp(4));',
+                        'row.setPadding(dp(10), dp(5), dp(10), dp(5));\n                row.setBackground(round(Color.rgb(16, 52, 42), dp(14), Color.argb(45, 216, 180, 91)));')
+          s = s.replace('name.setTextColor(Color.rgb(8, 39, 31));', 'name.setTextColor(Color.rgb(247, 242, 231));')
+          s = s.replace('detail.setTextColor(Color.DKGRAY);', 'detail.setTextColor(Color.rgb(185, 179, 165));')
+          s = s.replace('text.setColor(Color.DKGRAY);', 'text.setColor(Color.rgb(216, 180, 91));')
+          bottom_anchor = '    private static int dp(float value) {'
+          helper = '''    private static GradientDrawable round(int fill, int radius, int stroke) {\n        GradientDrawable background = new GradientDrawable();\n        background.setColor(fill);\n        background.setCornerRadius(radius);\n        if (Color.alpha(stroke) > 0) background.setStroke(1, stroke);\n        return background;\n    }\n\n'''
+          s = must_replace(s, bottom_anchor, helper + bottom_anchor, 'saved round helper')
+          p.write_text(s)
+
+          # 6) Map overlays use Darbak gold/deep green rather than the accidental bright blue.
+          p = ROOT / 'map' / 'OfflineMapController.java'
+          s = p.read_text()
+          s = s.replace('AndroidGraphicFactory.INSTANCE.createColor(245, 57, 169, 255)',
+                        'AndroidGraphicFactory.INSTANCE.createColor(245, 216, 180, 91)')
+          p.write_text(s)
+
+          print('Darbak identity rebuild applied')
+          PY
+      - name: Verify behavior and compile
+        run: |
+          ./gradlew --no-daemon :app:testDebugUnitTest
+          ./gradlew --no-daemon :app:compileDebugJavaWithJavac
+      - name: Commit rebuilt UI
+        run: |
+          git config user.name 'Darbak CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java app/src/main/res
+          git diff --cached --quiet && exit 0
+          git commit -m 'ui: rebuild Darbak car-screen identity and remove legacy duplicate controls'
+          git push origin HEAD:darbakmaps-review-0.9.1
