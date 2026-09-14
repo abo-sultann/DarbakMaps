@@ -1,7 +1,7 @@
 name: Data Integrity Validation
 on:
   push:
-    branches: [darbakmaps-data-integrity-stage1, darbakmaps-recording-stage2]
+    branches: [darbakmaps-data-integrity-stage1, darbakmaps-recording-stage2, darbakmaps-location-stage3]
     paths:
       - 'app/**'
       - 'build.gradle'
