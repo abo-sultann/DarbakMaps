@@ -54,6 +54,13 @@ jobs:
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEY"
           test -s "$KEY"
           keytool -list -keystore "$KEY" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          CERT="$RUNNER_TEMP/darbak-maps-signing.der"
+          keytool -exportcert -keystore "$KEY" -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" -file "$CERT" >/dev/null
+          ACTUAL_CERT_SHA256="$(sha256sum "$CERT" | cut -d ' ' -f 1)"
+          if [ "$ACTUAL_CERT_SHA256" != "cebaccb7712e30ec2053d5e8932b921c93e51ef9dedad2c7d111709f28e14eb7" ]; then
+            echo '::error::Signing certificate does not match the verified 0.7.1 baseline. Refusing an incompatible update.'
+            exit 1
+          fi
           echo "DARBAK_KEYSTORE_PATH=$KEY" >> "$GITHUB_ENV"
           echo "DARBAK_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "DARBAK_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"

@@ -1,8 +1,5 @@
 name: Preserve Official Saudi Map
 on:
-  push:
-    branches: [darbakmaps-data-integrity-stage1]
-    paths: ['.github/workflows/preserve-official-map.yml']
   workflow_dispatch:
 permissions:
   contents: write
