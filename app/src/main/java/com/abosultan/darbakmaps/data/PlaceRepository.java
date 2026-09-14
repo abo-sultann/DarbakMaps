@@ -11,10 +11,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 public final class PlaceRepository {
     private static final String PREFS = "darbak_places";
     private static final String KEY_PLACES = "places";
+    private static final Object STORE_LOCK = new Object();
 
     public static final String ICON_CAMP = "camp";
     public static final String ICON_HOME = "home";
@@ -31,77 +33,87 @@ public final class PlaceRepository {
         preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    public synchronized Place add(String name, double latitude, double longitude) {
+    public Place add(String name, double latitude, double longitude) {
         return addDetailed(name, latitude, longitude, ICON_STAR, "عام", "");
     }
 
-    public synchronized Place addDetailed(String name, double latitude, double longitude,
-                                          String iconKey, String category, String note) {
+    public Place addDetailed(String name, double latitude, double longitude,
+                             String iconKey, String category, String note) {
         validateCoordinates(latitude, longitude);
-        List<Place> places = new ArrayList<>(load(true));
-        Place place = new Place(
-                String.valueOf(System.currentTimeMillis()),
-                safeName(name),
-                latitude,
-                longitude,
-                System.currentTimeMillis(),
-                safe(iconKey, ICON_STAR),
-                safe(category, "عام"),
-                note == null ? "" : note.trim()
-        );
-        places.add(0, place);
-        persist(places);
-        return place;
+        synchronized (STORE_LOCK) {
+            List<Place> places = new ArrayList<>(load(true));
+            Place place = new Place(
+                    UUID.randomUUID().toString(),
+                    safeName(name),
+                    latitude,
+                    longitude,
+                    System.currentTimeMillis(),
+                    safe(iconKey, ICON_STAR),
+                    safe(category, "عام"),
+                    note == null ? "" : note.trim()
+            );
+            places.add(0, place);
+            persist(places);
+            return place;
+        }
     }
 
-    public synchronized boolean update(String id, String name, String iconKey, String category, String note) {
-        List<Place> places = new ArrayList<>(load(true));
-        for (int i = 0; i < places.size(); i++) {
-            Place old = places.get(i);
-            if (old.id.equals(id)) {
-                places.set(i, new Place(old.id, safeName(name), old.latitude, old.longitude,
-                        old.createdAt, safe(iconKey, old.iconKey), safe(category, old.category),
-                        note == null ? "" : note.trim()));
-                persist(places);
-                return true;
+    public boolean update(String id, String name, String iconKey, String category, String note) {
+        synchronized (STORE_LOCK) {
+            List<Place> places = new ArrayList<>(load(true));
+            for (int i = 0; i < places.size(); i++) {
+                Place old = places.get(i);
+                if (old.id.equals(id)) {
+                    places.set(i, new Place(old.id, safeName(name), old.latitude, old.longitude,
+                            old.createdAt, safe(iconKey, old.iconKey), safe(category, old.category),
+                            note == null ? "" : note.trim()));
+                    persist(places);
+                    return true;
+                }
             }
+            return false;
         }
-        return false;
     }
 
-    public synchronized boolean delete(String id) {
-        List<Place> places = new ArrayList<>(load(true));
-        boolean removed = false;
-        for (int i = places.size() - 1; i >= 0; i--) {
-            if (places.get(i).id.equals(id)) {
-                places.remove(i);
-                removed = true;
+    public boolean delete(String id) {
+        synchronized (STORE_LOCK) {
+            List<Place> places = new ArrayList<>(load(true));
+            boolean removed = false;
+            for (int i = places.size() - 1; i >= 0; i--) {
+                if (places.get(i).id.equals(id)) {
+                    places.remove(i);
+                    removed = true;
+                }
             }
+            if (removed) persist(places);
+            return removed;
         }
-        if (removed) persist(places);
-        return removed;
     }
 
     /** Safe read for UI. Corrupt bytes stay untouched and are never replaced by an empty store. */
-    public synchronized List<Place> all() {
-        try {
-            return load(false);
-        } catch (IllegalStateException impossible) {
-            return Collections.emptyList();
+    public List<Place> all() {
+        synchronized (STORE_LOCK) {
+            try {
+                return load(false);
+            } catch (IllegalStateException impossible) {
+                return Collections.emptyList();
+            }
         }
     }
 
-    public synchronized boolean hasCorruptStore() {
-        String raw = preferences.getString(KEY_PLACES, "[]");
-        try {
-            decode(raw);
-            return false;
-        } catch (JSONException | RuntimeException error) {
-            return true;
+    public boolean hasCorruptStore() {
+        synchronized (STORE_LOCK) {
+            String raw = preferences.getString(KEY_PLACES, "[]");
+            try {
+                decode(raw);
+                return false;
+            } catch (JSONException | RuntimeException error) {
+                return true;
+            }
         }
     }
 
-    public synchronized List<Place> search(String query) {
+    public List<Place> search(String query) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) return all();
         List<Place> result = new ArrayList<>();
