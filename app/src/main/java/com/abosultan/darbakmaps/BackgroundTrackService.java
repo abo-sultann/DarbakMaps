@@ -13,7 +13,10 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.widget.Toast;
 
 import com.abosultan.darbakmaps.data.BackgroundTrackStore;
 
@@ -113,6 +116,11 @@ public final class BackgroundTrackService extends Service implements LocationLis
             result.putExtra(EXTRA_MESSAGE, message);
             if (saved != null) result.putExtra(EXTRA_FILE, saved.getAbsolutePath());
             sendBroadcast(result);
+
+            final String finalMessage = message;
+            new Handler(Looper.getMainLooper()).post(() ->
+                    Toast.makeText(getApplicationContext(), finalMessage, Toast.LENGTH_LONG).show());
+
             stopForeground(true);
             stopSelf();
         });
