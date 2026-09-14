@@ -1,51 +1,65 @@
 # DarbakMaps — REPORT IMPLEMENTATION STATUS
 
 مرجع التنفيذ: `docs/IMPLEMENTATION_ORDER.md`  
-بدء هذه الجولة: 2026-09-14  
-الحالات المستخدمة: **لم يبدأ / جارٍ / متعثر / أُغلق باختبار**.  
-لا تعني عبارة “نُفذ في الكود” أن بند القبول أُغلق ما لم يذكر اختبارًا ناجحًا.
+الإصدار: **0.9.0 / vc21**  
+مصدر Final Candidate: `1da936e63bd42a6214a0afb76c337f66c00d31be`  
+Final Candidate run: `34884270566` — **SUCCESS**  
+الحالة العامة: **مرشح اختبار ميداني، وليس Production نهائيًا**.
 
-| ID | البند | الحالة | الالتزام/الدليل | الاختبار والنتيجة | قيود متبقية |
-|---|---|---|---|---|---|
-| DATA-01 | LegacyMigration يفحص الأرشيف كاملًا قبل لمس البيانات ويطبق rollback | جارٍ | `cf1014a` | Java compile/اختبارات التكامل الشاملة لم تُسجل بعد لهذا HEAD | يلزم wrong identity/corrupt/space/failure acceptance |
-| DATA-02 | تنسيق migration مع كاتب المسار وعدم استيراد runtime state | جارٍ | `6a1c4cf`, `15a82d5`, `cf1014a` | لم يُنفذ اختبار تزامن ميداني | يحتاج kill/concurrent write test |
-| MAP-01 | عدم حذف backup لخريطة بديلة لمجرد أنها غير فارغة | جارٍ | `5540eb8` | لم يُنفذ اختبار انقطاع نسخ فعلي | يحتاج interruption/reboot acceptance |
-| TRACK-01 | سجل تلقائي دائم بدل session تُمسح عند finalize | أُغلق باختبار جزئي | `da661be`, `15a82d5`, MainActivity CI | workflow `34883690007`: `testDebugUnitTest` + `compileDebugJavaWithJavac` SUCCESS | ما زال T3 lifecycle ميداني مطلوبًا |
-| TRACK-02 | أحدث 1000 كم بالتقليم التدريجي حسب المسافة المتصلة | أُغلق باختبار وحدة | `9db27d8`, `1a6b0ae` | `TrackJournalRetentionTest`: دخل suite الناجح في workflow `34883690007` | محاكاة power/storage الفعلية باقية |
-| TRACK-03 | الفجوات لا تدخل المسافة ولا تُوصل | أُغلق باختبار وحدة | `9db27d8`, `1a6b0ae` | test `segmentGapDoesNotCountAsDistance` ضمن suite ناجح | اختبار GPS فعلي باقٍ |
-| TRACK-04 | trim crash-safe: fsync ثم pending/backup/recovery | أُغلق باختبار وحدة جزئي | `9db27d8`, `1a6b0ae` | test استعادة backup ضمن suite ناجح | kill أثناء swap ونقص مساحة على Android باقيان |
-| TRACK-05 | عدم إسقاط write مقبول عند stop/finalize + Looper رئيسي | أُغلق باختبار compile | `9b30ab6` | workflow `34883690007` compile/tests SUCCESS | يحتاج rapid stop/resume device test |
-| TRACK-06 | process restart أثناء FINALIZING | جارٍ | `9b30ab6` | منطق موجود، لم يُقتل process فعليًا أثناء الحالة | acceptance ميداني باقٍ |
-| TRACK-07 | boot يستأنف الخدمة دون فتح الواجهة | جارٍ | `7a292c9` | compile ناجح سابقًا | يحتاج reboot حقيقي على T3؛ Force Stop مستثنى |
-| TRACK-08 | حفظ نسخة GPX لا يوقف السجل | أُغلق باختبار compile | `da661be`, MainActivity CI | workflow `34883690007` SUCCESS | يحتاج ملف فعلي طويل للتحقق اليدوي |
-| TRACK-09 | pause/resume واضح ومستمر | أُغلق باختبار compile | MainActivity generated patch بعد `de6dc58` | workflow `34883690007` SUCCESS | تجربة T3 مطلوبة |
-| TRACK-10 | سقف فعلي لنقاط وطبقات الرسم | أُغلق باختبار compile/unit | rendering workflow `34883845877` | tests + compile SUCCESS | قياس RAM طويل على T3 باقٍ |
-| SEARCH-01 | تطبيع عربي/جزئي/aliases | جارٍ | `3f1b7cb` | لم يُضف suite بحث مستقل بعد | عينات من map السعودية مطلوبة |
-| SEARCH-02 | فهرس محلي دائم مرتبط بهوية الخريطة وقابل للاستكمال | جارٍ | `3f1b7cb` | compile النهائي للمجموعة قيد التحقق | يحتاج restart/map-change acceptance |
-| SEARCH-03 | POI + Way/area + فئات البر | جارٍ | `3f1b7cb` | لم تُثبت عينات لكل فئة بعد | نقص البيانات يجب توثيقه من map الفعلية |
-| SEARCH-04 | حول موقعي/حول معلم 5/10/25/50/100 كم وترتيب أقرب | جارٍ | UI integration workflow `34884015788` | workflow قيد التنفيذ عند آخر تحديث | — |
-| SEARCH-05 | لا “لا توجد نتائج” قبل اكتمال الفهرس + truncated state | جارٍ | `3f1b7cb` + UI integration | قيد CI | اختبار cap مطلوب |
-| SAVED-01 | حفظ بالأيقونة دون اسم ولوحة مفاتيح تلقائية | جارٍ | `d883c79`, `b859d40` | compile المجموعة قيد CI | اختبار حفظ/reboot على جهاز باقٍ |
-| SAVED-02 | رسومات ثابتة للسمان/مخيم/ماء/شجرة/صيد/عام | أُغلق باختبار compile | rendering patch | workflow `34883845877` SUCCESS | مراجعة بصرية 1024×600 باقية |
-| SAVED-03 | UUID/legacy IDs وعدم دمج مواقع متشابهة | جارٍ | `d883c79` | لم يضف test repository مستقل بعد | — |
-| SAVED-04 | فلترة أيقونات، nearest، مسافة واتجاه وحالة GPS | جارٍ | `9dcfc5c`, `58835cf` | `DirectionMathTest` ضمن CI النهائي الجاري | UI device acceptance باقٍ |
-| SAVED-05 | 359↔0 + smoothing | أُغلق باختبار وحدة سابقًا/يعاد التحقق | `58835cf`, `f2f5203` | DirectionMath tests مضافة؛ آخر suite شامل قيد التحقق | — |
-| SAVED-06 | لا reorder تحت الإصبع + undo delete | جارٍ | `9dcfc5c` | compile/UI integration قيد CI | touch acceptance يدوي باقٍ |
-| NAV-01 | توجيه مباشر مع تحذير أنه ليس طريقًا | جارٍ | UI integration workflow | قيد CI | اختبار T3 باقٍ |
-| NAV-02 | backtrack لا يعبر gap | أُغلق باختبار وحدة سابق | `90687ed` وما قبله | tests موجودة | — |
-| NAV-03 | لا هدف افتراضي إذا لا يوجد segment متصل | جارٍ | `e5507a5`, `7f34fca` | test مضاف؛ ينتظر suite أحدث | — |
-| GPS-01 | stale GPS يمسح السرعة/التوجيه | أُغلق باختبار compile سابق | 0.8.1 remediation | CI 0.8.1 السابق SUCCESS | T3 field test باقٍ |
-| RELEASE-01 | package يبقى `com.abosultan.darbakmaps.debug` | أُغلق بالمراجعة | build.gradle | المصدر يثبت suffix release الحالي | لا يثبت توقيع الجهاز |
-| RELEASE-02 | شهادة التوقيع مطابقة للنسخة المثبتة | متعثر | لا يوجد دليل من APK المثبت في هذه الجولة | لم يُنفذ | **حاجز Production** |
-| RELEASE-03 | update فوق النسخة السابقة وبقاء البيانات | متعثر | يعتمد RELEASE-02 | لم يُنفذ | لا يجوز وصف unsigned بأنه تحديث |
-| RELEASE-04 | manifest/APK/version/SHA موحدة | جارٍ | ستغلق عند بناء المرشح الجديد | لم يُبن المرشح الجديد بعد | لا تنشر manifest قبل signed APK |
-| PERF-01 | بحث+توجيه+تسجيل دون تجمد/نمو RAM | لم يبدأ ميدانيًا | — | لم يُنفذ | يحتاج T3/مدة طويلة |
-| FIELD-01 | reboot/screen off/GPS loss/storage/power interruption | لم يبدأ ميدانيًا | — | لم يُنفذ | يحتاج الجهاز/محاكي مناسب |
+الحالات: **لم يبدأ / جارٍ / متعثر / أُغلق باختبار**. نجاح build لا يغلق اختبار جهاز لم يُنفذ.
 
-## تصنيف المراجعة الحالية
-- **مشاكل باقية مثبتة ثم عولجت في الكود:** غياب rolling 1000km، LegacyMigration يكتب قبل تحقق الهوية، backup الخريطة يحذف مع target غير فارغ فقط، backtrack له default target، حد طبقات الرسم غير موجود، saved quail يعتمد glyph.
-- **إصلاحات مثبتة باختبار حتى الآن:** دورة MainActivity للتسجيل التلقائي (compile/unit CI)، retention الصناعي >1200km، فجوات المسار، تعافي backup للتقليم، سقف طبقات الرسم والأيقونات الثابتة.
-- **تراجعات جديدة مثبتة بالمقارنة:** لا يوجد تراجع مصنف نهائيًا حتى الآن؛ أي فشل CI لاحق يجب تسجيله هنا قبل إصلاحه.
+| ID | البند | الحالة | الدليل/الاختبار | المتبقي |
+|---|---|---|---|---|
+| DATA-01 | LegacyMigration: stage كامل قبل live state + rollback | جارٍ | الكود داخل Final Candidate وRelease lint ناجح | corrupt/wrong-id/space/forced-failure على Android |
+| DATA-02 | migration/recorder serialization وعدم استيراد runtime state | جارٍ | `DataStoreLock` + sanitization؛ Final Candidate SUCCESS | concurrent kill/device test |
+| MAP-01 | backup الخريطة لا يحذف إلا بعد تحقق البديل | جارٍ | code + release lint SUCCESS | interrupted copy/reboot fault test |
+| TRACK-01 | التسجيل التلقائي بعد الصلاحية واستمراره مستقلًا عن Activity | أُغلق باختبار برمجي | workflow `34883690007` + Final Candidate | lifecycle T3 ميداني |
+| TRACK-02 | الاحتفاظ بأحدث ~1000 كم بالتقليم التدريجي | أُغلق باختبار وحدة | `TrackJournalRetentionTest` >1200 كم ضمن Final Candidate suite | power/storage fault tests |
+| TRACK-03 | الفجوات لا تحسب ولا توصل | أُغلق باختبار وحدة | `segmentGapDoesNotCountAsDistance` | GPS ميداني |
+| TRACK-04 | trim بـ fsync/pending/backup/recovery | أُغلق باختبار وحدة جزئي | backup recovery test + Final Candidate | kill أثناء swap/storage-full |
+| TRACK-05 | writes المقبولة لا تسقط عند stop + Looper صحيح | أُغلق باختبار compile/unit | workflow `34883690007` | rapid lifecycle T3 |
+| TRACK-06 | استعادة FINALIZING بعد process recreation | جارٍ | code + Final Candidate compile/lint | process-kill فعلي |
+| TRACK-07 | boot يعيد recorder دون فتح UI | جارٍ | BootReceiver compile/lint ناجح | reboot حقيقي؛ Force Stop مستثنى |
+| TRACK-08 | snapshot GPX لا يوقف/يمسح rolling journal | أُغلق باختبار برمجي | workflow `34883690007` | ملف طويل فعلي |
+| TRACK-09 | pause/resume واضح ومستمر | أُغلق باختبار compile | workflow `34883690007` | UX على T3 |
+| TRACK-10 | حدود فعلية للنقاط والطبقات | أُغلق باختبار compile/unit | workflow `34883845877` | RAM طويل على T3 |
+| SEARCH-01 | عربي/جزئي/aliases | جارٍ | Final Candidate tests/lint/build SUCCESS | عينات حقيقية من map |
+| SEARCH-02 | persistent incremental index مربوط بهوية map | جارٍ | Final Candidate SUCCESS | restart/map-change acceptance |
+| SEARCH-03 | POI + Way/area + فئات البر | جارٍ | compile/lint SUCCESS | عينات مثبتة لكل فئة |
+| SEARCH-04 | حول موقعي/حول معلم 5/10/25/50/100 كم | أُغلق باختبار compile/unit integration | workflow `34884015788` + Final Candidate | T3 UI acceptance |
+| SEARCH-05 | partial/truncated state بدل “لا توجد” المضللة | أُغلق باختبار compile | workflow `34884015788` | cap synthetic/data test |
+| SAVED-01 | حفظ بالأيقونة دون اسم/keyboard إلزامي | أُغلق باختبار compile | PointEditor/Repository داخل Final Candidate | save/reboot field test |
+| SAVED-02 | fixed Canvas icons ومنها السمان | أُغلق باختبار compile | workflow `34883845877` | مراجعة بصرية 1024×600 |
+| SAVED-03 | stable IDs وعدم دمج المواقع المتشابهة | جارٍ | code + Final Candidate | repository test مستقل |
+| SAVED-04 | filters/nearest/distance/direction/GPS state | أُغلق باختبار compile+math | workflow `34884015788`, `DirectionMathTest` | UI field test |
+| SAVED-05 | 359↔0 + circular smoothing | أُغلق باختبار وحدة | `DirectionMathTest` داخل Final Candidate suite | — |
+| SAVED-06 | no reorder أثناء touch + undo delete | أُغلق باختبار compile | workflow `34884015788` | touch acceptance |
+| NAV-01 | direct off-road navigation مع تحذير أنه ليس طريقًا | أُغلق باختبار compile | workflow `34884015788` | T3 field test |
+| NAV-02 | backtrack لا يعبر gap | أُغلق باختبار وحدة | `TrackNavigatorTest` | — |
+| NAV-03 | لا default target بلا connected segment | أُغلق باختبار وحدة | test الجديد دخل Final Candidate suite SUCCESS | — |
+| GPS-01 | stale GPS يمسح القراءة/الإرشاد | أُغلق باختبار compile سابق | remediation + Final Candidate | T3 recheck |
+| RELEASE-01 | package = `com.abosultan.darbakmaps.debug` | أُغلق بالمراجعة/build metadata | artifact metadata من Final Candidate | — |
+| RELEASE-02 | شهادة APK مساوية للمثبت فعليًا على السيارة | **متعثر** | لا توجد قراءة من APK المثبت على T3 | حاجز Production |
+| RELEASE-03 | update-in-place مع بقاء البيانات | **متعثر** | يعتمد RELEASE-02 | لا تحذف النسخة القديمة |
+| RELEASE-04 | اسم artifact/version/commit/SHA متسقة | أُغلق باختبار build | `DarbakMaps-0.9.0-vc21-unsigned`; run `34884270566` | manifest Production يبقى hold |
+| PERF-01 | recording+search+navigation طويل بلا RAM growth | لم يبدأ ميدانيًا | — | T3/profiler |
+| FIELD-01 | screen-off/reboot/GPS/storage/power | لم يبدأ ميدانيًا | — | T3/fault injection |
 
-## ملاحظة إصدار
-الإصدار الموجود في المصدر قبل هذه الجولة هو 0.8.1/20. لن يُرفع رقم جديد إلا بعد اكتمال مجموعة التغييرات الحالية كي لا نهدر أرقام إصدارات على مراحل داخلية.
+## أدلة البناء 0.9.0
+Final Candidate `34884270566` نفذ من commit `1da936e...`:
+- `testDebugUnitTest`: SUCCESS
+- `lintRelease`: SUCCESS
+- `assembleRelease`: SUCCESS
+- candidate metadata/SHA: SUCCESS
+- artifact upload: SUCCESS
+
+Unsigned APK SHA-256:  
+`adfec3b578aecf0060bd10df254d465ba3cd132f4ceac5fbde75798331b1f6c4`
+
+تم أيضًا إنشاء Field Candidate موقّع بسلسلة Darbak stable المتاحة خارج المستودع. توقيعه تحقق بنجاح، لكن **توافقه مع التطبيق المثبت على السيارة غير مثبت** حتى تُقرأ شهادة النسخة المثبتة. لذلك لا يوصف بأنه update مضمون.
+
+## التصنيف النهائي لهذه الجولة
+- **مشاكل باقية ثبتت ثم أصلحت:** غياب rolling 1000km، migration يكتب قبل تحقق كامل، حذف map backup مبكرًا، default backtrack target، عدم وجود سقف layer، أيقونة السمان المعتمدة على glyph، اسم artifact المثبت على 0.8.0.
+- **إصلاحات مثبتة باختبار:** retention >1200km، gap distance، trim backup recovery، direction wrap/smoothing، backtrack no-target، recording UI compile/unit، fixed icons/layer bounds، nearby/saved UI integration، Final Candidate كامل.
+- **تراجعات جديدة مثبتة بالمقارنة:** لم يبق تراجع build/lint/test مثبت في commit المرشح.
+- **غير مغلق ميدانيًا:** التوقيع المثبت، update-in-place، أعطال الطاقة/التخزين، قياس RAM وزمن البحث، وعينات الخريطة السعودية الفعلية.
