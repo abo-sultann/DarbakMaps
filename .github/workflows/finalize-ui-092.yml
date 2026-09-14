@@ -1,0 +1,46 @@
+name: Finalize Darbak 0.9.2 UI
+on:
+  push:
+    branches: [darbakmaps-review-0.9.1]
+    paths:
+      - '.github/workflows/finalize-ui-092.yml'
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: darbakmaps-review-0.9.1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply final UI refinements
+        run: python3 .github/scripts/finalize_ui_092.py
+      - name: Enforce Darbak UI rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R "57, 169, 255" app/src/main/java app/src/main/res; then exit 1; fi
+          if grep -R "#39A9FF" app/src/main/java app/src/main/res; then exit 1; fi
+          if grep -R "new ProgressDialog" app/src/main/java/com/abosultan/darbakmaps; then exit 1; fi
+          if grep -q "new Spinner" app/src/main/java/com/abosultan/darbakmaps/PointEditor.java; then exit 1; fi
+          if grep -q "LinearLayout sidePanel" app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java; then exit 1; fi
+          grep -q "DarbakProgressDialog" app/src/main/java/com/abosultan/darbakmaps/MainActivity.java
+          grep -q "DarbakProgressDialog" app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java
+      - name: Unit tests and compile
+        run: |
+          ./gradlew --no-daemon :app:testDebugUnitTest
+          ./gradlew --no-daemon :app:compileDebugJavaWithJavac
+      - name: Commit final UI
+        run: |
+          git config user.name 'Darbak CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java app/src/main/res
+          git diff --cached --quiet && exit 0
+          git commit -m 'ui: finish Darbak 0.9.2 car-screen experience'
+          git push origin HEAD:darbakmaps-review-0.9.1
