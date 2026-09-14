@@ -58,10 +58,18 @@ public final class NavigationGuidance {
 
     public static void update(Activity activity, Location location) {
         if (!isActive(activity) || location == null) return;
-        double lat = targetLat(activity);
-        double lon = targetLon(activity);
+        guideTo(activity,location,targetName(activity),targetLat(activity),targetLon(activity),true);
+    }
+    public static void noFix(Activity activity){
+        if(!isActive(activity)&&!BacktrackGuidance.isActive(activity))return;
+        TextView distance=activity.findViewById(R.id.nav_distance),detail=activity.findViewById(R.id.nav_detail);
+        TextView arrow=activity.findViewById(R.id.nav_arrow);
+        if(distance!=null)distance.setText("—");if(detail!=null)detail.setText("بانتظار إشارة GPS حديثة");if(arrow!=null)arrow.setAlpha(0.3f);
+    }
+    public static void guideTo(Activity activity,Location location,String label,double lat,double lon,boolean arrival){
         float[] result = new float[3];
         Location.distanceBetween(location.getLatitude(), location.getLongitude(), lat, lon, result);
+        MapRuntimeBridge.navigateToFix(activity,lat,lon);
         float meters = Math.max(0f, result[0]);
         float targetBearing = normalize(result[1]);
         float vehicleBearing = location.hasBearing() ? normalize(location.getBearing()) : 0f;
@@ -73,8 +81,9 @@ public final class NavigationGuidance {
         TextView distance = activity.findViewById(R.id.nav_distance);
         TextView detail = activity.findViewById(R.id.nav_detail);
         if (panel != null) panel.setVisibility(View.VISIBLE);
-        if (arrow != null) arrow.setRotation(relative);
-        if (name != null) name.setText(targetName(activity));
+        boolean headingKnown=location.hasBearing()&&location.hasSpeed()&&location.getSpeed()>1f;
+        if (arrow != null){arrow.setRotation(headingKnown?relative:targetBearing);arrow.setAlpha(headingKnown?1f:0.45f);}
+        if (name != null) name.setText(label);
         if (distance != null) distance.setText(formatDistance(meters));
 
         String eta = "";
@@ -83,13 +92,13 @@ public final class NavigationGuidance {
             eta = " • تقريبًا " + minutes + " د";
         }
         String mode = MapRuntimeBridge.routingLabel(MapUiPreferences.routingMode(activity));
-        String warning = MapUiPreferences.offRouteAlert(activity) && Math.abs(relative) > 70f ? " • عدّل اتجاهك" : "";
+        String warning = !headingKnown ? " • الاتجاه بالنسبة للشمال حتى تتحرك" : MapUiPreferences.offRouteAlert(activity) && Math.abs(relative) > 70f ? " • عدّل اتجاهك" : "";
         if (detail != null) {
             detail.setText(String.format(Locale.US, "%s • اتجاه %03d°%s%s",
                     mode, Math.round(targetBearing), eta, warning));
         }
 
-        if (meters <= 40f && !arrivalShown) {
+        if (arrival && meters <= 40f && !arrivalShown) {
             arrivalShown = true;
             Toast.makeText(activity, "وصلت إلى " + targetName(activity), Toast.LENGTH_SHORT).show();
         }
@@ -132,3 +141,4 @@ public final class NavigationGuidance {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 }
+

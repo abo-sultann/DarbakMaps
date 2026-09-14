@@ -19,7 +19,7 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 public final class TrackStorage {
-    private static final int MAX_LOADED_POINTS = 50_000;
+    private static final int MAX_LOADED_POINTS = 12000;
 
     private TrackStorage() {
     }
@@ -31,7 +31,8 @@ public final class TrackStorage {
         }
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
         String safeName = sanitize(displayName);
-        File file = new File(directory, safeName + "-" + stamp + ".gpx");
+        File target = new File(directory, safeName + "-" + stamp + "-"+System.nanoTime()+".gpx");
+        File file=new File(target.getAbsolutePath()+".pending");
 
         FileOutputStream output = new FileOutputStream(file);
         try {
@@ -49,7 +50,10 @@ public final class TrackStorage {
             serializer.startTag("http://www.topografix.com/GPX/1/1", "trkseg");
             SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
             timeFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+            boolean first=true;
             for (GeoPoint point : points) {
+                if(point.segmentStart&&!first){serializer.endTag("http://www.topografix.com/GPX/1/1","trkseg");serializer.startTag("http://www.topografix.com/GPX/1/1","trkseg");}
+                first=false;
                 serializer.startTag("http://www.topografix.com/GPX/1/1", "trkpt");
                 serializer.attribute(null, "lat", Double.toString(point.latitude));
                 serializer.attribute(null, "lon", Double.toString(point.longitude));
@@ -62,11 +66,12 @@ public final class TrackStorage {
             serializer.endTag("http://www.topografix.com/GPX/1/1", "trk");
             serializer.endTag("http://www.topografix.com/GPX/1/1", "gpx");
             serializer.endDocument();
-            serializer.flush();
+            serializer.flush();output.getFD().sync();
         } finally {
             output.close();
         }
-        return file;
+        if(!file.renameTo(target))throw new IOException("تعذر تثبيت ملف المسار");
+        return target;
     }
 
     public static File[] list(Context context) {
@@ -80,43 +85,35 @@ public final class TrackStorage {
     }
 
     public static List<GeoPoint> load(File file) throws IOException {
-        if (file == null || !file.isFile()) {
-            throw new IOException("ملف المسار غير موجود");
-        }
-        List<GeoPoint> points = new ArrayList<>();
-        FileInputStream input = new FileInputStream(file);
-        try {
-            XmlPullParser parser = Xml.newPullParser();
-            parser.setInput(input, "UTF-8");
-            int event = parser.getEventType();
-            while (event != XmlPullParser.END_DOCUMENT && points.size() < MAX_LOADED_POINTS) {
-                if (event == XmlPullParser.START_TAG
-                        && ("trkpt".equalsIgnoreCase(parser.getName())
-                        || "rtept".equalsIgnoreCase(parser.getName()))) {
-                    String rawLatitude = parser.getAttributeValue(null, "lat");
-                    String rawLongitude = parser.getAttributeValue(null, "lon");
-                    try {
-                        double latitude = Double.parseDouble(rawLatitude);
-                        double longitude = Double.parseDouble(rawLongitude);
-                        if (latitude >= -90d && latitude <= 90d
-                                && longitude >= -180d && longitude <= 180d) {
-                            points.add(new GeoPoint(latitude, longitude,
-                                    file.lastModified() + points.size()));
-                        }
-                    } catch (RuntimeException ignored) {
-                        // Skip malformed points while keeping the rest of the GPX usable.
+        if(file==null||!file.isFile())throw new IOException("ملف المسار غير موجود");
+        List<GeoPoint> points=new ArrayList<>();
+        try(FileInputStream in=new FileInputStream(file)){
+            XmlPullParser parser=Xml.newPullParser();parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES,true);parser.setInput(in,"UTF-8");
+            double lat=0,lon=0;long time=0;boolean reading=false,segment=true,pendingSegment=false;long seen=0,step=1;
+            SimpleDateFormat fmt=new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'",Locale.US);fmt.setTimeZone(TimeZone.getTimeZone("UTC"));
+            GeoPoint last=null;
+            for(int event=parser.getEventType();event!=XmlPullParser.END_DOCUMENT;event=parser.next()){
+                String name=parser.getName();
+                if(event==XmlPullParser.START_TAG){
+                    if("trkseg".equals(name))segment=true;
+                    if("trkpt".equals(name)||"rtept".equals(name)){
+                        reading=false;try{lat=Double.parseDouble(parser.getAttributeValue(null,"lat"));lon=Double.parseDouble(parser.getAttributeValue(null,"lon"));reading=Double.isFinite(lat)&&Double.isFinite(lon)&&lat>=-90&&lat<=90&&lon>=-180&&lon<=180;}catch(RuntimeException ignored){}
+                        time=file.lastModified();
+                    }else if(reading&&"time".equals(name))try{time=fmt.parse(parser.nextText()).getTime();}catch(Exception ignored){}
+                }else if(event==XmlPullParser.END_TAG&&reading&&("trkpt".equals(name)||"rtept".equals(name))){
+                    pendingSegment|=segment;last=new GeoPoint(lat,lon,time,pendingSegment);segment=false;
+                    if(seen%step==0){points.add(last);pendingSegment=false;}
+                    seen++;reading=false;
+                    if(points.size()>MAX_LOADED_POINTS){
+                        List<GeoPoint> reduced=new ArrayList<>();boolean gap=false;
+                        for(int i=0;i<points.size();i++){GeoPoint p=points.get(i);gap|=p.segmentStart;if(i%2==0){reduced.add(new GeoPoint(p.latitude,p.longitude,p.timeMillis,gap));gap=false;}}
+                        pendingSegment|=gap;points=reduced;step*=2;
                     }
                 }
-                event = parser.next();
             }
-        } catch (Exception error) {
-            throw new IOException("ملف GPX غير صالح", error);
-        } finally {
-            input.close();
-        }
-        if (points.size() < 2) {
-            throw new IOException("المسار لا يحتوي نقاطًا كافية");
-        }
+            if(last!=null&&(points.isEmpty()||points.get(points.size()-1)!=last))points.add(new GeoPoint(last.latitude,last.longitude,last.timeMillis,pendingSegment));
+        }catch(Exception e){throw new IOException("تعذر قراءة GPX",e);}
+        if(points.size()<2)throw new IOException("المسار لا يحتوي نقاطًا كافية");
         return points;
     }
 
@@ -133,3 +130,4 @@ public final class TrackStorage {
         return result.length() == 0 ? "مسار" : result.toString();
     }
 }
+

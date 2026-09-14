@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.DarbakMaps" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.DarbakMaps" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:colorBackground">#07111D</item>
+        <item name="android:textColorPrimary">#F4F7FA</item>
+        <item name="android:textColorSecondary">#9FB0C2</item>
+        <item name="android:alertDialogTheme">@style/DarbakDialog</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:colorAccent">@color/darbak_gold</item>
@@ -11,6 +15,13 @@
         <item name="android:windowDisablePreview">true</item>
     </style>
 
+    <style name="DarbakDialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#D7AD55</item>
+        <item name="android:colorBackground">#111D2B</item>
+        <item name="android:textColorPrimary">#F4F7FA</item>
+        <item name="android:textColorSecondary">#9FB0C2</item>
+        <item name="android:windowBackground">#111D2B</item>
+    </style>
     <style name="DarbakDockAction">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">match_parent</item>
@@ -23,4 +34,5 @@
         <item name="android:textSize">13sp</item>
     </style>
 </resources>
+
 

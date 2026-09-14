@@ -71,6 +71,12 @@ public final class MainActivity extends Activity implements LocationController.C
     private volatile boolean mapDownloadCancelled;
     private volatile boolean searchRunning;
     private String startupPhase = "بدء التشغيل";
+    private final android.os.Handler uiHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean resultRegistered;
+    private final android.content.BroadcastReceiver trackResult=new android.content.BroadcastReceiver(){
+        public void onReceive(android.content.Context c,Intent i){toast(i.getStringExtra("message"));syncBackgroundTrackUi();}
+    };
+    private final Runnable statsTick=new Runnable(){public void run(){if(initialized){syncBackgroundTrackUi();uiHandler.postDelayed(this,2000);}}};
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -196,13 +202,18 @@ public final class MainActivity extends Activity implements LocationController.C
         findViewById(R.id.import_map).setOnClickListener(view -> chooseMapFile());
         findViewById(R.id.download_map).setOnClickListener(view -> confirmRecommendedMapDownload());
         findViewById(R.id.action_map).setOnClickListener(view -> centerOnCurrentLocation());
-        findViewById(R.id.action_save).setOnClickListener(view -> QuickPointDialog.show(this, placeRepository,
-                locationController == null ? null : locationController.getLastLocation()));
+        findViewById(R.id.action_save).setOnClickListener(view -> {
+            Location fix=locationController==null?null:locationController.getLastLocation();
+            if(fix==null){toast("بانتظار إشارة GPS حديثة ودقيقة");return;}
+            PointEditor.show(this,fix.getLatitude(),fix.getLongitude(),null);
+        });
         actionRecord.setOnClickListener(view -> toggleTrackRecording());
         actionRecord.setOnLongClickListener(view -> {
             if (!MapUiPreferences.backgroundTrackEnabled(this)) return false;
             boolean paused = TrackSessionState.togglePaused(this);
             TrackSessionState.updateActionLabel(actionRecord, this);
+        actionRecord.setEnabled(!BackgroundTrackService.finishing(this));
+        if(BackgroundTrackService.finishing(this))actionRecord.setText("جارٍ الحفظ…");
             toast(paused ? "تم إيقاف تسجيل المسار مؤقتًا" : "تمت متابعة تسجيل المسار");
             return true;
         });
@@ -279,12 +290,14 @@ public final class MainActivity extends Activity implements LocationController.C
             try {
                 MapStorage.importMap(this, uri);
                 runOnUiThread(() -> {
+                    if(isActivityUnavailable())return;
                     progress.dismiss();
                     toast("تمت إضافة الخريطة وأصبحت جاهزة أوفلاين");
                     loadActiveMap();
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
+                    if(isActivityUnavailable())return;
                     progress.dismiss();
                     toast(error.getMessage() == null ? "تعذر إضافة الخريطة" : error.getMessage());
                 });
@@ -294,7 +307,7 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void confirmRecommendedMapDownload() {
         showImmersive(new AlertDialog.Builder(this)
-                .setTitle("خريطة الخليج")
+                .setTitle("خريطة دربك السعودية")
                 .setMessage(RecommendedMapDownloader.DISPLAY_SIZE + " • Wi‑Fi")
                 .setNegativeButton("إلغاء", null)
                 .setPositiveButton("تنزيل", (dialog, which) -> downloadRecommendedMap())
@@ -308,7 +321,7 @@ public final class MainActivity extends Activity implements LocationController.C
         progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
         progress.setMax(100);
         progress.setProgress(0);
-        progress.setMessage("بدء تنزيل خريطة الخليج…");
+        progress.setMessage("بدء تنزيل خريطة دربك السعودية…");
         progress.setCancelable(true);
         progress.setCanceledOnTouchOutside(false);
         progress.setOnCancelListener(dialog -> mapDownloadCancelled = true);
@@ -337,7 +350,7 @@ public final class MainActivity extends Activity implements LocationController.C
                         return;
                     }
                     progress.dismiss();
-                    toast("تمت إضافة خريطة الخليج وأصبحت جاهزة أوفلاين");
+                    toast("تمت إضافة خريطة دربك السعودية وأصبحت جاهزة أوفلاين");
                     loadActiveMap();
                 });
             } catch (RecommendedMapDownloader.CancelledException cancelled) {
@@ -381,6 +394,7 @@ public final class MainActivity extends Activity implements LocationController.C
         Double longitude = current == null ? null : current.getLongitude();
 
         ioExecutor.execute(() -> {
+            try {
             List<OfflineMapSearchEngine.Result> results = searchEngine.search(
                     query,
                     activeMap.isFile() ? activeMap : null,
@@ -397,11 +411,12 @@ public final class MainActivity extends Activity implements LocationController.C
                 progress.dismiss();
                 showSearchResults(results);
             });
+            }catch(RuntimeException error){runOnUiThread(()->{searchRunning=false;if(!isActivityUnavailable()){progress.dismiss();toast("تعذر البحث الآن؛ البيانات الأصلية محفوظة");}});}
         });
     }
 
     private void showSearchResults(List<OfflineMapSearchEngine.Result> results) {
-        if (results.isEmpty()) {
+        if (results.isEmpty() && searchEngine.isComplete() && !searchEngine.hasFailed()) {
             toast(MapStorage.activeMap(this).isFile()
                     ? "لا توجد نتائج مطابقة داخل الخريطة"
                     : "لا توجد نتائج؛ أضف خريطة دربك للبحث في المدن والمعالم");
@@ -414,7 +429,10 @@ public final class MainActivity extends Activity implements LocationController.C
             labels[index] = result.name + "\n" + result.source + (distance.isEmpty() ? "" : " • " + distance);
         }
         showImmersive(new AlertDialog.Builder(this)
-                .setTitle("نتائج البحث")
+                .setTitle(searchEngine.hasFailed()?"تعذر قراءة جزء من الخريطة":searchEngine.isComplete()?"نتائج البحث":"نتائج أولية — لم يكتمل فحص الخريطة")
+                .setPositiveButton(searchEngine.isComplete()?"تم":"متابعة البحث",(d,w)->{
+                    if(!searchEngine.isComplete())performSearch(((EditText)findViewById(R.id.search_input)).getText().toString());
+                })
                 .setItems(labels, (dialog, which) -> {
                     OfflineMapSearchEngine.Result result = results.get(which);
                     if (mapController == null) {
@@ -445,6 +463,7 @@ public final class MainActivity extends Activity implements LocationController.C
             return;
         }
         if (mapController != null) {
+            mapController.resumeFollow();
             mapController.centerOn(location.getLatitude(), location.getLongitude());
         }
     }
@@ -459,12 +478,16 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void toggleTrackRecording() {
+        if(BackgroundTrackService.finishing(this)){toast("جارٍ حفظ المسار…");return;}
+        if(MapUiPreferences.backgroundTrackEnabled(this)&&TrackSessionState.isPaused(this)){
+            TrackSessionState.togglePaused(this);syncBackgroundTrackUi();toast("تمت متابعة المسار");return;
+        }
         boolean enabled = !MapUiPreferences.backgroundTrackEnabled(this);
         BackgroundTrackService.setEnabled(this, enabled);
         onBackgroundTrackSettingChanged(enabled);
         toast(enabled
                 ? "بدأ رسم وتسجيل المسار — سيستمر عند إغلاق التطبيق"
-                : "تم إيقاف التسجيل وحفظ المسار");
+                : "جارٍ حفظ المسار…");
     }
 
     void onBackgroundTrackSettingChanged(boolean enabled) {
@@ -482,12 +505,16 @@ public final class MainActivity extends Activity implements LocationController.C
     private void syncBackgroundTrackUi() {
         if (actionRecord == null) return;
         TrackSessionState.updateActionLabel(actionRecord, this);
+        actionRecord.setEnabled(!BackgroundTrackService.finishing(this));
+        if(BackgroundTrackService.finishing(this))actionRecord.setText("جارٍ الحفظ…");
         View statsPanel = findViewById(R.id.track_stats_panel);
         TextView statsText = findViewById(R.id.track_stats_text);
         boolean showStats = MapUiPreferences.backgroundTrackEnabled(this) && MapUiPreferences.showTrackStats(this);
         if (statsPanel != null) statsPanel.setVisibility(showStats ? View.VISIBLE : View.GONE);
         if (statsText != null && showStats) {
-            statsText.setText(TrackSessionState.summary(this) + (TrackSessionState.isPaused(this) ? " • متوقف مؤقتًا" : ""));
+            String state=BackgroundTrackService.status(this);
+            statsText.setText(TrackSessionState.summary(this) + (TrackSessionState.isPaused(this) ? " • متوقف مؤقتًا" : "")
+                    +(state.startsWith("تعذر")?" • "+state:""));
         }
     }
 
@@ -498,7 +525,7 @@ public final class MainActivity extends Activity implements LocationController.C
             List<GeoPoint> points = BackgroundTrackStore.loadActive(this);
             runOnUiThread(() -> {
                 if (!isActivityUnavailable() && mapController != null && points.size() >= 2) {
-                    mapController.showStoredTrack(points);
+                    mapController.restoreRecordedTrack(points);
                 }
             });
         });
@@ -546,12 +573,9 @@ public final class MainActivity extends Activity implements LocationController.C
     private void showPlaceActions(PlaceRepository.Place selected) {
         int routingMode = MapUiPreferences.routingMode(this);
         String routingLabel = MapRuntimeBridge.routingLabel(routingMode);
-        String[] actions = {"عرض على الخريطة", "توجيه — " + routingLabel, "حذف الموقع"};
+        String[] actions = {"عرض على الخريطة", "توجيه — " + routingLabel, "تعديل الاسم والفئة والملاحظة", "حذف الموقع"};
         showImmersive(new AlertDialog.Builder(this)
                 .setTitle(PlaceRepository.iconGlyph(selected.iconKey) + "  " + selected.name)
-                .setMessage(selected.note == null || selected.note.isEmpty()
-                        ? selected.category
-                        : selected.category + "\n" + selected.note)
                 .setItems(actions, (dialog, which) -> {
                     if (which == 0) {
                         if (mapController != null) mapController.showPoint(selected.latitude, selected.longitude);
@@ -568,15 +592,16 @@ public final class MainActivity extends Activity implements LocationController.C
                         } else {
                             toast("بدأ التوجيه المباشر إلى " + selected.name);
                         }
+                    } else if(which==2){
+                        PointEditor.show(this,selected.latitude,selected.longitude,selected);
                     } else {
                         AlertDialog confirm = new AlertDialog.Builder(this)
                                 .setTitle("حذف الموقع؟")
                                 .setMessage(selected.name)
                                 .setNegativeButton("إلغاء", null)
                                 .setPositiveButton("حذف", (d, w) -> {
-                                    placeRepository.delete(selected.id);
-                                    MapRuntimeBridge.refreshSavedPlaces(this);
-                                    toast("تم حذف الموقع");
+                                    try{placeRepository.delete(selected.id);MapRuntimeBridge.refreshSavedPlaces(this);toast("تم حذف الموقع");}
+                                    catch(RuntimeException error){toast(error.getMessage());}
                                 }).create();
                         showImmersive(confirm);
                     }
@@ -681,6 +706,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 if (points.size() < 2) throw new IllegalStateException("المسار قصير");
                 GeoPoint start = points.get(0);
                 runOnUiThread(() -> {
+                    if(isActivityUnavailable())return;
                     BacktrackGuidance.start(this, track, points);
                     toast("اتبع الخط الظاهر للرجوع على نفس الطريق");
                 });
@@ -736,7 +762,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 ? "الخريطة الحالية: " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب\nجاهزة للعمل بدون إنترنت"
                 : "لا توجد حزمة خريطة مضافة";
         String[] actions = {
-                "تنزيل خريطة الخليج الموصى بها (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
+                "تنزيل خريطة دربك السعودية الموصى بها (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
                 "إضافة خريطة من USB أو الذاكرة"
         };
         showImmersive(new AlertDialog.Builder(this)
@@ -830,15 +856,19 @@ public final class MainActivity extends Activity implements LocationController.C
             if (MapUiPreferences.backgroundTrackEnabled(this) && !TrackSessionState.isPaused(this) && mapController != null) {
                 mapController.addTrackPoint(location.getLatitude(), location.getLongitude());
             }
-            NavigationGuidance.update(this, location);
-            BacktrackGuidance.update(this, location);
+            if(BacktrackGuidance.isActive(this))BacktrackGuidance.update(this,location);
+            else NavigationGuidance.update(this, location);
             syncBackgroundTrackUi();
         });
     }
 
     @Override
     public void onProviderState(boolean enabled) {
-        runOnUiThread(() -> gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح"));
+        runOnUiThread(() -> {
+            if(gpsStatus==null)return;
+            gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح • بانتظار إشارة حديثة");
+            if(!enabled){if(speedValue!=null)speedValue.setText("—");NavigationGuidance.noFix(this);if(mapController!=null)mapController.markLocationStale();}
+        });
     }
 
     @Override
@@ -882,13 +912,23 @@ public final class MainActivity extends Activity implements LocationController.C
             locationController.start();
         }
         if (initialized) {
+            if(!resultRegistered){
+                android.content.IntentFilter filter=new android.content.IntentFilter(BackgroundTrackService.RESULT);
+                if(android.os.Build.VERSION.SDK_INT>=33)registerReceiver(trackResult,filter,android.content.Context.RECEIVER_NOT_EXPORTED);
+                else registerReceiver(trackResult,filter);
+                resultRegistered=true;
+            }
+            uiHandler.removeCallbacks(statsTick);uiHandler.post(statsTick);
             BackgroundTrackService.ensureRunning(this);
             syncBackgroundTrackUi();
+            restoreActiveTrack();
         }
     }
 
     @Override
     protected void onPause() {
+        uiHandler.removeCallbacks(statsTick);
+        if(resultRegistered){unregisterReceiver(trackResult);resultRegistered=false;}
         if (locationController != null) {
             locationController.stop();
         }
@@ -981,3 +1021,4 @@ public final class MainActivity extends Activity implements LocationController.C
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 }
+

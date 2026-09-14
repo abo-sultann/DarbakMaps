@@ -1,89 +1,73 @@
 name: Darbak Test APK Publish
-
 on:
   workflow_run:
     workflows: [Android Build]
     types: [completed]
-
 permissions:
   actions: read
   contents: write
-
 concurrency:
   group: darbakmaps-test-publish
-  cancel-in-progress: true
-
+  cancel-in-progress: false
 jobs:
   publish:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 15
     steps:
-      - name: Checkout current main
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: main
-
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
           name: DarbakMaps-debug
           path: release-apk
-
-      - name: Prepare release metadata
-        id: meta
-        shell: bash
+      - name: Validate built metadata and reject a superseded build
+        env:
+          BUILT_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          APK=release-apk/app-debug.apk
-          test -s "$APK"
-          cp "$APK" release-apk/DarbakMaps-debug.apk
-          VERSION_CODE=$(sed -n "s/^[[:space:]]*versionCode[[:space:]]\+\([0-9][0-9]*\).*/\1/p" app/build.gradle | head -1)
-          VERSION_NAME=$(sed -n "s/^[[:space:]]*versionName[[:space:]]*'\([^']*\)'.*/\1/p" app/build.gradle | head -1)
-          SHA256=$(sha256sum release-apk/DarbakMaps-debug.apk | awk '{print $1}')
-          test -n "$VERSION_CODE"
-          test -n "$VERSION_NAME"
-          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
-
-      - name: Publish stable test asset
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$BUILT_SHA"
+          APK=$(find release-apk -name app-debug.apk -print -quit)
+          META=$(find release-apk -name release-metadata.json -print -quit)
+          cp "$APK" DarbakMaps-debug.apk
+          cp "$META" release-metadata.json
+          python3 - <<'PY'
+          import json,hashlib,os
+          from pathlib import Path
+          m=json.loads(Path('release-metadata.json').read_text())
+          assert m['sourceCommit']==os.environ['BUILT_SHA']
+          assert hashlib.sha256(Path('DarbakMaps-debug.apk').read_bytes()).hexdigest()==m['sha256']
+          assert m['packageName']=='com.abosultan.darbakmaps.debug' and m['minSdk']<=25
+          m['apkUrl']='https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/releases/download/v'+m['versionName']+'/DarbakMaps-debug.apk'
+          Path('update-manifest-debug.json').write_text(json.dumps(m,indent=2)+'\n')
+          PY
+      - name: Preserve official Saudi map as a durable verified data release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! gh release view darbakmaps-test >/dev/null 2>&1; then
-            gh release create darbakmaps-test \
-              --title 'Darbak Maps — latest test build' \
-              --notes 'Stable test channel for the car screen. Install the current baseline once; later test updates can be installed from inside the app.'
+          if ! gh release view darbak-saudi-map-v1 >/dev/null 2>&1; then
+            gh run download 34758044067 --name DarbakMaps-offline-map-final --dir official-map
+            echo '409d7ecaf2d6c610921cfadd42855fbdd3ce63ae08a00ff94965b18bb25fdd1c  official-map/darbak-saudi.map' | sha256sum -c
+            gh release create darbak-saudi-map-v1 official-map/darbak-saudi.map --target "$GITHUB_SHA" --title 'Darbak Saudi — verified offline map' --notes 'Existing approved map, unchanged. SHA-256: 409d7ecaf2d6c610921cfadd42855fbdd3ce63ae08a00ff94965b18bb25fdd1c' --latest=false
           fi
-          gh release upload darbakmaps-test release-apk/DarbakMaps-debug.apk --clobber
-
-      - name: Update test manifest
+      - name: Publish versioned APK and stable alias
         env:
-          VERSION_CODE: ${{ steps.meta.outputs.version_code }}
-          VERSION_NAME: ${{ steps.meta.outputs.version_name }}
-          SHA256: ${{ steps.meta.outputs.sha256 }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cat > update-manifest-debug.json <<EOF
-          {
-            "versionCode": ${VERSION_CODE},
-            "versionName": "${VERSION_NAME}",
-            "packageName": "com.abosultan.darbakmaps.debug",
-            "minSdk": 24,
-            "apkUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/darbakmaps-test/DarbakMaps-debug.apk",
-            "sha256": "${SHA256}"
-          }
-          EOF
+          set -euo pipefail
+          VERSION=$(python3 -c "import json;print(json.load(open('release-metadata.json'))['versionName'])")
+          gh release create "v$VERSION" DarbakMaps-debug.apk release-metadata.json --target "$GITHUB_SHA" --title "Darbak Maps $VERSION" --notes-file docs/RELEASE-0.7.2.md
+          gh release upload darbakmaps-test DarbakMaps-debug.apk --clobber
+      - name: Publish manifest only after verified APK upload
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add update-manifest-debug.json
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "ci: refresh Darbak Maps test update manifest"
+          git commit -m 'release: publish verified update manifest [skip ci]'
           git push origin HEAD:main

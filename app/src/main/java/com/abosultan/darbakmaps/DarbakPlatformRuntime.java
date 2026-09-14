@@ -51,6 +51,8 @@ public final class DarbakPlatformRuntime {
                 + "RAM: " + (mem.availMem / 1048576L) + "MB متاح من " + (mem.totalMem / 1048576L) + "MB\n"
                 + "التخزين الداخلي المتاح: " + (stat.getAvailableBytes() / 1048576L) + "MB\n"
                 + "آخر Crash: " + (lastCrash() == null ? "لا يوجد" : "مسجل") + "\n"
+                + "التسجيل: " + BackgroundTrackService.status(app)+"\n"
+                + "ملف المسار النشط: "+com.abosultan.darbakmaps.data.BackgroundTrackStore.activeFile(app).length()+" بايت\n"
                 + "الهوية: دربك • تصميم وتطوير • أبوسلطان";
     }
 
@@ -97,3 +99,4 @@ public final class DarbakPlatformRuntime {
         }
     }
 }
+

@@ -37,10 +37,18 @@ public final class TrackSessionState {
 
     public static boolean togglePaused(Context context) {
         boolean next = !isPaused(context);
-        prefs(context).edit().putBoolean(PAUSED, next).apply();
+        SharedPreferences p=prefs(context);
+        long now=System.currentTimeMillis();
+        long paused=p.getLong("paused_total",0L);
+        if(!next)paused+=Math.max(0,now-p.getLong("pause_at",now));
+        p.edit().putBoolean(PAUSED,next).putBoolean(HAS_LAST,false)
+                .putLong("pause_at",next?now:0).putLong("paused_total",paused)
+                .putLong("segment_revision",p.getLong("segment_revision",0)+1).commit();
         return next;
     }
 
+    public static void breakSegment(Context context) { prefs(context).edit().putBoolean(HAS_LAST,false).commit(); }
+    public static long segmentRevision(Context context) {return prefs(context).getLong("segment_revision",0);}
     public static void onFix(Context context, Location location) {
         if (location == null || isPaused(context)) return;
         beginIfNeeded(context);
@@ -68,7 +76,9 @@ public final class TrackSessionState {
         SharedPreferences p = prefs(context);
         float km = p.getFloat(DIST, 0f) / 1000f;
         long start = p.getLong(START, System.currentTimeMillis());
-        long elapsed = Math.max(1000L, System.currentTimeMillis() - start);
+        long now=System.currentTimeMillis();
+        long paused=p.getLong("paused_total",0L)+(isPaused(context)?Math.max(0,now-p.getLong("pause_at",now)):0);
+        long elapsed = Math.max(1000L, now - start - paused);
         float hours = elapsed / 3600000f;
         float avg = hours > 0f ? km / hours : 0f;
         long totalMinutes = elapsed / 60000L;
@@ -91,3 +101,4 @@ public final class TrackSessionState {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 }
+

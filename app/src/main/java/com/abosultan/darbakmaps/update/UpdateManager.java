@@ -116,20 +116,18 @@ public final class UpdateManager {
                 if (!directory.exists() && !directory.mkdirs()) {
                     throw new IllegalStateException("Update directory unavailable");
                 }
-                apk = new File(directory, "DarbakMaps-" + update.versionName + ".apk");
+                apk = new File(directory, "DarbakMaps-" + update.versionCode + ".apk");
                 if (apk.exists() && !apk.delete()) throw new IllegalStateException("Old update file unavailable");
 
                 connection = (HttpURLConnection) secureUrl(update.apkUrl).openConnection();
                 connection.setConnectTimeout(15000);
                 connection.setReadTimeout(30000);
-                BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
-                FileOutputStream output = new FileOutputStream(apk);
-                byte[] buffer = new byte[64 * 1024];
-                int read;
-                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-                output.getFD().sync();
-                output.close();
-                input.close();
+                if(new android.os.StatFs(directory.getAbsolutePath()).getAvailableBytes()<48L*1024*1024)throw new IllegalStateException("المساحة غير كافية");
+                try(BufferedInputStream input=new BufferedInputStream(connection.getInputStream());FileOutputStream output=new FileOutputStream(apk)){
+                    byte[] buffer=new byte[64*1024];int read;long total=0;
+                    while((read=input.read(buffer))!=-1){total+=read;if(total>40L*1024*1024)throw new IllegalStateException("حجم تحديث غير متوقع");output.write(buffer,0,read);}
+                    output.getFD().sync();
+                }
 
                 String verificationError = verifyDownloadedApk(activity, apk, update);
                 if (verificationError != null) {
@@ -138,7 +136,10 @@ public final class UpdateManager {
                     return;
                 }
                 File finalApk = apk;
-                activity.runOnUiThread(() -> install(activity, finalApk));
+                activity.runOnUiThread(() -> {
+                    if(activity.isFinishing()||activity.isDestroyed()){callback.onStatus("اكتمل التنزيل؛ افتح التحديث مجددًا للتثبيت");return;}
+                    try{install(activity,finalApk);}catch(RuntimeException e){callback.onStatus("تعذر فتح مثبت الحزم؛ تحقق من إعدادات تثبيت التطبيقات");}
+                });
             } catch (Exception error) {
                 if (apk != null) apk.delete();
                 callback.onStatus("تعذر تنزيل أو التحقق من التحديث");
@@ -252,3 +253,4 @@ public final class UpdateManager {
         }
     }
 }
+

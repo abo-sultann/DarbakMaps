@@ -15,7 +15,7 @@ import java.util.Locale;
 public final class PlaceRepository {
     private static final String PREFS = "darbak_places";
     private static final String KEY_PLACES = "places";
-    private static final int MAX_PLACES = 500;
+    private static final Object LOCK = new Object();
 
     public static final String ICON_CAMP = "camp";
     public static final String ICON_HOME = "home";
@@ -40,7 +40,7 @@ public final class PlaceRepository {
                                           String iconKey, String category, String note) {
         List<Place> places = new ArrayList<>(all());
         Place place = new Place(
-                String.valueOf(System.currentTimeMillis()),
+                java.util.UUID.randomUUID().toString(),
                 safeName(name),
                 latitude,
                 longitude,
@@ -50,9 +50,6 @@ public final class PlaceRepository {
                 note == null ? "" : note.trim()
         );
         places.add(0, place);
-        if (places.size() > MAX_PLACES) {
-            places = new ArrayList<>(places.subList(0, MAX_PLACES));
-        }
         persist(places);
         return place;
     }
@@ -103,8 +100,8 @@ public final class PlaceRepository {
                         item.optString("note", "")
                 ));
             }
-        } catch (JSONException ignored) {
-            return Collections.emptyList();
+        } catch (JSONException error) {
+            throw new IllegalStateException("تعذر قراءة المحفوظات؛ احتُفظ بالبيانات الأصلية",error);
         }
         return result;
     }
@@ -135,10 +132,11 @@ public final class PlaceRepository {
                 item.put("note", place.note);
                 array.put(item);
             }
-        } catch (JSONException ignored) {
-            return;
+        } catch (JSONException error) {
+            throw new IllegalStateException("تعذر حفظ الموقع",error);
         }
-        preferences.edit().putString(KEY_PLACES, array.toString()).apply();
+        if(!preferences.edit().putString(KEY_PLACES, array.toString()).commit())
+            throw new IllegalStateException("تعذر حفظ الموقع؛ افحص المساحة المتاحة");
     }
 
     private static String safeName(String value) {
@@ -185,3 +183,4 @@ public final class PlaceRepository {
         }
     }
 }
+

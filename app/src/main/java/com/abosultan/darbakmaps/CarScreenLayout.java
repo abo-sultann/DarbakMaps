@@ -85,7 +85,7 @@ final class CarScreenLayout {
         navPanel.setGravity(Gravity.CENTER_VERTICAL);
         navPanel.setPadding(dp(activity, 14), dp(activity, 6), dp(activity, 14), dp(activity, 6));
         navPanel.setBackground(round(Color.argb(246, 7, 17, 29), dp(activity, 20), Color.argb(160, 215, 173, 85)));
-        TextView navArrow = label(activity, "➤", GOLD, 34f, Gravity.CENTER);
+        TextView navArrow = label(activity, "↑", GOLD, 34f, Gravity.CENTER);
         navArrow.setId(R.id.nav_arrow);
         navPanel.addView(navArrow, new LinearLayout.LayoutParams(dp(activity, 58), -1));
         LinearLayout navText = new LinearLayout(activity);
@@ -218,17 +218,19 @@ final class CarScreenLayout {
         layerHintParams.topMargin = dp(activity, 4);
         sidePanel.addView(layerHint, layerHintParams);
 
-        tools.addView(sidePanel, frame(dp(activity, 276), dp(activity, 418), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
+        android.widget.ScrollView sideScroll=new android.widget.ScrollView(activity);
+        sideScroll.addView(sidePanel,new android.widget.ScrollView.LayoutParams(-1,-2));sidePanel.setVisibility(View.VISIBLE);sideScroll.setVisibility(View.GONE);
+        tools.addView(sideScroll, frame(dp(activity, 276), Math.min(dp(activity,418),activity.getResources().getDisplayMetrics().heightPixels-dp(activity,150)), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
                 dp(activity, 14), 0, 0, 0));
 
         TextView sideToggle = label(activity, "☰", GOLD, 25f, Gravity.CENTER);
         sideToggle.setContentDescription("فتح لوحة دربك");
         sideToggle.setBackground(round(Color.argb(242, 7, 17, 29), dp(activity, 20), Color.argb(145, 215, 173, 85)));
         sideToggle.setOnClickListener(view -> {
-            boolean show = sidePanel.getVisibility() != View.VISIBLE;
-            sidePanel.setVisibility(show ? View.VISIBLE : View.GONE);
+            boolean show = sideScroll.getVisibility() != View.VISIBLE;
+            sidePanel.setVisibility(View.VISIBLE);sideScroll.setVisibility(show ? View.VISIBLE : View.GONE);
         });
-        panelClose.setOnClickListener(view -> sidePanel.setVisibility(View.GONE));
+        panelClose.setOnClickListener(view -> sideScroll.setVisibility(View.GONE));
         tools.addView(sideToggle, frame(dp(activity, 52), dp(activity, 52), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
                 dp(activity, 14), 0, 0, 0));
 
@@ -256,7 +258,7 @@ final class CarScreenLayout {
         trackStatsPanel.addView(trackStats, new LinearLayout.LayoutParams(-1, -1));
         trackStatsPanel.setVisibility(View.GONE);
         root.addView(trackStatsPanel, frame(dp(activity, 335), dp(activity, 46), Gravity.BOTTOM | Gravity.RIGHT,
-                dp(activity, 14), 0, 0, dp(activity, 14)));
+                dp(activity, 14), 0, 0, dp(activity, 94)));
 
         LinearLayout empty = new LinearLayout(activity);
         empty.setId(R.id.no_map_panel);
@@ -380,3 +382,4 @@ final class CarScreenLayout {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }
 }
+

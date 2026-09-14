@@ -1,58 +1,114 @@
 name: Android Build
-
 on:
   push:
-    branches: [main, darbak-platform-v1, production-hardening-v1, darbakmaps-0.2.4-ui, darbakmaps-0.2.5-owner-fix, darbakmaps-0.3.0]
-    paths-ignore:
-      - 'tools/map/**'
-      - '.github/workflows/map-build.yml'
-      - '.github/workflows/map-build-fast.yml'
-      - '.github/workflows/map-source-diagnostic.yml'
-      - '.github/workflows/map-publish.yml'
-      - '.github/workflows/test-apk-publish.yml'
-      - 'update-manifest-debug.json'
-      - '**/*.md'
-      - 'docs/**'
+    branches: [main, darbakmaps-stability-0.7.2]
+    paths-ignore: ['update-manifest-debug.json', '**/*.md', 'docs/**', 'tools/map/**']
   workflow_dispatch:
-
 permissions:
   contents: read
-
+  actions: read
 concurrency:
   group: darbak-maps-apk-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 40
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Restore stable debug signing key
+      - name: Restore current installation signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: darbakmaps-debug-signing-v1
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
-
-      - name: Upload APK
+      - name: Verify signing identity before building
+        env:
+          RESTORE_KEY: ${{ secrets.DARBAK_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          if [ ! -s ~/.android/debug.keystore ] && [ -n "$RESTORE_KEY" ]; then
+            printf '%s' "$RESTORE_KEY" | base64 --decode > ~/.android/debug.keystore
+          fi
+          test -s ~/.android/debug.keystore || { echo 'Signing key unavailable; refusing to generate a replacement.'; exit 1; }
+          CERT=$(keytool -exportcert -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | sha256sum | cut -d' ' -f1)
+          test "$CERT" = 'cebaccb7712e30ec2053d5e8932b921c93e51ef9dedad2c7d111709f28e14eb7'
+          mkdir -p signing-backup
+          openssl cms -encrypt -binary -aes-256-cbc -in ~/.android/debug.keystore -out signing-backup/darbak-signing.cms -outform DER .github/signing-recovery.pem
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests, lint, APK and instrumentation build
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Prepare verified official map for car-screen test
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p map-qa
+          if gh release view darbak-saudi-map-v1 >/dev/null 2>&1; then
+            gh release download darbak-saudi-map-v1 --pattern darbak-saudi.map --dir map-qa
+          else
+            gh run download 34758044067 --name DarbakMaps-offline-map-final --dir map-qa
+          fi
+          echo '409d7ecaf2d6c610921cfadd42855fbdd3ce63ae08a00ff94965b18bb25fdd1c  map-qa/darbak-saudi.map' | sha256sum -c
+          test "$(stat -c%s map-qa/darbak-saudi.map)" = 189923374
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 7.1 car-screen integration checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 25
+          arch: x86
+          target: default
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 1024
+          script: |
+            adb shell wm size 1024x600
+            adb shell wm density 160
+            ./gradlew --no-daemon :app:installDebug
+            adb shell mkdir -p /sdcard/Android/data/com.abosultan.darbakmaps.debug/files/maps
+            adb push map-qa/darbak-saudi.map /sdcard/Android/data/com.abosultan.darbakmaps.debug/files/maps/saudi-active.map
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest
+            adb pull /sdcard/Android/data/com.abosultan.darbakmaps.debug/files/qa qa-screens
+      - name: Verify APK and prepare exact build metadata
+        run: |
+          set -euo pipefail
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$BT/apksigner" verify --min-sdk-version 25 --verbose --print-certs "$APK" > apk-verification.txt
+          grep -q 'cebaccb7712e30ec2053d5e8932b921c93e51ef9dedad2c7d111709f28e14eb7' apk-verification.txt
+          "$BT/aapt" dump badging "$APK" > apk-badging.txt
+          python3 tools/release_metadata.py "$APK" apk-badging.txt "$GITHUB_SHA"
+      - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
           name: DarbakMaps-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            release-metadata.json
+            apk-verification.txt
           retention-days: 1
           if-no-files-found: error
+      - name: Encrypted signing recovery backup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-signing-encrypted
+          path: signing-backup/darbak-signing.cms
+          retention-days: 1
+      - name: Test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-QA
+          path: |
+            app/build/reports/
+            app/build/outputs/androidTest-results/
+            qa-screens/
+          retention-days: 1

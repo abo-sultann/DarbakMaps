@@ -25,7 +25,7 @@ import java.util.Set;
 
 /** Location-first Arabic search over an installed Mapsforge map and saved places. */
 public final class OfflineMapSearchEngine {
-    private static final int MAX_INDEX_ITEMS = 10_000;
+    private static final int MAX_INDEX_ITEMS = 1000;
     private static final int INDEX_ZOOM = 9;
     private static final int NEARBY_RADIUS_TILES = 5;
     private static final long INDEX_BUDGET_NANOS = 2_800_000_000L;
@@ -41,10 +41,16 @@ public final class OfflineMapSearchEngine {
     }
 
     private String indexedKey;
+    private String activeQuery="";
+    private int nextTile;
+    private volatile boolean complete;
+    private volatile boolean failed;
+    public boolean isComplete(){return complete;}
+    public boolean hasFailed(){return failed;}
     private List<Result> mapIndex = Collections.emptyList();
 
     public synchronized void clear() {
-        indexedKey = null;
+        indexedKey = null;nextTile=0;complete=false;failed=false;
         mapIndex = Collections.emptyList();
     }
 
@@ -57,10 +63,11 @@ public final class OfflineMapSearchEngine {
             return Collections.emptyList();
         }
 
+        if(!wanted.equals(activeQuery)){clear();activeQuery=wanted;}
         if (activeMap != null && activeMap.isFile()) {
             ensureIndexed(activeMap, currentLatitude, currentLongitude);
         } else {
-            clear();
+            clear();complete=true;
         }
 
         List<RankedResult> ranked = new ArrayList<>();
@@ -145,11 +152,9 @@ public final class OfflineMapSearchEngine {
         TileRef focus = focusTile(file, latitude, longitude);
         String key = file.getAbsolutePath() + ':' + file.length() + ':' + file.lastModified()
                 + ':' + focus.x + ':' + focus.y;
-        if (key.equals(indexedKey)) {
-            return;
-        }
+        if(!key.equals(indexedKey)){mapIndex=Collections.emptyList();nextTile=0;complete=false;failed=false;indexedKey=key;}
+        if(complete)return;
         mapIndex = buildIndex(file, latitude, longitude);
-        indexedKey = key;
     }
 
     private TileRef focusTile(File file, Double latitude, Double longitude) {
@@ -178,6 +183,7 @@ public final class OfflineMapSearchEngine {
 
     private List<Result> buildIndex(File file, Double latitude, Double longitude) {
         LinkedHashMap<String, Result> output = new LinkedHashMap<>();
+        for(Result item:mapIndex)output.put(item.id,item);
         final long deadline = System.nanoTime() + INDEX_BUDGET_NANOS;
         MapFile mapFile = null;
         try {
@@ -209,19 +215,17 @@ public final class OfflineMapSearchEngine {
             final long orderedFocusY = focusY;
             tiles.sort(Comparator.comparingLong(tile -> tile.distanceSquared(orderedFocusX, orderedFocusY)));
 
-            for (TileRef tileRef : tiles) {
-                if (System.nanoTime() >= deadline) break;
-                if (output.size() >= MAX_INDEX_ITEMS) {
-                    break;
-                }
+            while(nextTile<tiles.size()) {
+                if (System.nanoTime() >= deadline || Thread.currentThread().isInterrupted()) break;
+                TileRef tileRef=tiles.get(nextTile++);
                 Tile tile = new Tile((int) tileRef.x, (int) tileRef.y, zoom, tileSize);
                 boolean nearby = Math.abs(tileRef.x - focusX) <= NEARBY_RADIUS_TILES
                         && Math.abs(tileRef.y - focusY) <= NEARBY_RADIUS_TILES;
                 MapReadResult data;
                 try {
                     data = nearby ? mapFile.readMapData(tile) : mapFile.readNamedItems(tile);
-                } catch (Exception ignored) {
-                    continue;
+                } catch (Exception error) {
+                    failed=true;continue;
                 }
                 if (data == null) {
                     continue;
@@ -245,8 +249,9 @@ public final class OfflineMapSearchEngine {
                     }
                 }
             }
-        } catch (Exception ignored) {
-            return Collections.emptyList();
+            complete=nextTile>=tiles.size();
+        } catch (Exception error) {
+            failed=true;
         } finally {
             if (mapFile != null) {
                 mapFile.close();
@@ -279,9 +284,10 @@ public final class OfflineMapSearchEngine {
         if (name.length() < 2) {
             return;
         }
+        if(matchScore(normalize(name+" "+source),activeQuery)<=0)return;
         String key = normalize(name) + ':' + Math.round(position.latitude * 10_000d)
                 + ':' + Math.round(position.longitude * 10_000d);
-        if (!output.containsKey(key)) {
+        if (output.size()<MAX_INDEX_ITEMS && !output.containsKey(key) && !output.containsKey("map:"+key)) {
             output.put(key, new Result(
                     "map:" + key,
                     name,
@@ -459,3 +465,4 @@ public final class OfflineMapSearchEngine {
         }
     }
 }
+

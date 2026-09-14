@@ -1,165 +1,81 @@
 package com.abosultan.darbakmaps;
-
 import android.Manifest;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.Service;
-import android.content.Context;
-import android.content.Intent;
+import android.app.*;
+import android.content.*;
 import android.content.pm.PackageManager;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.IBinder;
-
+import android.location.*;
+import android.os.*;
 import com.abosultan.darbakmaps.data.BackgroundTrackStore;
+import com.abosultan.darbakmaps.location.LocationController;
+import java.io.File;
+import java.util.concurrent.*;
 
-import java.io.IOException;
-
-/** Persistent GPS track recorder that survives closing the map Activity. */
+/** Serial durable writes on a worker. Success is reported only after GPX is committed. */
 public final class BackgroundTrackService extends Service implements LocationListener {
-    private static final String ACTION_START = "com.abosultan.darbakmaps.TRACK_START";
-    private static final String ACTION_STOP = "com.abosultan.darbakmaps.TRACK_STOP";
-    private static final String CHANNEL_ID = "darbak_track";
-    private static final int NOTIFICATION_ID = 2306;
-    private static final long MIN_TIME_MS = 1500L;
-    private static final float MIN_DISTANCE_METERS = 3f;
-
-    private LocationManager locationManager;
-    private Location lastAccepted;
-    private boolean listening;
-
-    public static void setEnabled(Context context, boolean enabled) {
-        MapUiPreferences.setBackgroundTrackEnabled(context, enabled);
-        if (enabled) TrackSessionState.beginIfNeeded(context);
-        Intent intent = new Intent(context, BackgroundTrackService.class);
-        intent.setAction(enabled ? ACTION_START : ACTION_STOP);
-        startCompat(context, intent);
+    private static final String START="com.abosultan.darbakmaps.TRACK_START", STOP="com.abosultan.darbakmaps.TRACK_STOP";
+    public static final String RESULT="com.abosultan.darbakmaps.TRACK_RESULT";
+    private static final String CHANNEL="darbak_track";
+    private final ExecutorService writer=Executors.newSingleThreadExecutor();
+    private LocationManager manager;private Location last;private boolean listening;private long revision=-1;
+    private static SharedPreferences state(Context c){return c.getSharedPreferences("track_health",MODE_PRIVATE);}
+    public static String status(Context c){return state(c).getString("status","");}
+    public static boolean finishing(Context c){return state(c).getBoolean("finishing",false);}
+    private static void status(Context c,String text){state(c).edit().putString("status",text).apply();}
+    public static void setEnabled(Context c,boolean enabled){
+        if(finishing(c))return;
+        MapUiPreferences.setBackgroundTrackEnabled(c,enabled);
+        if(enabled)TrackSessionState.beginIfNeeded(c);else state(c).edit().putBoolean("finishing",true).commit();
+        launch(c,new Intent(c,BackgroundTrackService.class).setAction(enabled?START:STOP));
     }
-
-    public static void ensureRunning(Context context) {
-        if (!MapUiPreferences.backgroundTrackEnabled(context)) return;
-        Intent intent = new Intent(context, BackgroundTrackService.class);
-        intent.setAction(ACTION_START);
-        startCompat(context, intent);
-    }
-
-    private static void startCompat(Context context, Intent intent) {
-        try {
-            if (Build.VERSION.SDK_INT >= 26 && ACTION_START.equals(intent.getAction())) {
-                context.startForegroundService(intent);
-            } else {
-                context.startService(intent);
-            }
-        } catch (RuntimeException ignored) {
-            // OEM head units can transiently reject service starts during boot; START_STICKY and
-            // the next Activity/boot pass will retry without crashing the app.
+    public static void ensureRunning(Context c){if(MapUiPreferences.backgroundTrackEnabled(c))launch(c,new Intent(c,BackgroundTrackService.class).setAction(START));}
+    private static void launch(Context c,Intent i){try{
+        if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i);else c.startService(i);
+    }catch(RuntimeException e){state(c).edit().putBoolean("finishing",false).putString("status","تعذر تشغيل خدمة التسجيل؛ افتح التطبيق وأعد المحاولة").commit();}}
+    @Override public void onCreate(){super.onCreate();manager=(LocationManager)getSystemService(LOCATION_SERVICE);state(this).edit().putBoolean("finishing",false).commit();startForeground(2306,notification("بانتظار GPS"));}
+    @Override public int onStartCommand(Intent intent,int flags,int startId){
+        if((intent!=null&&STOP.equals(intent.getAction()))||!MapUiPreferences.backgroundTrackEnabled(this)){
+            stopGps();state(this).edit().putBoolean("finishing",true).commit();status(this,"جارٍ حفظ المسار…");
+            writer.execute(()->{
+                String message;boolean success=false;
+                try{File saved=BackgroundTrackStore.finalizeActive(this);TrackSessionState.reset(this);message=saved==null?"تم إيقاف التسجيل؛ لا توجد نقاط بعد":"تم حفظ المسار بالكامل";success=true;}
+                catch(Exception e){message="تعذر إكمال الحفظ؛ التسجيل الأصلي محفوظ ويمكن استئنافه. "+e.getMessage();}
+                state(this).edit().putBoolean("finishing",false).putString("status",message).commit();
+                sendBroadcast(new Intent(RESULT).setPackage(getPackageName()).putExtra("message",message).putExtra("success",success));
+                new Handler(Looper.getMainLooper()).post(()->{stopForeground(true);stopSelf(startId);});
+            });return START_NOT_STICKY;
         }
-    }
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-        startForeground(NOTIFICATION_ID, notification());
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? ACTION_START : intent.getAction();
-        if (ACTION_STOP.equals(action) || !MapUiPreferences.backgroundTrackEnabled(this)) {
-            stopTracking();
-            try {
-                BackgroundTrackStore.finalizeActive(this);
-            } catch (IOException ignored) {
-                // Keep shutdown safe; the partial file remains recoverable if saving fails.
-            }
-            TrackSessionState.reset(this);
-            stopForeground(true);
-            stopSelf();
-            return START_NOT_STICKY;
+        if(!listening&&manager!=null&&checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED){
+            try{manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1500,0,this);listening=true;status(this,"بانتظار GPS");}
+            catch(RuntimeException e){status(this,"تعذر استقبال GPS؛ تحقق من إعدادات الموقع");}
         }
-        startTracking();
         return START_STICKY;
     }
-
-    private void startTracking() {
-        if (listening || locationManager == null) return;
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
-        try {
-            locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    MIN_TIME_MS,
-                    MIN_DISTANCE_METERS,
-                    this);
-            listening = true;
-        } catch (RuntimeException ignored) {
-            listening = false;
-        }
+    private void stopGps(){if(manager!=null)try{manager.removeUpdates(this);}catch(RuntimeException ignored){}listening=false;}
+    @Override public void onLocationChanged(Location input){
+        if(!listening||TrackSessionState.isPaused(this)||!LocationController.isUsable(input))return;
+        final Location fix=new Location(input);final long currentRevision=TrackSessionState.segmentRevision(this);
+        writer.execute(()->{
+            boolean split=last==null||revision!=currentRevision||(fix.getTime()-last.getTime()>30000);
+            if(!split){long dt=fix.getTime()-last.getTime();float d=last.distanceTo(fix);
+                if(dt<=0||d<3||d>Math.max(100,dt/1000f*85))return;
+            }
+            try{
+                BackgroundTrackStore.append(this,fix,split);
+                if(split)TrackSessionState.breakSegment(this);
+                TrackSessionState.onFix(this,fix);last=fix;revision=currentRevision;status(this,"التسجيل يعمل");
+            }catch(Exception e){status(this,"تعذر كتابة المسار؛ افحص المساحة. النقاط السابقة محفوظة");}
+        });
     }
-
-    private void stopTracking() {
-        if (!listening || locationManager == null) return;
-        try {
-            locationManager.removeUpdates(this);
-        } catch (RuntimeException ignored) {
-            // Safe shutdown on vendor ROMs.
-        }
-        listening = false;
-    }
-
-    @Override
-    public void onLocationChanged(Location location) {
-        if (location == null || TrackSessionState.isPaused(this)) return;
-        if (lastAccepted != null && lastAccepted.distanceTo(location) < MIN_DISTANCE_METERS) return;
-        try {
-            BackgroundTrackStore.append(this, location);
-            TrackSessionState.onFix(this, location);
-            lastAccepted = new Location(location);
-        } catch (IOException ignored) {
-            // Do not crash the long-running service because of one storage failure.
-        }
-    }
-
-    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
-    @Override public void onProviderEnabled(String provider) {}
-    @Override public void onProviderDisabled(String provider) {}
-
-    @Override
-    public void onDestroy() {
-        stopTracking();
-        super.onDestroy();
-    }
-
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
-
-    private Notification notification() {
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (Build.VERSION.SDK_INT >= 26 && manager != null) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "تسجيل مسار دربك",
-                    NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("يبقي تسجيل المسار مستمرًا عند إغلاق التطبيق");
-            manager.createNotificationChannel(channel);
-        }
-        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, CHANNEL_ID)
-                : new Notification.Builder(this);
-        return builder
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("دربك — تسجيل المسار")
-                .setContentText("تسجيل مسارك مستمر في الخلفية")
-                .setOngoing(true)
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .build();
+    @Override public void onProviderDisabled(String p){status(this,"انقطعت إشارة GPS؛ بانتظار عودتها");}
+    @Override public void onProviderEnabled(String p){status(this,"بانتظار إشارة GPS");}
+    @Override public void onStatusChanged(String p,int s,Bundle b){}
+    @Override public void onDestroy(){stopGps();writer.shutdown();super.onDestroy();}
+    @Override public IBinder onBind(Intent i){return null;}
+    private Notification notification(String text){
+        NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        if(Build.VERSION.SDK_INT>=26&&nm!=null)nm.createNotificationChannel(new NotificationChannel(CHANNEL,"تسجيل مسار دربك",NotificationManager.IMPORTANCE_LOW));
+        PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+        Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
+        return b.setSmallIcon(R.mipmap.ic_launcher).setContentTitle("دربك — تسجيل المسار").setContentText(text).setContentIntent(open).setOngoing(true).build();
     }
 }
