@@ -24,8 +24,10 @@ public final class TrackNavigator {
         if (stoppedAtGap || points == null || points.size() < 2) return null;
         if (cursor < 0) {
             double best = Double.MAX_VALUE;
-            int bestIndex = points.size() - 2;
+            int bestIndex = -1;
             for (int index = 0; index < points.size() - 1; index++) {
+                // A segmentStart on the second point means there is no recorded connection between
+                // these vertices. Such a gap must never be selected as a backtrack target.
                 if (points.get(index + 1).segmentStart) continue;
                 double distance = segmentDistance(latitude, longitude, points.get(index), points.get(index + 1));
                 if (distance <= best) {
@@ -33,14 +35,16 @@ public final class TrackNavigator {
                     bestIndex = index;
                 }
             }
+            if (bestIndex < 0) {
+                stoppedAtGap = true;
+                return null;
+            }
             cursor = bestIndex;
         }
 
         while (cursor > 0
                 && distance(latitude, longitude,
                 points.get(cursor).latitude, points.get(cursor).longitude) < 30d) {
-            // Reaching the first point of a recorded segment is a hard stop. Never direct the
-            // driver across the missing GPS/pause gap to the previous segment.
             if (points.get(cursor).segmentStart) {
                 stoppedAtGap = true;
                 return null;
