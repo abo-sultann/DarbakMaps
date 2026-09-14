@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.DarbakMaps" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.DarbakMaps" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowNoTitle">true</item>
@@ -9,6 +9,20 @@
         <item name="android:statusBarColor">@color/darbak_green_deep</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowBackground">@color/darbak_green_deep</item>
+        <item name="android:textColorPrimary">@color/darbak_ink</item>
+        <item name="android:textColorSecondary">@color/darbak_muted</item>
+        <item name="android:alertDialogTheme">@style/Theme.DarbakMaps.Dialog</item>
+    </style>
+
+    <style name="Theme.DarbakMaps.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@color/darbak_surface</item>
+        <item name="android:colorAccent">@color/darbak_gold</item>
+        <item name="android:textColorPrimary">@color/darbak_ink</item>
+        <item name="android:textColorSecondary">@color/darbak_muted</item>
+        <item name="android:windowNoTitle">false</item>
+        <item name="android:windowMinWidthMajor">72%</item>
+        <item name="android:windowMinWidthMinor">72%</item>
     </style>
 
     <style name="DarbakDockAction">
@@ -19,8 +33,7 @@
         <item name="android:gravity">center</item>
         <item name="android:paddingTop">7dp</item>
         <item name="android:paddingBottom">5dp</item>
-        <item name="android:textColor">@color/darbak_white</item>
+        <item name="android:textColor">@color/darbak_ink</item>
         <item name="android:textSize">13sp</item>
     </style>
 </resources>
-
