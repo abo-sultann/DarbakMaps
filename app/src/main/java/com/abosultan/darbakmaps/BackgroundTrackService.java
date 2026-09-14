@@ -17,20 +17,29 @@ import android.os.IBinder;
 
 import com.abosultan.darbakmaps.data.BackgroundTrackStore;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Persistent GPS track recorder that survives closing the map Activity. */
 public final class BackgroundTrackService extends Service implements LocationListener {
     private static final String ACTION_START = "com.abosultan.darbakmaps.TRACK_START";
     private static final String ACTION_STOP = "com.abosultan.darbakmaps.TRACK_STOP";
+    public static final String ACTION_FINALIZE_RESULT = "com.abosultan.darbakmaps.TRACK_FINALIZE_RESULT";
+    public static final String EXTRA_SUCCESS = "success";
+    public static final String EXTRA_MESSAGE = "message";
+    public static final String EXTRA_FILE = "file";
     private static final String CHANNEL_ID = "darbak_track";
     private static final int NOTIFICATION_ID = 2306;
     private static final long MIN_TIME_MS = 1500L;
     private static final float MIN_DISTANCE_METERS = 3f;
 
+    private final ExecutorService trackIo = Executors.newSingleThreadExecutor();
     private LocationManager locationManager;
     private Location lastAccepted;
     private boolean listening;
+    private volatile boolean stopping;
 
     public static void setEnabled(Context context, boolean enabled) {
         MapUiPreferences.setBackgroundTrackEnabled(context, enabled);
@@ -71,19 +80,43 @@ public final class BackgroundTrackService extends Service implements LocationLis
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action) || !MapUiPreferences.backgroundTrackEnabled(this)) {
-            stopTracking();
-            try {
-                BackgroundTrackStore.finalizeActive(this);
-            } catch (IOException ignored) {
-                // Keep shutdown safe; the partial file remains recoverable if saving fails.
-            }
-            TrackSessionState.reset(this);
-            stopForeground(true);
-            stopSelf();
+            beginFinalize();
             return START_NOT_STICKY;
         }
-        startTracking();
+        if (!stopping) startTracking();
         return START_STICKY;
+    }
+
+    private void beginFinalize() {
+        if (stopping) return;
+        stopping = true;
+        stopTracking();
+        trackIo.execute(() -> {
+            boolean success = false;
+            String message;
+            File saved = null;
+            try {
+                saved = BackgroundTrackStore.finalizeActive(this);
+                success = true;
+                message = saved == null ? "لا يوجد مسار نشط للحفظ" : "تم حفظ المسار بنجاح";
+                TrackSessionState.reset(this);
+            } catch (IOException error) {
+                message = error.getMessage() == null
+                        ? "تعذر حفظ المسار؛ احتفظ التطبيق بالتسجيل القابل للاستعادة"
+                        : error.getMessage();
+            } catch (RuntimeException error) {
+                message = "تعذر إنهاء المسار؛ احتفظ التطبيق بالتسجيل القابل للاستعادة";
+            }
+            Intent result = new Intent(ACTION_FINALIZE_RESULT);
+            result.setPackage(getPackageName());
+            result.putExtra(EXTRA_SUCCESS, success);
+            result.putExtra(EXTRA_MESSAGE, message);
+            if (saved != null) result.putExtra(EXTRA_FILE, saved.getAbsolutePath());
+            sendBroadcast(result);
+            stopForeground(true);
+            stopSelf();
+        });
+        trackIo.shutdown();
     }
 
     private void startTracking() {
@@ -115,15 +148,22 @@ public final class BackgroundTrackService extends Service implements LocationLis
 
     @Override
     public void onLocationChanged(Location location) {
-        if (location == null || TrackSessionState.isPaused(this)) return;
-        if (lastAccepted != null && lastAccepted.distanceTo(location) < MIN_DISTANCE_METERS) return;
-        try {
-            BackgroundTrackStore.append(this, location);
-            TrackSessionState.onFix(this, location);
-            lastAccepted = new Location(location);
-        } catch (IOException ignored) {
-            // Do not crash the long-running service because of one storage failure.
-        }
+        if (location == null || stopping || TrackSessionState.isPaused(this)) return;
+        final Location accepted = new Location(location);
+        if (lastAccepted != null && lastAccepted.distanceTo(accepted) < MIN_DISTANCE_METERS) return;
+        lastAccepted = new Location(accepted);
+        trackIo.execute(() -> {
+            if (stopping && TrackSessionState.isPaused(this)) return;
+            boolean newSegment = TrackSessionState.needsNewSegment(this);
+            try {
+                BackgroundTrackStore.append(this, accepted, newSegment);
+                if (newSegment) TrackSessionState.markSegmentWritten(this);
+                TrackSessionState.onFix(this, accepted);
+            } catch (IOException ignored) {
+                // The journal remains authoritative; a later fix may succeed and finalization will
+                // report any persistent storage failure to the UI.
+            }
+        });
     }
 
     @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
@@ -133,6 +173,7 @@ public final class BackgroundTrackService extends Service implements LocationLis
     @Override
     public void onDestroy() {
         stopTracking();
+        if (!trackIo.isShutdown()) trackIo.shutdown();
         super.onDestroy();
     }
 
