@@ -26,14 +26,16 @@ public final class LocationController implements LocationListener {
     private final Context context;
     private final LocationManager locationManager;
     private final Callback callback;
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable staleFixRunnable = () -> callback.onProviderState(false);
+    private final Handler handler;
+    private final Runnable staleFixRunnable;
     private Location lastLocation;
 
     public LocationController(Context context, Callback callback) {
         this.context = context.getApplicationContext();
         this.callback = callback;
         this.locationManager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        this.handler = new Handler(Looper.getMainLooper());
+        this.staleFixRunnable = () -> this.callback.onProviderState(false);
     }
 
     public boolean hasPermission() {
