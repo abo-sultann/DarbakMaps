@@ -37,7 +37,8 @@ public final class PlaceRepository {
 
     public synchronized Place addDetailed(String name, double latitude, double longitude,
                                           String iconKey, String category, String note) {
-        List<Place> places = new ArrayList<>(all());
+        validateCoordinates(latitude, longitude);
+        List<Place> places = new ArrayList<>(load(true));
         Place place = new Place(
                 String.valueOf(System.currentTimeMillis()),
                 safeName(name),
@@ -54,7 +55,7 @@ public final class PlaceRepository {
     }
 
     public synchronized boolean update(String id, String name, String iconKey, String category, String note) {
-        List<Place> places = new ArrayList<>(all());
+        List<Place> places = new ArrayList<>(load(true));
         for (int i = 0; i < places.size(); i++) {
             Place old = places.get(i);
             if (old.id.equals(id)) {
@@ -69,7 +70,7 @@ public final class PlaceRepository {
     }
 
     public synchronized boolean delete(String id) {
-        List<Place> places = new ArrayList<>(all());
+        List<Place> places = new ArrayList<>(load(true));
         boolean removed = false;
         for (int i = places.size() - 1; i >= 0; i--) {
             if (places.get(i).id.equals(id)) {
@@ -81,28 +82,23 @@ public final class PlaceRepository {
         return removed;
     }
 
+    /** Safe read for UI. Corrupt bytes stay untouched and are never replaced by an empty store. */
     public synchronized List<Place> all() {
-        String raw = preferences.getString(KEY_PLACES, "[]");
-        List<Place> result = new ArrayList<>();
         try {
-            JSONArray array = new JSONArray(raw);
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject item = array.getJSONObject(i);
-                result.add(new Place(
-                        item.optString("id"),
-                        item.optString("name", "موقع محفوظ"),
-                        item.getDouble("lat"),
-                        item.getDouble("lon"),
-                        item.optLong("createdAt"),
-                        item.optString("icon", ICON_STAR),
-                        item.optString("category", "عام"),
-                        item.optString("note", "")
-                ));
-            }
-        } catch (JSONException ignored) {
+            return load(false);
+        } catch (IllegalStateException impossible) {
             return Collections.emptyList();
         }
-        return result;
+    }
+
+    public synchronized boolean hasCorruptStore() {
+        String raw = preferences.getString(KEY_PLACES, "[]");
+        try {
+            decode(raw);
+            return false;
+        } catch (JSONException | RuntimeException error) {
+            return true;
+        }
     }
 
     public synchronized List<Place> search(String query) {
@@ -112,6 +108,40 @@ public final class PlaceRepository {
         for (Place place : all()) {
             String haystack = (place.name + " " + place.category + " " + place.note).toLowerCase(Locale.ROOT);
             if (haystack.contains(normalized)) result.add(place);
+        }
+        return result;
+    }
+
+    private List<Place> load(boolean forMutation) {
+        String raw = preferences.getString(KEY_PLACES, "[]");
+        try {
+            return decode(raw);
+        } catch (JSONException | RuntimeException error) {
+            if (forMutation) {
+                throw new IllegalStateException("بيانات المواقع تحتاج إصلاحًا؛ احتفظ التطبيق بالأصل ولم يكتب فوقه", error);
+            }
+            return Collections.emptyList();
+        }
+    }
+
+    private static List<Place> decode(String raw) throws JSONException {
+        JSONArray array = new JSONArray(raw == null ? "[]" : raw);
+        List<Place> result = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.getJSONObject(i);
+            double latitude = item.getDouble("lat");
+            double longitude = item.getDouble("lon");
+            validateCoordinates(latitude, longitude);
+            result.add(new Place(
+                    item.optString("id"),
+                    item.optString("name", "موقع محفوظ"),
+                    latitude,
+                    longitude,
+                    item.optLong("createdAt"),
+                    item.optString("icon", ICON_STAR),
+                    item.optString("category", "عام"),
+                    item.optString("note", "")
+            ));
         }
         return result;
     }
@@ -131,10 +161,19 @@ public final class PlaceRepository {
                 item.put("note", place.note);
                 array.put(item);
             }
-        } catch (JSONException ignored) {
-            return;
+        } catch (JSONException error) {
+            throw new IllegalStateException("تعذر تجهيز بيانات المواقع للحفظ", error);
         }
-        preferences.edit().putString(KEY_PLACES, array.toString()).apply();
+        if (!preferences.edit().putString(KEY_PLACES, array.toString()).commit()) {
+            throw new IllegalStateException("تعذر حفظ المواقع على الجهاز؛ لم يتم تأكيد الكتابة");
+        }
+    }
+
+    private static void validateCoordinates(double latitude, double longitude) {
+        if (!Double.isFinite(latitude) || !Double.isFinite(longitude)
+                || latitude < -90d || latitude > 90d || longitude < -180d || longitude > 180d) {
+            throw new IllegalArgumentException("إحداثيات الموقع غير صالحة");
+        }
     }
 
     private static String safeName(String value) {
