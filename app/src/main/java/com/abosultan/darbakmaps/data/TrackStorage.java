@@ -19,8 +19,6 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 public final class TrackStorage {
-    private static final int MAX_LOADED_POINTS = 50_000;
-
     private TrackStorage() {
     }
 
@@ -89,7 +87,7 @@ public final class TrackStorage {
             XmlPullParser parser = Xml.newPullParser();
             parser.setInput(input, "UTF-8");
             int event = parser.getEventType();
-            while (event != XmlPullParser.END_DOCUMENT && points.size() < MAX_LOADED_POINTS) {
+            while (event != XmlPullParser.END_DOCUMENT) {
                 if (event == XmlPullParser.START_TAG
                         && ("trkpt".equalsIgnoreCase(parser.getName())
                         || "rtept".equalsIgnoreCase(parser.getName()))) {
