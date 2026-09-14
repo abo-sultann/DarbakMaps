@@ -7,7 +7,7 @@ import android.widget.TextView;
 
 import java.util.Locale;
 
-/** Small persistent stats state for the active background track. */
+/** Persistent statistics for the active background track, excluding paused time. */
 public final class TrackSessionState {
     private static final String PREFS = "darbak_track_state";
     private static final String START = "start";
@@ -17,28 +17,45 @@ public final class TrackSessionState {
     private static final String LAST_LON = "last_lon";
     private static final String HAS_LAST = "has_last";
     private static final String PAUSED = "paused";
+    private static final String PAUSE_STARTED = "pause_started";
+    private static final String PAUSED_TOTAL = "paused_total";
 
     private TrackSessionState() {}
 
     public static void beginIfNeeded(Context context) {
         SharedPreferences p = prefs(context);
         if (p.getLong(START, 0L) == 0L) {
-            p.edit().putLong(START, System.currentTimeMillis()).putBoolean(PAUSED, false).apply();
+            p.edit()
+                    .putLong(START, System.currentTimeMillis())
+                    .putBoolean(PAUSED, false)
+                    .putLong(PAUSE_STARTED, 0L)
+                    .putLong(PAUSED_TOTAL, 0L)
+                    .apply();
         }
     }
 
-    public static void reset(Context context) {
-        prefs(context).edit().clear().apply();
-    }
+    public static void reset(Context context) { prefs(context).edit().clear().apply(); }
 
-    public static boolean isPaused(Context context) {
-        return prefs(context).getBoolean(PAUSED, false);
-    }
+    public static boolean isPaused(Context context) { return prefs(context).getBoolean(PAUSED, false); }
 
     public static boolean togglePaused(Context context) {
-        boolean next = !isPaused(context);
-        prefs(context).edit().putBoolean(PAUSED, next).apply();
-        return next;
+        beginIfNeeded(context);
+        SharedPreferences p = prefs(context);
+        long now = System.currentTimeMillis();
+        boolean wasPaused = p.getBoolean(PAUSED, false);
+        SharedPreferences.Editor e = p.edit();
+        if (!wasPaused) {
+            e.putBoolean(PAUSED, true).putLong(PAUSE_STARTED, now);
+        } else {
+            long pauseStart = p.getLong(PAUSE_STARTED, now);
+            long pausedTotal = p.getLong(PAUSED_TOTAL, 0L) + Math.max(0L, now - pauseStart);
+            e.putBoolean(PAUSED, false)
+                    .putLong(PAUSE_STARTED, 0L)
+                    .putLong(PAUSED_TOTAL, pausedTotal)
+                    .putBoolean(HAS_LAST, false);
+        }
+        e.apply();
+        return !wasPaused;
     }
 
     public static void onFix(Context context, Location location) {
@@ -67,8 +84,11 @@ public final class TrackSessionState {
     public static String summary(Context context) {
         SharedPreferences p = prefs(context);
         float km = p.getFloat(DIST, 0f) / 1000f;
-        long start = p.getLong(START, System.currentTimeMillis());
-        long elapsed = Math.max(1000L, System.currentTimeMillis() - start);
+        long now = System.currentTimeMillis();
+        long start = p.getLong(START, now);
+        long paused = p.getLong(PAUSED_TOTAL, 0L);
+        if (p.getBoolean(PAUSED, false)) paused += Math.max(0L, now - p.getLong(PAUSE_STARTED, now));
+        long elapsed = Math.max(1000L, now - start - paused);
         float hours = elapsed / 3600000f;
         float avg = hours > 0f ? km / hours : 0f;
         long totalMinutes = elapsed / 60000L;
@@ -78,13 +98,9 @@ public final class TrackSessionState {
 
     public static void updateActionLabel(TextView view, Context context) {
         if (view == null) return;
-        if (!MapUiPreferences.backgroundTrackEnabled(context)) {
-            view.setText("تسجيل مسار");
-        } else if (isPaused(context)) {
-            view.setText("متابعة المسار");
-        } else {
-            view.setText("إيقاف المسار");
-        }
+        if (!MapUiPreferences.backgroundTrackEnabled(context)) view.setText("تسجيل مسار");
+        else if (isPaused(context)) view.setText("متابعة المسار");
+        else view.setText("إيقاف المسار");
     }
 
     private static SharedPreferences prefs(Context context) {
