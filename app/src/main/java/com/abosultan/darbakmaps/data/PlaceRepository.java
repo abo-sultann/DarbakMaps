@@ -15,7 +15,6 @@ import java.util.Locale;
 public final class PlaceRepository {
     private static final String PREFS = "darbak_places";
     private static final String KEY_PLACES = "places";
-    private static final int MAX_PLACES = 500;
 
     public static final String ICON_CAMP = "camp";
     public static final String ICON_HOME = "home";
@@ -50,9 +49,7 @@ public final class PlaceRepository {
                 note == null ? "" : note.trim()
         );
         places.add(0, place);
-        if (places.size() > MAX_PLACES) {
-            places = new ArrayList<>(places.subList(0, MAX_PLACES));
-        }
+        // Never silently discard old saved places. User data is more important than a fixed count cap.
         persist(places);
         return place;
     }
