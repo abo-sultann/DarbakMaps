@@ -155,7 +155,7 @@ public final class SavedPlacesDialog {
                 }
                 @Override public void onScroll(AbsListView view, int first, int visible, int total) {}
             });
-            root.addView(list, new LinearLayout.LayoutParams(-1, dp(350)));
+            root.addView(list, new LinearLayout.LayoutParams(-1, dp(320)));
 
             TextView close = new TextView(activity);
             close.setText("إغلاق");

@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
-import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -19,7 +18,6 @@ import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -313,24 +311,16 @@ final class DarbakPanels {
     }
 
     private static void downloadRecommendedMap(Activity activity) {
-        ProgressDialog progress = new ProgressDialog(activity);
-        progress.setTitle("خرائط دربك");
-        progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
-        progress.setMax(100);
-        progress.setProgress(0);
+        DarbakProgressDialog progress = new DarbakProgressDialog(activity, "خرائط دربك", false, null);
         progress.setMessage("بدء التنزيل…");
-        progress.setCancelable(false);
-        showSystemDialog(progress, activity);
+        progress.show();
 
         new Thread(() -> {
             try {
                 RecommendedMapDownloader.download(activity, new RecommendedMapDownloader.Listener() {
                     @Override
                     public void onProgress(int percent, String message) {
-                        activity.runOnUiThread(() -> {
-                            progress.setProgress(percent);
-                            progress.setMessage(message);
-                        });
+                        activity.runOnUiThread(() -> progress.setProgress(percent, message));
                     }
 
                     @Override
@@ -340,15 +330,14 @@ final class DarbakPanels {
                 });
                 activity.runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(activity, "الخريطة جاهزة أوفلاين", Toast.LENGTH_SHORT).show();
+                    DarbakInfoDialog.show(activity, "الخريطة جاهزة", "تم تجهيز خريطة دربك للعمل بدون إنترنت.");
                     activity.recreate();
                 });
             } catch (Exception error) {
                 activity.runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(activity,
-                            error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage(),
-                            Toast.LENGTH_LONG).show();
+                    DarbakInfoDialog.show(activity, "تعذر تنزيل الخريطة",
+                            error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage());
                 });
             }
         }, "darbak-map-download").start();
@@ -364,15 +353,10 @@ final class DarbakPanels {
                     message = String.format(Locale.US, "%.6f, %.6f", location.getLatitude(), location.getLongitude());
                 }
             } catch (RuntimeException ignored) {
-                // Keep the safe fallback message on vendor ROMs.
+                // Keep safe fallback on vendor ROMs.
             }
         }
-        AlertDialog coordinateDialog = new AlertDialog.Builder(activity)
-                .setTitle("الإحداثيات الحالية")
-                .setMessage(message)
-                .setPositiveButton("تم", null)
-                .create();
-        showSystemDialog(coordinateDialog, activity);
+        DarbakInfoDialog.show(activity, "الإحداثيات الحالية", message);
     }
 
     static void showAbout(Activity activity) {
@@ -391,7 +375,7 @@ final class DarbakPanels {
         TextView version = text(activity,
                 "الإصدار " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
                 PRIMARY, 15f, Gravity.CENTER);
-        version.setBackground(round(Color.argb(38, 57, 169, 255), dp(activity, 16), Color.argb(90, 216, 180, 91)));
+        version.setBackground(round(Color.argb(38, 216, 180, 91), dp(activity, 16), Color.argb(90, 216, 180, 91)));
         version.setOnLongClickListener(view -> {
             showDiagnostics(activity);
             return true;
@@ -464,16 +448,11 @@ final class DarbakPanels {
 
             @Override
             public void onUpdate(UpdateManager.UpdateInfo update) {
-                activity.runOnUiThread(() -> {
-                    AlertDialog updateDialog = new AlertDialog.Builder(activity)
-                            .setTitle("تحديث " + update.versionName)
-                            .setMessage("نسخة جديدة من دربك جاهزة للتثبيت")
-                            .setNegativeButton("لاحقًا", null)
-                            .setPositiveButton("تنزيل وتثبيت", (dialog, which) ->
-                                    UpdateManager.downloadAndInstall(activity, update, this))
-                            .create();
-                    showSystemDialog(updateDialog, activity);
-                });
+                activity.runOnUiThread(() -> DarbakConfirmDialog.show(activity,
+                        "تحديث " + update.versionName,
+                        "نسخة جديدة من دربك جاهزة للتثبيت.",
+                        "تنزيل وتثبيت", false,
+                        () -> UpdateManager.downloadAndInstall(activity, update, this)));
             }
         });
     }
@@ -490,7 +469,7 @@ final class DarbakPanels {
         root.setGravity(Gravity.RIGHT);
         root.setPadding(dp(activity, padding), dp(activity, 20), dp(activity, padding), dp(activity, 20));
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        root.setBackground(round(NIGHT, dp(activity, 28), Color.argb(110, 57, 169, 255)));
+        root.setBackground(round(NIGHT, dp(activity, 28), Color.argb(110, 216, 180, 91)));
         return root;
     }
 

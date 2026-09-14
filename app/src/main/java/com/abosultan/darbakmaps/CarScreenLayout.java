@@ -16,8 +16,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * DarbakMaps hybrid map-first layout for 1024x600 car screens.
- * The simple map-first shell remains the default; a richer side panel opens only on demand.
+ * DarbakMaps map-first layout for 1024x600 car screens.
+ * One action path per task; secondary actions live in unified Darbak panels.
  */
 final class CarScreenLayout {
     private static final int NIGHT = Color.rgb(8, 39, 31);
@@ -145,7 +145,7 @@ final class CarScreenLayout {
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(dp(activity, 8), dp(activity, 4), dp(activity, 8), dp(activity, 4));
         dock.setBackground(round(Color.argb(242, 8, 39, 31), dp(activity, 22), Color.argb(105, 216, 180, 91)));
-                dock.addView(dockAction(activity, "حفظ موقع", R.id.action_save), weighted());
+        dock.addView(dockAction(activity, "حفظ موقع", R.id.action_save), weighted());
         dock.addView(dockAction(activity, "المسار", R.id.action_record), weighted());
         dock.addView(dockAction(activity, "المحفوظات", R.id.action_saved), weighted());
         dock.addView(dockAction(activity, "القائمة", R.id.action_more), weighted());

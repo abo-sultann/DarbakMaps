@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
-import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -260,12 +259,9 @@ public final class MainActivity extends Activity implements LocationController.C
         if (searchRunning) { toast("البحث السابق ما زال جاريًا"); return; }
         searchRunning = true;
         lastSearchRequest = request;
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle(title);
+        DarbakProgressDialog progress = new DarbakProgressDialog(this, title, false, null);
         progress.setMessage(request.offset > 0 ? "جارٍ تحميل الصفحة التالية…" : "جارٍ البحث…");
-        progress.setIndeterminate(true);
-        progress.setCancelable(false);
-        showImmersive(progress);
+        progress.show();
         File activeMap = MapStorage.activeMap(this);
         ioExecutor.execute(() -> {
             List<OfflineMapSearchEngine.Result> results = searchEngine.search(request,
@@ -426,10 +422,12 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void saveCurrentPlace() {
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("حفظ موقع بدقة")
-                .setMessage("أخفِ الأدوات بلمسة على الخريطة، ثم اضغط مطولاً على النقطة المطلوبة.\n\nسيظهر نموذج الحفظ لاختيار الأيقونة والنوع والاسم المختصر والملاحظة، وتبقى العلامة ظاهرة على الخريطة.")
-                .setNegativeButton("إلغاء", null).setPositiveButton("فهمت", null).create());
+        Location current = locationController == null ? null : locationController.getLastLocation();
+        if (current == null) {
+            toast("بانتظار إشارة GPS");
+            return;
+        }
+        PointEditor.show(this, current.getLatitude(), current.getLongitude(), null);
     }
 
     private void toggleTrackPause() {
@@ -562,23 +560,25 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void showMapManager() {
         File file = MapStorage.activeMap(this);
-        String status = file.isFile() ? "الخريطة الحالية: " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب\nجاهزة للعمل بدون إنترنت" : "لا توجد حزمة خريطة مضافة";
-        String[] actions = { "تنزيل خريطة دربك السعودية (" + RecommendedMapDownloader.DISPLAY_SIZE + ")", "إضافة خريطة من USB أو الذاكرة" };
-        showImmersive(new AlertDialog.Builder(this).setTitle("الخرائط الأوفلاين").setMessage(status)
-                .setItems(actions, (dialog, which) -> { if (which == 0) confirmRecommendedMapDownload(); else chooseMapFile(); })
-                .setNegativeButton("إغلاق", null).create());
+        String status = file.isFile()
+                ? "الخريطة الحالية • " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب • جاهزة أوفلاين"
+                : "لا توجد حزمة خريطة مضافة";
+        String[] actions = { "خريطة دربك السعودية (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
+                "إضافة خريطة من USB أو الذاكرة" };
+        DarbakChoiceDialog.show(this, "الخرائط الأوفلاين", status, actions,
+                which -> { if (which == 0) confirmRecommendedMapDownload(); else chooseMapFile(); });
     }
 
     private void showCoordinates() {
         Location location = locationController == null ? null : locationController.getLastLocation();
         String message = location == null ? "بانتظار إشارة GPS" : coordinates(location.getLatitude(), location.getLongitude());
-        showImmersive(new AlertDialog.Builder(this).setTitle("الإحداثيات الحالية").setMessage(message).setPositiveButton("حسنًا", null).create());
+        DarbakInfoDialog.show(this, "الإحداثيات الحالية", message);
     }
 
     private void showDeviceLicense() {
         String state = licenseManager.isLicensed() ? "مفعّل" : "غير مفعّل";
-        showImmersive(new AlertDialog.Builder(this).setTitle("ترخيص الجهاز")
-                .setMessage("الحالة: " + state + "\nرمز الجهاز: " + licenseManager.deviceCode()).setPositiveButton("حسنًا", null).create());
+        DarbakInfoDialog.show(this, "ترخيص الجهاز",
+                "الحالة: " + state + System.lineSeparator() + "رمز الجهاز: " + licenseManager.deviceCode());
     }
 
     private void checkForUpdates() {
@@ -586,11 +586,14 @@ public final class MainActivity extends Activity implements LocationController.C
         UpdateManager.check(new UpdateManager.Callback() {
             @Override public void onStatus(String message) { runOnUiThread(() -> toast(message)); }
             @Override public void onUpdate(UpdateManager.UpdateInfo update) {
-                runOnUiThread(() -> showImmersive(new AlertDialog.Builder(MainActivity.this)
-                        .setTitle("تحديث " + update.versionName).setMessage("نسخة جديدة من دربك جاهزة للتثبيت")
-                        .setNegativeButton("لاحقًا", null).setPositiveButton("تنزيل وتثبيت", (dialog, which) -> {
-                            toast("بدأ تنزيل التحديث"); UpdateManager.downloadAndInstall(MainActivity.this, update, this);
-                        }).create()));
+                runOnUiThread(() -> DarbakConfirmDialog.show(MainActivity.this,
+                        "تحديث " + update.versionName,
+                        "نسخة جديدة من دربك جاهزة للتثبيت.",
+                        "تنزيل وتثبيت", false,
+                        () -> {
+                            toast("بدأ تنزيل التحديث");
+                            UpdateManager.downloadAndInstall(MainActivity.this, update, this);
+                        }));
             }
         });
     }
@@ -669,15 +672,20 @@ public final class MainActivity extends Activity implements LocationController.C
         if (result != null) {
             TrackRuntimeState.clearResult(this);
             if (result.success) {
-                if (mapController != null && !MapUiPreferences.backgroundTrackEnabled(this)) mapController.showActiveTrack(java.util.Collections.emptyList());
+                if (mapController != null && !MapUiPreferences.backgroundTrackEnabled(this)) {
+                    mapController.showActiveTrack(java.util.Collections.emptyList());
+                }
                 toast(result.message);
             } else {
-                showImmersive(new AlertDialog.Builder(this).setTitle("تعذر حفظ المسار")
-                        .setMessage(result.message + "\n\nبقي التسجيل محفوظًا للاستعادة.")
-                        .setNegativeButton("لاحقًا", null).setPositiveButton("إعادة المحاولة", (dialog, which) -> BackgroundTrackService.retryFinalize(this)).create());
+                DarbakConfirmDialog.show(this, "تعذر حفظ المسار",
+                        result.message + System.lineSeparator() + System.lineSeparator()
+                                + "بقي التسجيل محفوظًا للاستعادة.",
+                        "إعادة المحاولة", false,
+                        () -> BackgroundTrackService.retryFinalize(this));
             }
         } else {
-            String writeError = TrackRuntimeState.writeError(this); if (writeError != null && !writeError.isEmpty()) toast(writeError);
+            String writeError = TrackRuntimeState.writeError(this);
+            if (writeError != null && !writeError.isEmpty()) toast(writeError);
         }
     }
 
@@ -715,58 +723,100 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void importMap(Uri uri) {
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("إضافة خريطة"); progress.setMessage("جارٍ نسخ وفحص ملف الخريطة…"); progress.setCancelable(false); showImmersive(progress);
+        DarbakProgressDialog progress = new DarbakProgressDialog(this, "إضافة خريطة", false, null);
+        progress.setMessage("جارٍ نسخ وفحص ملف الخريطة…");
+        progress.show();
         ioExecutor.execute(() -> {
             try {
                 MapStorage.importMap(this, uri);
-                runOnUiThread(() -> { progress.dismiss(); toast("تمت إضافة الخريطة للعمل بدون إنترنت"); loadActiveMap(); });
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    toast("تمت إضافة الخريطة للعمل بدون إنترنت");
+                    loadActiveMap();
+                });
             } catch (Exception error) {
-                runOnUiThread(() -> { progress.dismiss(); toast(error.getMessage() == null ? "تعذر إضافة الخريطة" : error.getMessage()); });
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    DarbakInfoDialog.show(this, "تعذر إضافة الخريطة",
+                            error.getMessage() == null ? "تعذر إضافة الخريطة" : error.getMessage());
+                });
             }
         });
     }
 
     private void importLegacyMigration(Uri uri) {
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("استعادة بيانات دربك"); progress.setMessage("جارٍ التحقق والاستعادة…"); progress.setCancelable(false); showImmersive(progress);
+        DarbakProgressDialog progress = new DarbakProgressDialog(this, "استعادة بيانات دربك", false, null);
+        progress.setMessage("جارٍ التحقق والاستعادة…");
+        progress.show();
         ioExecutor.execute(() -> {
             try {
                 LegacyMigration.Result result = LegacyMigration.importBackup(this, uri);
                 runOnUiThread(() -> {
-                    progress.dismiss(); placeRepository = new PlaceRepository(this);
+                    progress.dismiss();
+                    placeRepository = new PlaceRepository(this);
                     if (mapController != null) mapController.showSavedPlaces(placeRepository.all(), MapUiPreferences.showSavedNames(this));
-                    toast("تمت الاستعادة: " + result.savedPlaces + " موقع و" + result.gpxTracks + " مسار");
+                    DarbakInfoDialog.show(this, "اكتملت الاستعادة",
+                            "تمت استعادة " + result.savedPlaces + " موقع و" + result.gpxTracks + " مسار.");
                 });
             } catch (Exception error) {
-                runOnUiThread(() -> { progress.dismiss(); showImmersive(new AlertDialog.Builder(this).setTitle("تعذر الاستعادة")
-                        .setMessage(error.getMessage() == null ? "لم تتغير بياناتك الحالية" : error.getMessage()).setPositiveButton("حسنًا", null).create()); });
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    DarbakInfoDialog.show(this, "تعذر الاستعادة",
+                            error.getMessage() == null ? "لم تتغير بياناتك الحالية" : error.getMessage());
+                });
             }
         });
     }
 
     private void confirmRecommendedMapDownload() {
-        String message = "سيتم تنزيل خريطة دربك السعودية كاملة للعمل بدون إنترنت.\nالحجم " + RecommendedMapDownloader.DISPLAY_SIZE + ".\nاترك التطبيق مفتوحًا حتى يكتمل التحقق.";
-        showImmersive(new AlertDialog.Builder(this).setTitle("تنزيل خريطة دربك السعودية").setMessage(message)
-                .setNegativeButton("إلغاء", null).setPositiveButton("تنزيل", (dialog, which) -> downloadRecommendedMap()).create());
+        String message = "سيتم تنزيل خريطة دربك السعودية كاملة للعمل بدون إنترنت."
+                + System.lineSeparator() + "الحجم " + RecommendedMapDownloader.DISPLAY_SIZE + "."
+                + System.lineSeparator() + "اترك التطبيق مفتوحًا حتى يكتمل التحقق.";
+        DarbakConfirmDialog.show(this, "تنزيل خريطة دربك السعودية", message,
+                "تنزيل", false, this::downloadRecommendedMap);
     }
 
     private void downloadRecommendedMap() {
         mapDownloadCancelled = false;
-        ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle("خريطة دربك السعودية"); progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL); progress.setMax(100); progress.setCancelable(true);
-        progress.setOnCancelListener(dialog -> mapDownloadCancelled = true); showImmersive(progress);
+        DarbakProgressDialog progress = new DarbakProgressDialog(this, "خريطة دربك السعودية", true,
+                () -> mapDownloadCancelled = true);
+        progress.setMessage("بدء التنزيل…");
+        progress.show();
         ioExecutor.execute(() -> {
             try {
                 RecommendedMapDownloader.download(this, new RecommendedMapDownloader.Listener() {
-                    @Override public void onProgress(int percent, String message) { runOnUiThread(() -> { if (!isActivityUnavailable() && progress.isShowing()) { progress.setProgress(percent); progress.setMessage(message); } }); }
-                    @Override public boolean isCancelled() { return mapDownloadCancelled || Thread.currentThread().isInterrupted(); }
+                    @Override public void onProgress(int percent, String message) {
+                        runOnUiThread(() -> {
+                            if (!isActivityUnavailable() && progress.isShowing()) progress.setProgress(percent, message);
+                        });
+                    }
+                    @Override public boolean isCancelled() {
+                        return mapDownloadCancelled || Thread.currentThread().isInterrupted();
+                    }
                 });
-                runOnUiThread(() -> { if (!isActivityUnavailable()) { progress.dismiss(); toast("تم تجهيز خريطة دربك السعودية للعمل أوفلاين"); loadActiveMap(); } });
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        progress.dismiss();
+                        DarbakInfoDialog.show(this, "الخريطة جاهزة",
+                                "تم تجهيز خريطة دربك السعودية للعمل بدون إنترنت.");
+                        loadActiveMap();
+                    }
+                });
             } catch (RecommendedMapDownloader.CancelledException cancelled) {
-                runOnUiThread(() -> { if (!isActivityUnavailable()) { progress.dismiss(); toast("تم الإيقاف ويمكن استكمال التنزيل لاحقًا"); } });
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        progress.dismiss();
+                        toast("تم الإيقاف ويمكن استكمال التنزيل لاحقًا");
+                    }
+                });
             } catch (Exception error) {
-                runOnUiThread(() -> { if (!isActivityUnavailable()) { progress.dismiss(); toast(error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage()); } });
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        progress.dismiss();
+                        DarbakInfoDialog.show(this, "تعذر تنزيل الخريطة",
+                                error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage());
+                    }
+                });
             }
         });
     }
