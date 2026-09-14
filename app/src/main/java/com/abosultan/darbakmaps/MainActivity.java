@@ -200,13 +200,9 @@ public final class MainActivity extends Activity implements LocationController.C
         findViewById(R.id.action_map).setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.action_save).setOnClickListener(view -> QuickPointDialog.show(this, placeRepository,
                 locationController == null ? null : locationController.getLastLocation()));
-        actionRecord.setOnClickListener(view -> toggleTrackRecording());
+        actionRecord.setOnClickListener(view -> toggleTrackPause());
         actionRecord.setOnLongClickListener(view -> {
-            if (!MapUiPreferences.backgroundTrackEnabled(this)) return false;
-            boolean paused = TrackSessionState.togglePaused(this);
-            TrackSessionState.updateActionLabel(actionRecord, this);
-            if (!paused && mapController != null) mapController.startTrackSegment();
-            toast(paused ? "تم إيقاف تسجيل المسار مؤقتًا" : "تمت متابعة تسجيل المسار");
+            saveAutomaticTrackSnapshot();
             return true;
         });
         View navStop = findViewById(R.id.nav_stop);
@@ -517,17 +513,37 @@ public final class MainActivity extends Activity implements LocationController.C
                 .create());
     }
 
-    private void toggleTrackRecording() {
-        if (TrackRuntimeState.isFinalizing(this)) {
-            toast("جارٍ حفظ المسار؛ انتظر ظهور النتيجة");
-            return;
+    private void toggleTrackPause() {
+        if (!MapUiPreferences.backgroundTrackEnabled(this)) {
+            MapUiPreferences.setBackgroundTrackEnabled(this, true);
+            TrackSessionState.beginIfNeeded(this);
+            BackgroundTrackService.ensureRunning(this);
+            onBackgroundTrackSettingChanged(true);
         }
-        boolean enabled = !MapUiPreferences.backgroundTrackEnabled(this);
-        BackgroundTrackService.setEnabled(this, enabled);
-        onBackgroundTrackSettingChanged(enabled);
-        toast(enabled
-                ? "بدأ رسم وتسجيل المسار — سيستمر عند إغلاق التطبيق"
-                : "جارٍ إنهاء وحفظ المسار…");
+        boolean paused = TrackSessionState.togglePaused(this);
+        if (!paused && mapController != null) mapController.startTrackSegment();
+        syncBackgroundTrackUi();
+        toast(paused
+                ? "توقف التسجيل التلقائي مؤقتًا — السجل محفوظ"
+                : "استؤنف تسجيل آخر 1000 كم تلقائيًا");
+    }
+
+    private void saveAutomaticTrackSnapshot() {
+        toast("جارٍ حفظ نسخة من المسار التلقائي…");
+        ioExecutor.execute(() -> {
+            try {
+                File saved = BackgroundTrackStore.snapshotActive(this);
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) toast("تم حفظ نسخة: " + saved.getName());
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (!isActivityUnavailable()) {
+                        toast(error.getMessage() == null ? "تعذر حفظ نسخة المسار" : error.getMessage());
+                    }
+                });
+            }
+        });
     }
 
     void onBackgroundTrackSettingChanged(boolean enabled) {
@@ -579,6 +595,7 @@ public final class MainActivity extends Activity implements LocationController.C
         String[] items = {
                 "المواقع المحفوظة (" + placeRepository.all().size() + ")",
                 "الأقرب إلى موقعي",
+                "حفظ نسخة من آخر 1000 كم",
                 "المسارات السابقة (" + TrackStorage.list(this).length + ")"
         };
         showImmersive(new AlertDialog.Builder(this)
@@ -588,6 +605,8 @@ public final class MainActivity extends Activity implements LocationController.C
                         showPlaces(placeRepository.all(), "المواقع المحفوظة");
                     } else if (which == 1) {
                         showNearbyPlaces();
+                    } else if (which == 2) {
+                        saveAutomaticTrackSnapshot();
                     } else {
                         showTracks();
                     }
@@ -892,7 +911,9 @@ public final class MainActivity extends Activity implements LocationController.C
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
         } else {
+            MapUiPreferences.ensureAutomaticTracking(this);
             locationController.start();
+            BackgroundTrackService.ensureRunning(this);
         }
     }
 
@@ -938,6 +959,7 @@ public final class MainActivity extends Activity implements LocationController.C
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_LOCATION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                MapUiPreferences.ensureAutomaticTracking(this);
                 locationController.start();
                 BackgroundTrackService.ensureRunning(this);
             } else {
@@ -973,6 +995,7 @@ public final class MainActivity extends Activity implements LocationController.C
         super.onResume();
         immersive();
         if (initialized && locationController != null && locationController.hasPermission()) {
+            MapUiPreferences.ensureAutomaticTracking(this);
             locationController.start();
         }
         if (initialized) {
