@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.view.MotionEvent;
 
 import com.abosultan.darbakmaps.MapRuntimeBridge;
 import com.abosultan.darbakmaps.MapUiPreferences;
@@ -45,6 +46,8 @@ public final class OfflineMapController {
     private Marker navigationMarker;
     private Polyline navigationLine;
     private Polyline activeTrack;
+    private final List<LatLong> activeTrackPoints = new ArrayList<>();
+    private static final int MAX_ACTIVE_TRACK_POINTS = 12000;
     private Polyline storedTrack;
     private int lastArrowBucket = Integer.MIN_VALUE;
     private int lastMapBearingBucket = Integer.MIN_VALUE;
@@ -61,6 +64,12 @@ public final class OfflineMapController {
         mapView.setClickable(true);
         mapView.setBuiltInZoomControls(false);
         mapView.getMapScaleBar().setVisible(false);
+        mapView.setOnTouchListener((view, event) -> {
+            if (event != null && event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                MapUiPreferences.setFollowVehicle(view.getContext(), false);
+            }
+            return false;
+        });
 
         tileCache = AndroidUtil.createTileCache(
                 context,
@@ -305,19 +314,37 @@ public final class OfflineMapController {
 
     public void beginTrack() {
         if (activeTrack != null) mapView.getLayerManager().getLayers().remove(activeTrack);
+        activeTrackPoints.clear();
+        activeTrack = createActiveTrackPolyline();
+        mapView.getLayerManager().getLayers().add(activeTrack);
+    }
+
+    private Polyline createActiveTrackPolyline() {
         org.mapsforge.core.graphics.Paint trackPaint = AndroidGraphicFactory.INSTANCE.createPaint();
         trackPaint.setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 236, 122, 37));
         trackPaint.setStrokeWidth(7f);
         trackPaint.setStyle(Style.STROKE);
-        activeTrack = new Polyline(trackPaint, AndroidGraphicFactory.INSTANCE);
-        mapView.getLayerManager().getLayers().add(activeTrack);
+        return new Polyline(trackPaint, AndroidGraphicFactory.INSTANCE);
     }
 
     public void addTrackPoint(double latitude, double longitude) {
-        if (activeTrack != null) {
-            activeTrack.addPoint(new LatLong(latitude, longitude));
-            mapView.getLayerManager().redrawLayers();
+        if (activeTrack == null) return;
+        LatLong point = new LatLong(latitude, longitude);
+        activeTrackPoints.add(point);
+        activeTrack.addPoint(point);
+        if (activeTrackPoints.size() > MAX_ACTIVE_TRACK_POINTS) {
+            List<LatLong> compacted = new ArrayList<>(MAX_ACTIVE_TRACK_POINTS / 2 + 1);
+            for (int i = 0; i < activeTrackPoints.size(); i += 2) compacted.add(activeTrackPoints.get(i));
+            LatLong last = activeTrackPoints.get(activeTrackPoints.size() - 1);
+            if (compacted.isEmpty() || compacted.get(compacted.size() - 1) != last) compacted.add(last);
+            activeTrackPoints.clear();
+            activeTrackPoints.addAll(compacted);
+            mapView.getLayerManager().getLayers().remove(activeTrack);
+            activeTrack = createActiveTrackPolyline();
+            for (LatLong item : activeTrackPoints) activeTrack.addPoint(item);
+            mapView.getLayerManager().getLayers().add(activeTrack);
         }
+        mapView.getLayerManager().redrawLayers();
     }
 
     public void destroy() {

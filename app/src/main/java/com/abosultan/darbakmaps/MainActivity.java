@@ -194,7 +194,7 @@ public final class MainActivity extends Activity implements LocationController.C
         });
         findViewById(R.id.center_location).setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.import_map).setOnClickListener(view -> chooseMapFile());
-        findViewById(R.id.download_map).setOnClickListener(view -> confirmRecommendedMapDownload());
+        findViewById(R.id.download_map).setOnClickListener(view -> chooseMapFile());
         findViewById(R.id.action_map).setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.action_save).setOnClickListener(view -> QuickPointDialog.show(this, placeRepository,
                 locationController == null ? null : locationController.getLastLocation()));
@@ -445,6 +445,7 @@ public final class MainActivity extends Activity implements LocationController.C
             return;
         }
         if (mapController != null) {
+            MapUiPreferences.setFollowVehicle(this, true);
             mapController.centerOn(location.getLatitude(), location.getLongitude());
         }
     }
@@ -464,7 +465,7 @@ public final class MainActivity extends Activity implements LocationController.C
         onBackgroundTrackSettingChanged(enabled);
         toast(enabled
                 ? "بدأ رسم وتسجيل المسار — سيستمر عند إغلاق التطبيق"
-                : "تم إيقاف التسجيل وحفظ المسار");
+                : "تم إيقاف التسجيل — جارٍ حفظ المسار بأمان");
     }
 
     void onBackgroundTrackSettingChanged(boolean enabled) {
@@ -838,7 +839,10 @@ public final class MainActivity extends Activity implements LocationController.C
 
     @Override
     public void onProviderState(boolean enabled) {
-        runOnUiThread(() -> gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح"));
+        runOnUiThread(() -> {
+            gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح");
+            if (!enabled && speedValue != null) speedValue.setText("—");
+        });
     }
 
     @Override
