@@ -1,0 +1,84 @@
+name: Review UI remediation
+
+on:
+  push:
+    branches: [darbakmaps-final-0.8.0]
+    paths:
+      - '.github/workflows/review-ui-remediation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: darbakmaps-final-0.8.0
+          fetch-depth: 0
+
+      - name: Patch speed, recorder result, and safe layout
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          car = Path('app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java')
+          s = car.read_text()
+          s = s.replace('TextView speed = label(activity, "0", TEXT, 31f, Gravity.CENTER);',
+                        'TextView speed = label(activity, "—", TEXT, 31f, Gravity.CENTER);')
+          s = s.replace('root.addView(trackStatsPanel, frame(dp(activity, 335), dp(activity, 46), Gravity.BOTTOM | Gravity.RIGHT,\n                dp(activity, 14), 0, 0, dp(activity, 14)));',
+                        'root.addView(trackStatsPanel, frame(dp(activity, 335), dp(activity, 46), Gravity.BOTTOM | Gravity.RIGHT,\n                dp(activity, 14), 0, 0, dp(activity, 92)));')
+          car.write_text(s)
+
+          main = Path('app/src/main/java/com/abosultan/darbakmaps/MainActivity.java')
+          s = main.read_text()
+          old = '''    private void toggleTrackRecording() {\n        boolean enabled = !MapUiPreferences.backgroundTrackEnabled(this);\n        BackgroundTrackService.setEnabled(this, enabled);\n        onBackgroundTrackSettingChanged(enabled);\n        toast(enabled\n                ? "بدأ رسم وتسجيل المسار — سيستمر عند إغلاق التطبيق"\n                : "جارٍ إنهاء وحفظ المسار…");\n    }'''
+          new = '''    private void toggleTrackRecording() {\n        if (TrackRuntimeState.isFinalizing(this)) {\n            toast("جارٍ حفظ المسار؛ انتظر ظهور النتيجة");\n            return;\n        }\n        boolean enabled = !MapUiPreferences.backgroundTrackEnabled(this);\n        BackgroundTrackService.setEnabled(this, enabled);\n        onBackgroundTrackSettingChanged(enabled);\n        toast(enabled\n                ? "بدأ رسم وتسجيل المسار — سيستمر عند إغلاق التطبيق"\n                : "جارٍ إنهاء وحفظ المسار…");\n    }'''
+          if old not in s:
+              raise SystemExit('toggleTrackRecording pattern not found')
+          s = s.replace(old, new)
+
+          old = '''    @Override\n    public void onLocation(Location location) {\n        runOnUiThread(() -> {\n            int speed = location.hasSpeed() ? Math.max(0, Math.round(location.getSpeed() * 3.6f)) : 0;\n            speedValue.setText(String.valueOf(speed));\n            gpsStatus.setText("GPS متصل • أوفلاين");\n            if (mapController != null) {\n                mapController.updateLocation(location.getLatitude(), location.getLongitude(),\n                        location.hasBearing() ? location.getBearing() : 0f);\n            }'''
+          new = '''    @Override\n    public void onLocation(Location location) {\n        runOnUiThread(() -> {\n            if (location.hasSpeed()) {\n                int speed = Math.max(0, Math.round(location.getSpeed() * 3.6f));\n                speedValue.setText(String.valueOf(speed));\n            } else {\n                speedValue.setText("—");\n            }\n            gpsStatus.setText("GPS متصل • أوفلاين");\n            if (mapController != null) {\n                mapController.updateLocation(location.getLatitude(), location.getLongitude(),\n                        location.hasBearing() ? location.getBearing() : Float.NaN);\n            }'''
+          if old not in s:
+              raise SystemExit('onLocation pattern not found')
+          s = s.replace(old, new)
+
+          old = '''    @Override\n    public void onProviderState(boolean enabled) {\n        runOnUiThread(() -> gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح"));\n    }'''
+          new = '''    @Override\n    public void onProviderState(boolean enabled) {\n        runOnUiThread(() -> {\n            gpsStatus.setText(enabled ? "GPS يبحث عن الإشارة" : "GPS غير متاح");\n            speedValue.setText("—");\n            View nav = findViewById(R.id.nav_panel);\n            if (nav != null) nav.setVisibility(View.GONE);\n        });\n    }'''
+          if old not in s:
+              raise SystemExit('onProviderState pattern not found')
+          s = s.replace(old, new)
+
+          old = '''        if (initialized) {\n            BackgroundTrackService.ensureRunning(this);\n            syncBackgroundTrackUi();\n        }'''
+          new = '''        if (initialized) {\n            BackgroundTrackService.ensureRunning(this);\n            syncBackgroundTrackUi();\n            showPendingTrackResult();\n        }'''
+          if old not in s:
+              raise SystemExit('onResume pattern not found')
+          s = s.replace(old, new, 1)
+
+          marker = '''    @Override\n    protected void onPause() {'''
+          method = '''    private void showPendingTrackResult() {\n        TrackRuntimeState.Result result = TrackRuntimeState.peekResult(this);\n        if (result != null) {\n            TrackRuntimeState.clearResult(this);\n            if (result.success) {\n                toast(result.message);\n            } else {\n                showImmersive(new AlertDialog.Builder(this)\n                        .setTitle("تعذر حفظ المسار")\n                        .setMessage(result.message + "\\n\\nبقي التسجيل محفوظًا للاستعادة.")\n                        .setNegativeButton("لاحقًا", null)\n                        .setPositiveButton("إعادة المحاولة", (dialog, which) -> BackgroundTrackService.retryFinalize(this))\n                        .create());\n            }\n        } else {\n            String writeError = TrackRuntimeState.writeError(this);\n            if (writeError != null && !writeError.isEmpty()) {\n                toast(writeError);\n            }\n        }\n    }\n\n'''
+          if marker not in s:
+              raise SystemExit('onPause marker not found')
+          s = s.replace(marker, method + marker, 1)
+          main.write_text(s)
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile and test
+        run: ./gradlew --no-daemon testDebugUnitTest :app:compileDebugJavaWithJavac
+
+      - name: Commit remediation
+        run: |
+          git config user.name 'Darbak Review CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java/com/abosultan/darbakmaps/MainActivity.java app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'fix: surface recorder state and clear stale speed UI'
+          git push origin HEAD:darbakmaps-final-0.8.0
