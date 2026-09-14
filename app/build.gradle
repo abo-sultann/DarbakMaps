@@ -10,8 +10,8 @@ android {
         applicationId 'com.abosultan.darbakmaps'
         minSdk 24
         targetSdk 35
-        versionCode 20
-        versionName '0.8.1'
+        versionCode 21
+        versionName '0.9.0'
 
         buildConfigField 'String', 'ACTIVATION_URL', '""'
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
@@ -44,7 +44,8 @@ android {
             buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://raw.githubusercontent.com/abo-sultann/DarbakMaps/main/update-manifest-debug.json"'
         }
         release {
-            // Stable 0.8.1 keeps the historical car-screen package and includes the review-remediation fixes.
+            // 0.9.0 is the owner-approved rolling-track/search/saved-place field-test candidate.
+            // Keep the historical car-screen package suffix until installed-signature compatibility is proven.
             applicationIdSuffix '.debug'
             minifyEnabled true
             shrinkResources true
