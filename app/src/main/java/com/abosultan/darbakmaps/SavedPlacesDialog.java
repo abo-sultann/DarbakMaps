@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -82,12 +84,13 @@ public final class SavedPlacesDialog {
             LinearLayout root = new LinearLayout(activity);
             root.setOrientation(LinearLayout.VERTICAL);
             root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-            root.setPadding(10, 8, 10, 8);
+            root.setPadding(dp(14), dp(10), dp(14), dp(10));
+            root.setBackground(round(Color.rgb(8, 39, 31), dp(22), Color.argb(150, 216, 180, 91)));
 
             TextView help = new TextView(activity);
             help.setText("اضغط للتوجيه • ضغط مطوّل للتعديل أو الحذف");
             help.setTextSize(14f);
-            help.setTextColor(Color.DKGRAY);
+            help.setTextColor(Color.rgb(185, 179, 165));
             help.setGravity(Gravity.CENTER_VERTICAL);
             root.addView(help, new LinearLayout.LayoutParams(-1, dp(34)));
 
@@ -107,7 +110,9 @@ public final class SavedPlacesDialog {
             root.addView(filtersScroll, new LinearLayout.LayoutParams(-1, dp(52)));
 
             list = new ListView(activity);
-            list.setDividerHeight(1);
+            list.setDivider(new ColorDrawable(Color.argb(55, 216, 180, 91)));
+            list.setDividerHeight(dp(1));
+            list.setBackgroundColor(Color.TRANSPARENT);
             list.setAdapter(adapter);
             list.setOnItemClickListener((parent, view, position, id) -> {
                 String placeId = adapter.idAt(position);
@@ -199,15 +204,30 @@ public final class SavedPlacesDialog {
         }
 
         private void addFilter(LinearLayout parent, String label, String key) {
-            Button button = new Button(activity);
+            TextView button = new TextView(activity);
             button.setText(label);
             button.setTextSize(13f);
-            button.setMinWidth(dp(82));
+            button.setGravity(Gravity.CENTER);
+            boolean selected = (iconFilter == null && key == null) || (iconFilter != null && iconFilter.equals(key));
+            button.setTextColor(selected ? Color.rgb(8, 39, 31) : Color.rgb(247, 242, 231));
+            button.setBackground(round(selected ? Color.rgb(216, 180, 91) : Color.rgb(25, 72, 58),
+                    dp(15), Color.argb(80, 216, 180, 91)));
             button.setOnClickListener(v -> {
                 iconFilter = key;
+                for (int i = 0; i < parent.getChildCount(); i++) {
+                    View child = parent.getChildAt(i);
+                    if (child instanceof TextView) {
+                        ((TextView) child).setTextColor(Color.rgb(247, 242, 231));
+                        child.setBackground(round(Color.rgb(25, 72, 58), dp(15), Color.argb(80, 216, 180, 91)));
+                    }
+                }
+                button.setTextColor(Color.rgb(8, 39, 31));
+                button.setBackground(round(Color.rgb(216, 180, 91), dp(15), Color.rgb(216, 180, 91)));
                 rebuild(true);
             });
-            parent.addView(button, new LinearLayout.LayoutParams(dp(92), dp(48)));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(92), dp(42));
+            params.setMargins(dp(4), dp(4), dp(4), dp(4));
+            parent.addView(button, params);
         }
 
         private void rebuild(boolean reorder) {
@@ -337,7 +357,8 @@ public final class SavedPlacesDialog {
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-                row.setPadding(dp(8), dp(4), dp(8), dp(4));
+                row.setPadding(dp(10), dp(5), dp(10), dp(5));
+                row.setBackground(round(Color.rgb(16, 52, 42), dp(14), Color.argb(45, 216, 180, 91)));
 
                 PlaceIconView icon = new PlaceIconView(activity);
                 row.addView(icon, new LinearLayout.LayoutParams(dp(54), dp(54)));
@@ -346,10 +367,10 @@ public final class SavedPlacesDialog {
                 texts.setOrientation(LinearLayout.VERTICAL);
                 TextView name = new TextView(activity);
                 name.setTextSize(18f);
-                name.setTextColor(Color.rgb(7, 17, 29));
+                name.setTextColor(Color.rgb(247, 242, 231));
                 TextView detail = new TextView(activity);
                 detail.setTextSize(14f);
-                detail.setTextColor(Color.DKGRAY);
+                detail.setTextColor(Color.rgb(185, 179, 165));
                 texts.addView(name, new LinearLayout.LayoutParams(-1, dp(30)));
                 texts.addView(detail, new LinearLayout.LayoutParams(-1, dp(26)));
                 row.addView(texts, new LinearLayout.LayoutParams(0, dp(58), 1f));
@@ -410,7 +431,7 @@ public final class SavedPlacesDialog {
             super(context);
             paint.setColor(Color.rgb(7, 62, 45));
             paint.setStyle(Paint.Style.FILL);
-            text.setColor(Color.DKGRAY);
+            text.setColor(Color.rgb(216, 180, 91));
             text.setTextSize(dp(12));
             text.setTextAlign(Paint.Align.CENTER);
         }
@@ -447,7 +468,7 @@ public final class SavedPlacesDialog {
 
         PlaceIconView(Activity context) {
             super(context);
-            gold.setColor(Color.rgb(215, 173, 85));
+            gold.setColor(Color.rgb(216, 180, 91));
             gold.setStyle(Paint.Style.FILL);
             line.setColor(Color.rgb(7, 62, 45));
             line.setStyle(Paint.Style.STROKE);
@@ -491,6 +512,14 @@ public final class SavedPlacesDialog {
     private static String formatDistance(float meters) {
         if (meters < 1000f) return Math.round(meters) + " م";
         return String.format(Locale.US, "%.1f كم", meters / 1000f);
+    }
+
+    private static GradientDrawable round(int fill, int radius, int stroke) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(fill);
+        background.setCornerRadius(radius);
+        if (Color.alpha(stroke) > 0) background.setStroke(1, stroke);
+        return background;
     }
 
     private static int dp(float value) {

@@ -20,13 +20,13 @@ import android.widget.TextView;
  * The simple map-first shell remains the default; a richer side panel opens only on demand.
  */
 final class CarScreenLayout {
-    private static final int NIGHT = Color.rgb(7, 17, 29);
-    private static final int SURFACE = Color.rgb(17, 29, 43);
-    private static final int SURFACE_ALT = Color.rgb(16, 30, 44);
-    private static final int PRIMARY = Color.rgb(57, 169, 255);
-    private static final int GOLD = Color.rgb(215, 173, 85);
-    private static final int TEXT = Color.rgb(244, 247, 250);
-    private static final int MUTED = Color.rgb(159, 176, 194);
+    private static final int NIGHT = Color.rgb(8, 39, 31);
+    private static final int SURFACE = Color.rgb(16, 52, 42);
+    private static final int SURFACE_ALT = Color.rgb(25, 72, 58);
+    private static final int PRIMARY = Color.rgb(216, 180, 91);
+    private static final int GOLD = Color.rgb(216, 180, 91);
+    private static final int TEXT = Color.rgb(247, 242, 231);
+    private static final int MUTED = Color.rgb(185, 179, 165);
 
     private CarScreenLayout() {}
 
@@ -49,7 +49,7 @@ final class CarScreenLayout {
         searchBox.setGravity(Gravity.CENTER_VERTICAL);
         searchBox.setOrientation(LinearLayout.HORIZONTAL);
         searchBox.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
-        searchBox.setBackground(round(Color.argb(238, 17, 29, 43), dp(activity, 24), Color.argb(100, 57, 169, 255)));
+        searchBox.setBackground(round(Color.argb(238, 17, 29, 43), dp(activity, 24), Color.argb(100, 216, 180, 91)));
         EditText search = new EditText(activity);
         search.setId(R.id.search_input);
         search.setSingleLine(true);
@@ -69,7 +69,7 @@ final class CarScreenLayout {
             }
         });
         searchBox.addView(searchMark, new LinearLayout.LayoutParams(dp(activity, 42), -1));
-        tools.addView(searchBox, frame(dp(activity, 520), dp(activity, 52), Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, dp(activity, 14), 0, 0));
+        tools.addView(searchBox, frame(dp(activity, 500), dp(activity, 52), Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, dp(activity, 14), 0, 0));
 
         ImageView logo = new ImageView(activity);
         logo.setImageResource(R.drawable.darbak_brand);
@@ -81,7 +81,7 @@ final class CarScreenLayout {
         TextView gps = label(activity, "GPS بانتظار الإشارة", TEXT, 13f, Gravity.CENTER);
         gps.setId(R.id.gps_status);
         gps.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
-        gps.setBackground(round(Color.argb(232, 17, 29, 43), dp(activity, 18), Color.argb(75, 57, 169, 255)));
+        gps.setBackground(round(Color.argb(232, 17, 29, 43), dp(activity, 18), Color.argb(75, 216, 180, 91)));
         tools.addView(gps, frame(-2, dp(activity, 36), Gravity.TOP | Gravity.RIGHT, dp(activity, 14), dp(activity, 78), 0, 0));
 
 
@@ -144,106 +144,22 @@ final class CarScreenLayout {
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(dp(activity, 8), dp(activity, 4), dp(activity, 8), dp(activity, 4));
-        dock.setBackground(round(Color.argb(242, 7, 17, 29), dp(activity, 22), Color.argb(105, 57, 169, 255)));
-        dock.addView(dockAction(activity, "موقعي", R.id.action_map), weighted());
-        dock.addView(dockAction(activity, "حفظ", R.id.action_save), weighted());
-        dock.addView(dockAction(activity, "تسجيل مسار", R.id.action_record), weighted());
+        dock.setBackground(round(Color.argb(242, 7, 17, 29), dp(activity, 22), Color.argb(105, 216, 180, 91)));
+                dock.addView(dockAction(activity, "حفظ موقع", R.id.action_save), weighted());
+        dock.addView(dockAction(activity, "المسار", R.id.action_record), weighted());
         dock.addView(dockAction(activity, "المحفوظات", R.id.action_saved), weighted());
-        dock.addView(dockAction(activity, "المزيد", R.id.action_more), weighted());
-        tools.addView(dock, frame(dp(activity, 570), dp(activity, 68), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, dp(activity, 12)));
+        dock.addView(dockAction(activity, "القائمة", R.id.action_more), weighted());
+        tools.addView(dock, frame(dp(activity, 500), dp(activity, 68), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, dp(activity, 12)));
 
-        LinearLayout sidePanel = new LinearLayout(activity);
-        sidePanel.setOrientation(LinearLayout.VERTICAL);
-        sidePanel.setGravity(Gravity.TOP);
-        sidePanel.setPadding(dp(activity, 14), dp(activity, 12), dp(activity, 14), dp(activity, 12));
-        sidePanel.setBackground(round(Color.argb(248, 7, 17, 29), dp(activity, 22), Color.argb(150, 215, 173, 85)));
-        sidePanel.setVisibility(View.GONE);
-
-        LinearLayout panelHeader = new LinearLayout(activity);
-        panelHeader.setOrientation(LinearLayout.HORIZONTAL);
-        panelHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView panelTitle = label(activity, "لوحة دربك", GOLD, 19f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        panelHeader.addView(panelTitle, new LinearLayout.LayoutParams(0, dp(activity, 42), 1f));
-        TextView panelClose = label(activity, "×", TEXT, 27f, Gravity.CENTER);
-        panelClose.setBackground(round(SURFACE_ALT, dp(activity, 16), Color.argb(80, 215, 173, 85)));
-        panelHeader.addView(panelClose, new LinearLayout.LayoutParams(dp(activity, 44), dp(activity, 40)));
-        sidePanel.addView(panelHeader, new LinearLayout.LayoutParams(-1, dp(activity, 44)));
-
-        TextView panelSubtitle = label(activity, "OSM + المشاري • أوفلاين", MUTED, 12f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        sidePanel.addView(panelSubtitle, new LinearLayout.LayoutParams(-1, dp(activity, 28)));
-
-        TextView searchAction = panelAction(activity, "⌕   البحث");
-        searchAction.setOnClickListener(view -> {
-            sidePanel.setVisibility(View.GONE);
-            search.requestFocus();
-            search.setSelection(search.getText().length());
-            InputMethodManager keyboard = (InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE);
-            if (keyboard != null) keyboard.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
-        });
-        sidePanel.addView(searchAction, panelActionParams(activity));
-
-        TextView centerAction = panelAction(activity, "◎   توسيط على موقعي");
-        centerAction.setOnClickListener(view -> {
-            View action = root.findViewById(R.id.action_map);
-            if (action != null) action.performClick();
-        });
-        sidePanel.addView(centerAction, panelActionParams(activity));
-
-        TextView saveAction = panelAction(activity, "＋   حفظ الموقع الحالي");
-        saveAction.setOnClickListener(view -> {
-            View action = root.findViewById(R.id.action_save);
-            if (action != null) action.performClick();
-        });
-        sidePanel.addView(saveAction, panelActionParams(activity));
-
-        TextView savedAction = panelAction(activity, "☆   المحفوظات والمسارات");
-        savedAction.setOnClickListener(view -> {
-            View action = root.findViewById(R.id.action_saved);
-            if (action != null) action.performClick();
-        });
-        sidePanel.addView(savedAction, panelActionParams(activity));
-
-        TextView moreAction = panelAction(activity, "⚙   الإعدادات والمزيد");
-        moreAction.setOnClickListener(view -> {
-            View action = root.findViewById(R.id.action_more);
-            if (action != null) action.performClick();
-        });
-        sidePanel.addView(moreAction, panelActionParams(activity));
-
-        TextView layersTitle = label(activity, "طبقات خريطة دربك", GOLD, 13f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams layersTitleParams = new LinearLayout.LayoutParams(-1, dp(activity, 30));
-        layersTitleParams.topMargin = dp(activity, 5);
-        sidePanel.addView(layersTitle, layersTitleParams);
-        sidePanel.addView(layerLegend(activity, "●  الطرق المعبدة", Color.rgb(223, 176, 64)));
-        sidePanel.addView(layerLegend(activity, "●  الدروب البرية", Color.rgb(176, 92, 51)));
-        sidePanel.addView(layerLegend(activity, "●  الشعاب والأودية", Color.rgb(61, 166, 203)));
-        sidePanel.addView(layerLegend(activity, "●  الجبال والمعالم", Color.rgb(157, 112, 61)));
-
-        TextView layerHint = label(activity, "تظهر التفاصيل تلقائيًا حسب مستوى التكبير", MUTED, 10.5f, Gravity.CENTER);
-        LinearLayout.LayoutParams layerHintParams = new LinearLayout.LayoutParams(-1, dp(activity, 26));
-        layerHintParams.topMargin = dp(activity, 4);
-        sidePanel.addView(layerHint, layerHintParams);
-
-        tools.addView(sidePanel, frame(dp(activity, 276), dp(activity, 418), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
-                dp(activity, 14), 0, 0, 0));
-
-        TextView sideToggle = label(activity, "☰", GOLD, 25f, Gravity.CENTER);
-        sideToggle.setContentDescription("فتح لوحة دربك");
-        sideToggle.setBackground(round(Color.argb(242, 7, 17, 29), dp(activity, 20), Color.argb(145, 215, 173, 85)));
-        sideToggle.setOnClickListener(view -> {
-            boolean show = sidePanel.getVisibility() != View.VISIBLE;
-            sidePanel.setVisibility(show ? View.VISIBLE : View.GONE);
-        });
-        panelClose.setOnClickListener(view -> sidePanel.setVisibility(View.GONE));
-        tools.addView(sideToggle, frame(dp(activity, 52), dp(activity, 52), Gravity.RIGHT | Gravity.CENTER_VERTICAL,
-                dp(activity, 14), 0, 0, 0));
+        // One menu entry only: the bottom dock opens the unified Darbak panel.
+        // The former floating side panel duplicated search/save/saved/settings and was removed.
 
         LinearLayout speedPill = new LinearLayout(activity);
         speedPill.setId(R.id.speed_panel);
         speedPill.setOrientation(LinearLayout.HORIZONTAL);
         speedPill.setGravity(Gravity.CENTER);
         speedPill.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
-        speedPill.setBackground(round(Color.argb(218, 7, 17, 29), dp(activity, 18), Color.argb(65, 57, 169, 255)));
+        speedPill.setBackground(round(Color.argb(218, 7, 17, 29), dp(activity, 18), Color.argb(65, 216, 180, 91)));
         TextView speed = label(activity, "—", TEXT, 31f, Gravity.CENTER);
         speed.setId(R.id.speed_value);
         speedPill.addView(speed, new LinearLayout.LayoutParams(dp(activity, 62), -1));
@@ -269,7 +185,7 @@ final class CarScreenLayout {
         empty.setOrientation(LinearLayout.VERTICAL);
         empty.setGravity(Gravity.CENTER);
         empty.setPadding(dp(activity, 28), dp(activity, 22), dp(activity, 28), dp(activity, 22));
-        empty.setBackground(round(Color.argb(248, 17, 29, 43), dp(activity, 24), Color.argb(100, 57, 169, 255)));
+        empty.setBackground(round(Color.argb(248, 17, 29, 43), dp(activity, 24), Color.argb(100, 216, 180, 91)));
         empty.addView(label(activity, "الخريطة غير محمّلة", TEXT, 21f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 42)));
         Button download = button(activity, "خريطة دربك", R.id.download_map, PRIMARY, NIGHT);
         download.setVisibility(View.GONE);
@@ -299,7 +215,7 @@ final class CarScreenLayout {
     private static TextView control(Activity activity, String text, int id, float size) {
         TextView view = label(activity, text, PRIMARY, size, Gravity.CENTER);
         view.setId(id);
-        view.setBackground(round(Color.argb(242, 17, 29, 43), dp(activity, 24), Color.argb(75, 57, 169, 255)));
+        view.setBackground(round(Color.argb(242, 17, 29, 43), dp(activity, 24), Color.argb(75, 216, 180, 91)));
         return view;
     }
 

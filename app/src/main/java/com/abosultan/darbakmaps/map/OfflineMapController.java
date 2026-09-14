@@ -378,7 +378,7 @@ public final class OfflineMapController {
         org.mapsforge.core.graphics.Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
         int color = navigationMode == MapUiPreferences.ROUTING_ROADS
                 ? AndroidGraphicFactory.INSTANCE.createColor(245, 215, 173, 85)
-                : AndroidGraphicFactory.INSTANCE.createColor(245, 57, 169, 255);
+                : AndroidGraphicFactory.INSTANCE.createColor(245, 216, 180, 91);
         paint.setColor(color);
         paint.setStrokeWidth(navigationMode == MapUiPreferences.ROUTING_ROADS ? 9f : 7f);
         paint.setStyle(Style.STROKE);
@@ -503,7 +503,7 @@ public final class OfflineMapController {
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
         border.setStyle(Paint.Style.STROKE);
         border.setStrokeWidth(2f);
-        border.setColor(Color.rgb(215, 173, 85));
+        border.setColor(Color.rgb(216, 180, 91));
         canvas.drawRoundRect(new RectF(2, 2, width - 2, height - 9), 18, 18, border);
 
         drawSavedIcon(canvas, place.iconKey, 34f, 31f);
@@ -523,17 +523,17 @@ public final class OfflineMapController {
         tip.lineTo(44f, height - 9f);
         tip.close();
         Paint tipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        tipPaint.setColor(Color.rgb(215, 173, 85));
+        tipPaint.setColor(Color.rgb(216, 180, 91));
         canvas.drawPath(tip, tipPaint);
         return new AndroidBitmap(bitmap);
     }
 
     private void drawSavedIcon(Canvas canvas, String key, float cx, float cy) {
         Paint gold = new Paint(Paint.ANTI_ALIAS_FLAG);
-        gold.setColor(Color.rgb(215, 173, 85));
+        gold.setColor(Color.rgb(216, 180, 91));
         gold.setStyle(Paint.Style.FILL);
         Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
-        line.setColor(Color.rgb(215, 173, 85));
+        line.setColor(Color.rgb(216, 180, 91));
         line.setStyle(Paint.Style.STROKE);
         line.setStrokeWidth(3f);
         line.setStrokeCap(Paint.Cap.ROUND);
@@ -591,10 +591,10 @@ public final class OfflineMapController {
         outer.setColor(Color.WHITE);
         canvas.drawCircle(size / 2f, size / 2f, 25f, outer);
         Paint middle = new Paint(Paint.ANTI_ALIAS_FLAG);
-        middle.setColor(Color.rgb(215, 173, 85));
+        middle.setColor(Color.rgb(216, 180, 91));
         canvas.drawCircle(size / 2f, size / 2f, 19f, middle);
         Paint inner = new Paint(Paint.ANTI_ALIAS_FLAG);
-        inner.setColor(Color.rgb(7, 17, 29));
+        inner.setColor(Color.rgb(8, 39, 31));
         canvas.drawCircle(size / 2f, size / 2f, 8f, inner);
         return new AndroidBitmap(bitmap);
     }
@@ -607,7 +607,7 @@ public final class OfflineMapController {
         outer.setColor(Color.WHITE);
         canvas.drawCircle(size / 2f, size / 2f, 15f, outer);
         Paint inner = new Paint(Paint.ANTI_ALIAS_FLAG);
-        inner.setColor(Color.rgb(57, 169, 255));
+        inner.setColor(Color.rgb(216, 180, 91));
         canvas.drawCircle(size / 2f, size / 2f, 10f, inner);
         return new AndroidBitmap(bitmap);
     }
@@ -634,7 +634,7 @@ public final class OfflineMapController {
         canvas.scale(0.72f, 0.72f, size / 2f, size / 2f);
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         fill.setStyle(Paint.Style.FILL);
-        fill.setColor(Color.rgb(57, 169, 255));
+        fill.setColor(Color.rgb(216, 180, 91));
         canvas.drawPath(arrow, fill);
         canvas.restore();
         return new AndroidBitmap(bitmap);
@@ -658,7 +658,7 @@ public final class OfflineMapController {
         canvas.drawPath(outerTip, outline);
 
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fill.setColor(Color.rgb(215, 173, 85));
+        fill.setColor(Color.rgb(216, 180, 91));
         canvas.drawCircle(width / 2f, 23f, 16f, fill);
         Path tip = new Path();
         tip.moveTo(12f, 27f);
@@ -668,7 +668,7 @@ public final class OfflineMapController {
         canvas.drawPath(tip, fill);
 
         Paint center = new Paint(Paint.ANTI_ALIAS_FLAG);
-        center.setColor(Color.rgb(7, 17, 29));
+        center.setColor(Color.rgb(8, 39, 31));
         canvas.drawCircle(width / 2f, 22f, 7f, center);
         return new AndroidBitmap(bitmap);
     }

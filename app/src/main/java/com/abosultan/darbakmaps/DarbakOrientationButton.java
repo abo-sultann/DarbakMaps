@@ -9,7 +9,7 @@ import android.widget.Toast;
 
 /** One-button orientation control inspired by off-road and navigation apps. */
 final class DarbakOrientationButton extends TextView {
-    private static final int PRIMARY = Color.rgb(57, 169, 255);
+    private static final int PRIMARY = Color.rgb(216, 180, 91);
 
     DarbakOrientationButton(Activity activity) {
         super(activity);
@@ -18,7 +18,7 @@ final class DarbakOrientationButton extends TextView {
         setTextColor(PRIMARY);
         setTextSize(13f);
         setPadding(dp(8), 0, dp(8), 0);
-        setBackground(round(Color.argb(247, 17, 29, 43), dp(22), Color.argb(90, 57, 169, 255)));
+        setBackground(round(Color.argb(247, 17, 29, 43), dp(22), Color.argb(90, 216, 180, 91)));
         refresh();
         setOnClickListener(view -> {
             int mode = MapRuntimeBridge.cycleOrientation(getContext());

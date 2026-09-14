@@ -32,13 +32,13 @@ import java.util.Locale;
 
 /** Unified lightweight Darbak panels for the car screen. */
 final class DarbakPanels {
-    private static final int NIGHT = Color.rgb(7, 17, 29);
-    private static final int SURFACE = Color.rgb(17, 29, 43);
-    private static final int SURFACE_ALT = Color.rgb(16, 30, 44);
-    private static final int PRIMARY = Color.rgb(57, 169, 255);
-    private static final int GOLD = Color.rgb(215, 173, 85);
-    private static final int TEXT = Color.rgb(244, 247, 250);
-    private static final int MUTED = Color.rgb(159, 176, 194);
+    private static final int NIGHT = Color.rgb(8, 39, 31);
+    private static final int SURFACE = Color.rgb(16, 52, 42);
+    private static final int SURFACE_ALT = Color.rgb(25, 72, 58);
+    private static final int PRIMARY = Color.rgb(216, 180, 91);
+    private static final int GOLD = Color.rgb(216, 180, 91);
+    private static final int TEXT = Color.rgb(247, 242, 231);
+    private static final int MUTED = Color.rgb(185, 179, 165);
     private static final int MAP_FILE_REQUEST = 702;
 
     private DarbakPanels() {}
@@ -46,8 +46,8 @@ final class DarbakPanels {
     static void showMore(Activity activity) {
         Dialog dialog = baseDialog(activity);
         LinearLayout root = panel(activity, 24);
-        root.addView(title(activity, "دربك للبر"));
-        root.addView(subtitle(activity, "واجهة دربك للبر — أوفلاين ومهيأة لشاشة السيارة"));
+        root.addView(title(activity, "دربك"));
+        root.addView(subtitle(activity, "خرائط البر الأوفلاين • شاشة السيارة"));
 
         LinearLayout row1 = row(activity);
         row1.addView(card(activity, "الإعدادات", "التوجيه والعلامات واتجاه الخريطة والعرض", () -> {
@@ -102,12 +102,15 @@ final class DarbakPanels {
         LinearLayout root = panel(activity, 18);
         root.addView(title(activity, "إعدادات دربك"));
         root.addView(subtitle(activity, "التحكم بالخريطة والتوجيه والعلامات وشاشة السيارة"));
+        root.addView(section(activity, "النظام"));
 
         root.addView(toggleCard(activity,
                 "التشغيل مع الشاشة",
                 "يفتح دربك تلقائيًا بعد تشغيل الشاشة",
                 StartupPreferences.isEnabled(activity),
                 checked -> StartupPreferences.setEnabled(activity, checked)));
+
+        root.addView(section(activity, "التوجيه"));
 
         TextView routing = text(activity,
                 "نمط التوجيه: " + MapRuntimeBridge.routingLabel(MapUiPreferences.routingMode(activity)) + "  •  اضغط للتغيير",
@@ -123,6 +126,8 @@ final class DarbakPanels {
         LinearLayout.LayoutParams routingParams = new LinearLayout.LayoutParams(-1, dp(activity, 60));
         routingParams.topMargin = dp(activity, 7);
         root.addView(routing, routingParams);
+
+        root.addView(section(activity, "الخريطة والعلامات"));
 
         root.addView(toggleCard(activity,
                 "علامات المواقع المحفوظة",
@@ -156,6 +161,8 @@ final class DarbakPanels {
                     else activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 }), compact(activity));
 
+        root.addView(section(activity, "القيادة والمسار"));
+
         root.addView(toggleCard(activity,
                 "رسم وتسجيل المسار بالخلفية",
                 "يسجل خط سيرك ويستمر حتى عند إغلاق التطبيق",
@@ -188,7 +195,7 @@ final class DarbakPanels {
         TextView orientation = text(activity,
                 "اتجاه الخريطة: " + MapRuntimeBridge.label(MapUiPreferences.orientation(activity)) + "  •  اضغط للتغيير",
                 TEXT, 15f, Gravity.CENTER);
-        orientation.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(80, 57, 169, 255)));
+        orientation.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(80, 216, 180, 91)));
         orientation.setOnClickListener(view -> {
             int mode = MapRuntimeBridge.cycleOrientation(activity);
             orientation.setText("اتجاه الخريطة: " + MapRuntimeBridge.label(mode) + "  •  اضغط للتغيير");
@@ -233,20 +240,29 @@ final class DarbakPanels {
         LinearLayout settingCard = new LinearLayout(activity);
         settingCard.setOrientation(LinearLayout.HORIZONTAL);
         settingCard.setGravity(Gravity.CENTER_VERTICAL);
-        settingCard.setPadding(dp(activity, 20), dp(activity, 10), dp(activity, 20), dp(activity, 10));
-        settingCard.setBackground(round(SURFACE_ALT, dp(activity, 22), Color.argb(80, 57, 169, 255)));
+        settingCard.setPadding(dp(activity, 18), dp(activity, 8), dp(activity, 18), dp(activity, 8));
+        settingCard.setBackground(round(SURFACE_ALT, dp(activity, 18), Color.argb(70, 216, 180, 91)));
 
         LinearLayout labels = new LinearLayout(activity);
         labels.setOrientation(LinearLayout.VERTICAL);
-        labels.setGravity(Gravity.RIGHT);
-        labels.addView(text(activity, title, TEXT, 17f, Gravity.RIGHT));
-        labels.addView(text(activity, detail, MUTED, 12f, Gravity.RIGHT));
-        settingCard.addView(labels, new LinearLayout.LayoutParams(0, dp(activity, 68), 1f));
+        labels.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        labels.addView(text(activity, title, TEXT, 16f, Gravity.RIGHT));
+        labels.addView(text(activity, detail, MUTED, 11.5f, Gravity.RIGHT));
+        settingCard.addView(labels, new LinearLayout.LayoutParams(0, dp(activity, 60), 1f));
 
-        Switch toggle = new Switch(activity);
-        toggle.setChecked(checked);
-        toggle.setOnCheckedChangeListener((buttonView, value) -> action.onChanged(value));
-        settingCard.addView(toggle, new LinearLayout.LayoutParams(dp(activity, 86), dp(activity, 68)));
+        final boolean[] state = { checked };
+        TextView status = text(activity, checked ? "مفعّل" : "متوقف", checked ? NIGHT : MUTED, 12.5f, Gravity.CENTER);
+        status.setBackground(round(checked ? PRIMARY : SURFACE, dp(activity, 14), checked ? PRIMARY : Color.argb(70, 216, 180, 91)));
+        settingCard.addView(status, new LinearLayout.LayoutParams(dp(activity, 84), dp(activity, 38)));
+
+        settingCard.setOnClickListener(v -> {
+            state[0] = !state[0];
+            status.setText(state[0] ? "مفعّل" : "متوقف");
+            status.setTextColor(state[0] ? NIGHT : MUTED);
+            status.setBackground(round(state[0] ? PRIMARY : SURFACE, dp(activity, 14),
+                    state[0] ? PRIMARY : Color.argb(70, 216, 180, 91)));
+            action.onChanged(state[0]);
+        });
         return settingCard;
     }
 
@@ -375,7 +391,7 @@ final class DarbakPanels {
         TextView version = text(activity,
                 "الإصدار " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
                 PRIMARY, 15f, Gravity.CENTER);
-        version.setBackground(round(Color.argb(38, 57, 169, 255), dp(activity, 16), Color.argb(90, 57, 169, 255)));
+        version.setBackground(round(Color.argb(38, 57, 169, 255), dp(activity, 16), Color.argb(90, 216, 180, 91)));
         version.setOnLongClickListener(view -> {
             showDiagnostics(activity);
             return true;
@@ -420,7 +436,7 @@ final class DarbakPanels {
         TextView report = text(activity, DarbakPlatformRuntime.healthReport(), TEXT, 14f, Gravity.RIGHT);
         report.setTextDirection(View.TEXT_DIRECTION_RTL);
         report.setPadding(dp(activity, 18), dp(activity, 14), dp(activity, 18), dp(activity, 14));
-        report.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(80, 57, 169, 255)));
+        report.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(80, 216, 180, 91)));
         root.addView(report, new LinearLayout.LayoutParams(-1, dp(activity, 230)));
 
         TextView clear = action(activity, "مسح آخر Crash", SURFACE_ALT, TEXT);
@@ -501,7 +517,7 @@ final class DarbakPanels {
     private static TextView card(Activity activity, String label, String detail, Runnable action) {
         TextView view = text(activity, label + "\n" + detail, TEXT, 16f, Gravity.CENTER);
         view.setLineSpacing(3f, 1f);
-        view.setBackground(round(SURFACE, dp(activity, 22), Color.argb(80, 57, 169, 255)));
+        view.setBackground(round(SURFACE, dp(activity, 22), Color.argb(80, 216, 180, 91)));
         view.setOnClickListener(v -> action.run());
         return view;
     }
@@ -516,6 +532,15 @@ final class DarbakPanels {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 50, 1f);
         params.setMargins(7, 0, 7, 0);
         return params;
+    }
+
+    private static TextView section(Activity activity, String value) {
+        TextView view = text(activity, value, GOLD, 12.5f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        view.setPadding(dp(activity, 6), dp(activity, 5), dp(activity, 6), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(activity, 30));
+        params.topMargin = dp(activity, 5);
+        view.setLayoutParams(params);
+        return view;
     }
 
     private static TextView action(Activity activity, String value, int fill, int color) {

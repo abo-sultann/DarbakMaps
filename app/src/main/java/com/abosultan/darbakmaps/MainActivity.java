@@ -153,10 +153,10 @@ public final class MainActivity extends Activity implements LocationController.C
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setGravity(Gravity.CENTER);
         panel.setPadding(48, 32, 48, 32);
-        panel.setBackgroundColor(Color.rgb(255, 249, 235));
+        panel.setBackgroundColor(Color.rgb(8, 39, 31));
         TextView title = new TextView(this);
         title.setText("دربك — وضع التشغيل الآمن");
-        title.setTextColor(Color.rgb(3, 39, 30));
+        title.setTextColor(Color.rgb(216, 180, 91));
         title.setTextSize(24f);
         title.setGravity(Gravity.CENTER);
         panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
@@ -164,7 +164,7 @@ public final class MainActivity extends Activity implements LocationController.C
         String detail = error.getClass().getSimpleName();
         if (error.getMessage() != null && !error.getMessage().trim().isEmpty()) detail += ": " + error.getMessage();
         message.setText("تم منع انهيار التطبيق.\nالمرحلة: " + startupPhase + "\nالسبب: " + detail);
-        message.setTextColor(Color.rgb(92, 110, 103));
+        message.setTextColor(Color.rgb(185, 179, 165));
         message.setTextSize(17f);
         message.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, -2);
@@ -189,7 +189,8 @@ public final class MainActivity extends Activity implements LocationController.C
         findViewById(R.id.center_location).setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.import_map).setOnClickListener(view -> chooseMapFile());
         findViewById(R.id.download_map).setOnClickListener(view -> confirmRecommendedMapDownload());
-        findViewById(R.id.action_map).setOnClickListener(view -> centerOnCurrentLocation());
+        View mapAction = findViewById(R.id.action_map);
+        if (mapAction != null) mapAction.setOnClickListener(view -> centerOnCurrentLocation());
         findViewById(R.id.action_save).setOnClickListener(view -> QuickPointDialog.show(this, placeRepository,
                 locationController == null ? null : locationController.getLastLocation()));
         actionRecord.setOnClickListener(view -> toggleTrackPause());
