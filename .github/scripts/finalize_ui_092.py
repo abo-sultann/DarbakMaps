@@ -75,7 +75,7 @@ s = replace_method(s,
                 });
                 activity.runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(activity, "الخريطة جاهزة أوفلاين", Toast.LENGTH_SHORT).show();
+                    DarbakInfoDialog.show(activity, "الخريطة جاهزة", "تم تجهيز خريطة دربك للعمل بدون إنترنت.");
                     activity.recreate();
                 });
             } catch (Exception error) {
@@ -130,10 +130,113 @@ s = replace_method(s,
     }''', 'update confirm')
 p.write_text(s)
 
-# MainActivity: map import/migration/download flows use branded panels.
+# MainActivity: every user-visible wait/choice/info path uses Darbak components.
 p = ROOT / 'MainActivity.java'
 s = p.read_text()
 s = s.replace('import android.app.ProgressDialog;\n', '')
+
+s = replace_method(s,
+    '    private void executeSearch(OfflineMapSearchEngine.SearchRequest request, String title) {',
+    '    private void showSearchResults(OfflineMapSearchEngine.SearchRequest request,',
+'''    private void executeSearch(OfflineMapSearchEngine.SearchRequest request, String title) {
+        if (searchRunning) { toast("البحث السابق ما زال جاريًا"); return; }
+        searchRunning = true;
+        lastSearchRequest = request;
+        DarbakProgressDialog progress = new DarbakProgressDialog(this, title, false, null);
+        progress.setMessage(request.offset > 0 ? "جارٍ تحميل الصفحة التالية…" : "جارٍ البحث…");
+        progress.show();
+        File activeMap = MapStorage.activeMap(this);
+        ioExecutor.execute(() -> {
+            List<OfflineMapSearchEngine.Result> results = searchEngine.search(request,
+                    activeMap.isFile() ? activeMap : null, placeRepository.all());
+            boolean complete = searchEngine.isComplete();
+            boolean failed = searchEngine.hasFailed();
+            boolean queryMore = searchEngine.hasMoreResults();
+            runOnUiThread(() -> {
+                searchRunning = false;
+                if (isActivityUnavailable()) return;
+                progress.dismiss();
+                showSearchResults(request, results, complete, failed, queryMore);
+            });
+        });
+    }''', 'search progress')
+
+s = replace_method(s,
+    '    private void showMapManager() {',
+    '    private void showCoordinates() {',
+'''    private void showMapManager() {
+        File file = MapStorage.activeMap(this);
+        String status = file.isFile()
+                ? "الخريطة الحالية • " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب • جاهزة أوفلاين"
+                : "لا توجد حزمة خريطة مضافة";
+        String[] actions = { "خريطة دربك السعودية (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
+                "إضافة خريطة من USB أو الذاكرة" };
+        DarbakChoiceDialog.show(this, "الخرائط الأوفلاين", status, actions,
+                which -> { if (which == 0) confirmRecommendedMapDownload(); else chooseMapFile(); });
+    }''', 'map manager')
+
+s = replace_method(s,
+    '    private void showCoordinates() {',
+    '    private void showDeviceLicense() {',
+'''    private void showCoordinates() {
+        Location location = locationController == null ? null : locationController.getLastLocation();
+        String message = location == null ? "بانتظار إشارة GPS" : coordinates(location.getLatitude(), location.getLongitude());
+        DarbakInfoDialog.show(this, "الإحداثيات الحالية", message);
+    }''', 'main coordinates')
+
+s = replace_method(s,
+    '    private void showDeviceLicense() {',
+    '    private void checkForUpdates() {',
+'''    private void showDeviceLicense() {
+        String state = licenseManager.isLicensed() ? "مفعّل" : "غير مفعّل";
+        DarbakInfoDialog.show(this, "ترخيص الجهاز",
+                "الحالة: " + state + System.lineSeparator() + "رمز الجهاز: " + licenseManager.deviceCode());
+    }''', 'device license')
+
+s = replace_method(s,
+    '    private void checkForUpdates() {',
+    '    private void applyDisplayPreferences() {',
+'''    private void checkForUpdates() {
+        toast("جارٍ التحقق من التحديث…");
+        UpdateManager.check(new UpdateManager.Callback() {
+            @Override public void onStatus(String message) { runOnUiThread(() -> toast(message)); }
+            @Override public void onUpdate(UpdateManager.UpdateInfo update) {
+                runOnUiThread(() -> DarbakConfirmDialog.show(MainActivity.this,
+                        "تحديث " + update.versionName,
+                        "نسخة جديدة من دربك جاهزة للتثبيت.",
+                        "تنزيل وتثبيت", false,
+                        () -> {
+                            toast("بدأ تنزيل التحديث");
+                            UpdateManager.downloadAndInstall(MainActivity.this, update, this);
+                        }));
+            }
+        });
+    }''', 'main update confirm')
+
+s = replace_method(s,
+    '    private void showPendingTrackResult() {',
+    '    @Override protected void onPause() {',
+'''    private void showPendingTrackResult() {
+        TrackRuntimeState.Result result = TrackRuntimeState.peekResult(this);
+        if (result != null) {
+            TrackRuntimeState.clearResult(this);
+            if (result.success) {
+                if (mapController != null && !MapUiPreferences.backgroundTrackEnabled(this)) {
+                    mapController.showActiveTrack(java.util.Collections.emptyList());
+                }
+                toast(result.message);
+            } else {
+                DarbakConfirmDialog.show(this, "تعذر حفظ المسار",
+                        result.message + System.lineSeparator() + System.lineSeparator()
+                                + "بقي التسجيل محفوظًا للاستعادة.",
+                        "إعادة المحاولة", false,
+                        () -> BackgroundTrackService.retryFinalize(this));
+            }
+        } else {
+            String writeError = TrackRuntimeState.writeError(this);
+            if (writeError != null && !writeError.isEmpty()) toast(writeError);
+        }
+    }''', 'pending track result')
 
 s = replace_method(s,
     '    private void importMap(Uri uri) {',
@@ -191,8 +294,9 @@ s = replace_method(s,
     '    private void confirmRecommendedMapDownload() {',
     '    private void downloadRecommendedMap() {',
 '''    private void confirmRecommendedMapDownload() {
-        String message = "سيتم تنزيل خريطة دربك السعودية كاملة للعمل بدون إنترنت.\nالحجم "
-                + RecommendedMapDownloader.DISPLAY_SIZE + ".\nاترك التطبيق مفتوحًا حتى يكتمل التحقق.";
+        String message = "سيتم تنزيل خريطة دربك السعودية كاملة للعمل بدون إنترنت."
+                + System.lineSeparator() + "الحجم " + RecommendedMapDownloader.DISPLAY_SIZE + "."
+                + System.lineSeparator() + "اترك التطبيق مفتوحًا حتى يكتمل التحقق.";
         DarbakConfirmDialog.show(this, "تنزيل خريطة دربك السعودية", message,
                 "تنزيل", false, this::downloadRecommendedMap);
     }''', 'map download confirm')
@@ -202,10 +306,8 @@ s = replace_method(s,
     '    private void immersive() {',
 '''    private void downloadRecommendedMap() {
         mapDownloadCancelled = false;
-        final DarbakProgressDialog[] holder = new DarbakProgressDialog[1];
-        holder[0] = new DarbakProgressDialog(this, "خريطة دربك السعودية", true,
+        DarbakProgressDialog progress = new DarbakProgressDialog(this, "خريطة دربك السعودية", true,
                 () -> mapDownloadCancelled = true);
-        DarbakProgressDialog progress = holder[0];
         progress.setMessage("بدء التنزيل…");
         progress.show();
         ioExecutor.execute(() -> {
@@ -261,7 +363,7 @@ s = replace_method(s,
     }''', 'save current place')
 p.write_text(s)
 
-# Clean stale comment from the main shell.
+# Clean stale comment and indentation from the main shell.
 p = ROOT / 'CarScreenLayout.java'
 s = p.read_text().replace(
     ' * DarbakMaps hybrid map-first layout for 1024x600 car screens.\n * The simple map-first shell remains the default; a richer side panel opens only on demand.',
