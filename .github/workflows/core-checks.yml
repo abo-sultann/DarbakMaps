@@ -1,0 +1,28 @@
+name: Core Data Checks
+on:
+  push:
+    branches: [darbakmaps-stability-0.7.2]
+    paths:
+      - '.github/workflows/core-checks.yml'
+      - 'tools/CoreChecks.java'
+      - 'app/src/main/java/com/abosultan/darbakmaps/data/**'
+      - 'app/src/main/java/com/abosultan/darbakmaps/location/FixQuality.java'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile and run independent data-integrity checks
+        run: |
+          mkdir -p /tmp/darbak-core-classes
+          SRC=app/src/main/java/com/abosultan/darbakmaps
+          javac --release 8 -d /tmp/darbak-core-classes "$SRC/data/GeoPoint.java" "$SRC/data/TrackJournal.java" "$SRC/data/TrackNavigator.java" "$SRC/location/FixQuality.java" tools/CoreChecks.java
+          java -ea -cp /tmp/darbak-core-classes CoreChecks

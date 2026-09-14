@@ -1,7 +1,7 @@
 name: Android Build
 on:
   push:
-    branches: [main, darbakmaps-stability-0.7.2]
+    branches: [main]
     paths-ignore: ['update-manifest-debug.json', '**/*.md', 'docs/**', 'tools/map/**']
   workflow_dispatch:
 permissions:
