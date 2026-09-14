@@ -1,0 +1,59 @@
+name: Integration QA
+on:
+  push:
+    branches: [darbakmaps-integration-stage2]
+    paths: ['app/**', '.github/workflows/integration-qa.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: integration-qa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile production code and unit tests
+        run: bash ./gradlew --no-daemon :app:compileDebugJavaWithJavac :app:testDebugUnitTest
+      - name: Compile isolated QA app and tests
+        run: bash ./gradlew --no-daemon -PdarbakQa :app:assembleQa :app:assembleQaAndroidTest
+      - name: Enable KVM for API 25 emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test Android 7.1 car-screen flows
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 25
+          arch: x86
+          target: default
+          ram-size: 1024M
+          disk-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -skin 1024x600
+          disable-animations: true
+          script: |
+            adb shell wm size 1024x600
+            adb shell wm density 160
+            bash ./gradlew --no-daemon -PdarbakQa :app:connectedQaAndroidTest
+            adb pull /sdcard/Android/data/com.abosultan.darbakmaps.qa/files/qa build/qa-screenshots
+      - name: Keep reports only; never distribute the isolated QA APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-qa-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+            app/build/outputs/androidTest-results/
+            build/qa-screenshots/
+          retention-days: 1
+          if-no-files-found: ignore

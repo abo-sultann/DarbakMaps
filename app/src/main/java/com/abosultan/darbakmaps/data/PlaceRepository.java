@@ -15,6 +15,7 @@ import java.util.Locale;
 public final class PlaceRepository {
     private static final String PREFS = "darbak_places";
     private static final String KEY_PLACES = "places";
+    private static final Object LOCK = new Object();
 
     public static final String ICON_CAMP = "camp";
     public static final String ICON_HOME = "home";
@@ -32,14 +33,18 @@ public final class PlaceRepository {
     }
 
     public synchronized Place add(String name, double latitude, double longitude) {
+        synchronized (LOCK) {
         return addDetailed(name, latitude, longitude, ICON_STAR, "عام", "");
+    
+        }
     }
 
     public synchronized Place addDetailed(String name, double latitude, double longitude,
                                           String iconKey, String category, String note) {
+        synchronized (LOCK) {
         List<Place> places = new ArrayList<>(all());
         Place place = new Place(
-                String.valueOf(System.currentTimeMillis()),
+                java.util.UUID.randomUUID().toString(),
                 safeName(name),
                 latitude,
                 longitude,
@@ -51,9 +56,12 @@ public final class PlaceRepository {
         places.add(0, place);
         persist(places);
         return place;
+    
+        }
     }
 
     public synchronized boolean update(String id, String name, String iconKey, String category, String note) {
+        synchronized (LOCK) {
         List<Place> places = new ArrayList<>(all());
         for (int i = 0; i < places.size(); i++) {
             Place old = places.get(i);
@@ -66,9 +74,12 @@ public final class PlaceRepository {
             }
         }
         return false;
+    
+        }
     }
 
     public synchronized boolean delete(String id) {
+        synchronized (LOCK) {
         List<Place> places = new ArrayList<>(all());
         boolean removed = false;
         for (int i = places.size() - 1; i >= 0; i--) {
@@ -79,9 +90,12 @@ public final class PlaceRepository {
         }
         if (removed) persist(places);
         return removed;
+    
+        }
     }
 
     public synchronized List<Place> all() {
+        synchronized (LOCK) {
         String raw = preferences.getString(KEY_PLACES, "[]");
         List<Place> result = new ArrayList<>();
         try {
@@ -99,13 +113,16 @@ public final class PlaceRepository {
                         item.optString("note", "")
                 ));
             }
-        } catch (JSONException ignored) {
-            return Collections.emptyList();
+        } catch (JSONException error) {
+            throw new IllegalStateException("تعذر قراءة المحفوظات؛ احتُفظ بالبيانات الأصلية",error);
         }
         return result;
+    
+        }
     }
 
     public synchronized List<Place> search(String query) {
+        synchronized (LOCK) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) return all();
         List<Place> result = new ArrayList<>();
@@ -114,6 +131,8 @@ public final class PlaceRepository {
             if (haystack.contains(normalized)) result.add(place);
         }
         return result;
+    
+        }
     }
 
     private void persist(List<Place> places) {
@@ -131,10 +150,11 @@ public final class PlaceRepository {
                 item.put("note", place.note);
                 array.put(item);
             }
-        } catch (JSONException ignored) {
-            return;
+        } catch (JSONException error) {
+            throw new IllegalStateException("تعذر حفظ الموقع",error);
         }
-        preferences.edit().putString(KEY_PLACES, array.toString()).apply();
+        if(!preferences.edit().putString(KEY_PLACES, array.toString()).commit())
+            throw new IllegalStateException("تعذر حفظ الموقع؛ افحص المساحة المتاحة");
     }
 
     private static String safeName(String value) {
@@ -181,3 +201,4 @@ public final class PlaceRepository {
         }
     }
 }
+

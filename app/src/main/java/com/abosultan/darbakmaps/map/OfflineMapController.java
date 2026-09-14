@@ -49,6 +49,10 @@ public final class OfflineMapController {
     private int lastArrowBucket = Integer.MIN_VALUE;
     private int lastMapBearingBucket = Integer.MIN_VALUE;
     private boolean centeredOnFirstFix;
+    private boolean followSuspended;
+    private final List<GeoPoint> livePoints=new ArrayList<>();
+    private final List<Polyline> liveLines=new ArrayList<>(), savedTrackLines=new ArrayList<>();
+    private long lastTrackTime;private long lastSegmentRevision=-1;
     private int orientationMode;
     private LatLong lastLocation;
     private LatLong navigationTarget;
@@ -149,10 +153,10 @@ public final class OfflineMapController {
         updateLocationMarker(lastLocation, lastBearing);
         updateNavigationLine();
 
-        if (MapUiPreferences.followVehicle(mapView.getContext()) && centeredOnFirstFix) {
+        if (!followSuspended && MapUiPreferences.followVehicle(mapView.getContext()) && centeredOnFirstFix) {
             mapView.getModel().mapViewPosition.setCenter(lastLocation);
         }
-        if (!centeredOnFirstFix) {
+        if (!centeredOnFirstFix && !followSuspended) {
             centeredOnFirstFix = true;
             centerOn(latitude, longitude);
         }
@@ -196,7 +200,16 @@ public final class OfflineMapController {
         if (mapView.getWidth() == 0 || mapView.getHeight() == 0) mapView.post(action); else action.run();
     }
 
+    public void suspendFollow(){followSuspended=true;}
+    public void resumeFollow(){followSuspended=false;}
+    public void markLocationStale(){
+        if(locationMarker!=null){mapView.getLayerManager().getLayers().remove(locationMarker);locationMarker.onDestroy();locationMarker=null;}
+        lastLocation=null;
+        if(navigationLine!=null){mapView.getLayerManager().getLayers().remove(navigationLine);navigationLine=null;}
+        mapView.getLayerManager().redrawLayers();
+    }
     public void showPoint(double latitude, double longitude) {
+        suspendFollow();
         LatLong position = new LatLong(latitude, longitude);
         if (selectedMarker == null) {
             selectedMarker = new Marker(position, createPin(), 0, -24);
@@ -210,14 +223,14 @@ public final class OfflineMapController {
     }
 
     public void showSavedPlaces(List<PlaceRepository.Place> places, boolean showLabels) {
-        for (Marker marker : savedMarkers) mapView.getLayerManager().getLayers().remove(marker);
+        for (Marker marker : savedMarkers) {mapView.getLayerManager().getLayers().remove(marker);marker.onDestroy();}
         savedMarkers.clear();
         if (places != null) {
-            int limit = Math.min(places.size(), 250);
+            int limit = places.size();
             for (int i = 0; i < limit; i++) {
                 PlaceRepository.Place place = places.get(i);
                 Marker marker = new Marker(new LatLong(place.latitude, place.longitude),
-                        createSavedMarker(place, showLabels), 0, -20);
+                        createSavedMarker(place, showLabels && i < 100), 0, -20);
                 marker.setBillboard(true);
                 savedMarkers.add(marker);
                 mapView.getLayerManager().getLayers().add(marker);
@@ -226,7 +239,8 @@ public final class OfflineMapController {
         mapView.getLayerManager().redrawLayers();
     }
 
-    public void setNavigationTarget(double latitude, double longitude, int mode) {
+    public void setNavigationTarget(double latitude,double longitude,int mode){updateNavigationTarget(latitude,longitude,mode);}
+    public void updateNavigationTarget(double latitude, double longitude, int mode) {
         navigationTarget = new LatLong(latitude, longitude);
         navigationMode = mode == MapUiPreferences.ROUTING_ROADS ? MapUiPreferences.ROUTING_ROADS : MapUiPreferences.ROUTING_DIRECT;
         if (navigationMarker == null) {
@@ -237,7 +251,6 @@ public final class OfflineMapController {
             navigationMarker.setLatLong(navigationTarget);
         }
         updateNavigationLine();
-        centerOn(latitude, longitude);
         mapView.getLayerManager().redrawLayers();
     }
 
@@ -270,54 +283,57 @@ public final class OfflineMapController {
         mapView.getLayerManager().getLayers().add(navigationLine);
     }
 
-    public void showStoredTrack(List<GeoPoint> points) {
-        if (storedTrack != null) mapView.getLayerManager().getLayers().remove(storedTrack);
-        org.mapsforge.core.graphics.Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
-        paint.setColor(AndroidGraphicFactory.INSTANCE.createColor(230, 8, 62, 45));
-        paint.setStrokeWidth(8f);
-        paint.setStyle(Style.STROKE);
-        storedTrack = new Polyline(paint, AndroidGraphicFactory.INSTANCE);
-
-        int step = Math.max(1, points.size() / 10_000);
-        for (int index = 0; index < points.size(); index += step) {
-            GeoPoint point = points.get(index);
-            storedTrack.addPoint(new LatLong(point.latitude, point.longitude));
+    private Polyline trackLine(int color) {
+        org.mapsforge.core.graphics.Paint p=AndroidGraphicFactory.INSTANCE.createPaint();
+        p.setColor(color);p.setStrokeWidth(7f);p.setStyle(Style.STROKE);
+        return new Polyline(p,AndroidGraphicFactory.INSTANCE);
+    }
+    private void removeLines(List<Polyline> lines){for(Polyline l:lines)mapView.getLayerManager().getLayers().remove(l);lines.clear();}
+    private void drawPoints(List<GeoPoint> points,List<Polyline> lines,int color){
+        removeLines(lines);Polyline line=null;
+        for(GeoPoint p:points){
+            if(line==null||p.segmentStart){line=trackLine(color);lines.add(line);mapView.getLayerManager().getLayers().add(line);}
+            line.addPoint(new LatLong(p.latitude,p.longitude));
         }
-        if (!points.isEmpty() && (points.size() - 1) % step != 0) {
-            GeoPoint last = points.get(points.size() - 1);
-            storedTrack.addPoint(new LatLong(last.latitude, last.longitude));
-        }
-        mapView.getLayerManager().getLayers().add(storedTrack);
-        if (!points.isEmpty()) {
-            GeoPoint last = points.get(points.size() - 1);
-            centerOn(last.latitude, last.longitude);
-        }
+    }
+    public void showStoredTrack(List<GeoPoint> points){
+        drawPoints(points,savedTrackLines,AndroidGraphicFactory.INSTANCE.createColor(240,57,169,255));
+        suspendFollow();
+        if(!points.isEmpty()){GeoPoint last=points.get(points.size()-1);centerOn(last.latitude,last.longitude);}
         mapView.getLayerManager().redrawLayers();
     }
-
-    public void clearStoredTrack() {
-        if (storedTrack != null) {
-            mapView.getLayerManager().getLayers().remove(storedTrack);
-            storedTrack = null;
-            mapView.getLayerManager().redrawLayers();
-        }
+    public void clearStoredTrack(){removeLines(savedTrackLines);mapView.getLayerManager().redrawLayers();}
+    public void beginTrack(){livePoints.clear();removeLines(liveLines);activeTrack=null;lastTrackTime=0;lastSegmentRevision=-1;}
+    public void restoreRecordedTrack(List<GeoPoint> points){
+        // Merge fixes received while the file preview was being loaded.
+        List<GeoPoint> newer=new ArrayList<>();long end=points.isEmpty()?0:points.get(points.size()-1).timeMillis;
+        for(GeoPoint p:livePoints)if(p.timeMillis>end)newer.add(p);
+        livePoints.clear();livePoints.addAll(points);livePoints.addAll(newer);compactLive();
+        drawPoints(livePoints,liveLines,AndroidGraphicFactory.INSTANCE.createColor(255,236,122,37));
+        activeTrack=liveLines.isEmpty()?null:liveLines.get(liveLines.size()-1);
+        if(!livePoints.isEmpty())lastTrackTime=livePoints.get(livePoints.size()-1).timeMillis;
+        mapView.getLayerManager().redrawLayers();
     }
-
-    public void beginTrack() {
-        if (activeTrack != null) mapView.getLayerManager().getLayers().remove(activeTrack);
-        org.mapsforge.core.graphics.Paint trackPaint = AndroidGraphicFactory.INSTANCE.createPaint();
-        trackPaint.setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 236, 122, 37));
-        trackPaint.setStrokeWidth(7f);
-        trackPaint.setStyle(Style.STROKE);
-        activeTrack = new Polyline(trackPaint, AndroidGraphicFactory.INSTANCE);
-        mapView.getLayerManager().getLayers().add(activeTrack);
-    }
-
-    public void addTrackPoint(double latitude, double longitude) {
-        if (activeTrack != null) {
-            activeTrack.addPoint(new LatLong(latitude, longitude));
-            mapView.getLayerManager().redrawLayers();
+    private void compactLive(){
+        if(livePoints.size()<=6000)return;
+        List<GeoPoint> compact=new ArrayList<>();boolean segment=false;
+        for(int i=0;i<livePoints.size();i++){
+            GeoPoint p=livePoints.get(i);segment|=p.segmentStart;
+            if(i%2==0||i==livePoints.size()-1){compact.add(new GeoPoint(p.latitude,p.longitude,p.timeMillis,segment));segment=false;}
         }
+        livePoints.clear();livePoints.addAll(compact);
+    }
+    public void addTrackPoint(double latitude,double longitude){
+        long now=System.currentTimeMillis(),revision=com.abosultan.darbakmaps.TrackSessionState.segmentRevision(mapView.getContext());
+        boolean split=lastTrackTime==0||now-lastTrackTime>30000||revision!=lastSegmentRevision;
+        lastSegmentRevision=revision;lastTrackTime=now;
+        GeoPoint point=new GeoPoint(latitude,longitude,now,split);livePoints.add(point);
+        if(livePoints.size()>6000){compactLive();drawPoints(livePoints,liveLines,AndroidGraphicFactory.INSTANCE.createColor(255,236,122,37));activeTrack=liveLines.get(liveLines.size()-1);}
+        else{
+            if(activeTrack==null||split){activeTrack=trackLine(AndroidGraphicFactory.INSTANCE.createColor(255,236,122,37));liveLines.add(activeTrack);mapView.getLayerManager().getLayers().add(activeTrack);}
+            activeTrack.addPoint(new LatLong(latitude,longitude));
+        }
+        mapView.getLayerManager().redrawLayers();
     }
 
     public void destroy() {
@@ -466,3 +482,4 @@ public final class OfflineMapController {
         return normalized > 180f ? normalized - 360f : normalized;
     }
 }
+

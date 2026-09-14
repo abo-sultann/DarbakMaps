@@ -12,6 +12,7 @@ android {
         targetSdk 35
         versionCode 18
         versionName '0.7.3'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         buildConfigField 'String', 'ACTIVATION_URL', '""'
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
@@ -50,6 +51,21 @@ android {
         }
     }
 
+    // Isolated emulator package. Never distributed or used to update the owner's app.
+    if (project.hasProperty('darbakQa')) {
+        buildTypes {
+            qa {
+                initWith debug
+                applicationIdSuffix '.qa'
+                versionNameSuffix '-qa'
+                signingConfig signingConfigs.debug
+                matchingFallbacks = ['debug']
+                buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
+            }
+        }
+        testBuildType 'qa'
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -79,4 +95,7 @@ dependencies {
     implementation 'com.caverock:androidsvg:1.4'
 
     testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:core:1.6.1'
 }

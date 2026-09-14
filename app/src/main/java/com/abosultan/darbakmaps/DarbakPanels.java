@@ -294,7 +294,8 @@ final class DarbakPanels {
         progress.setMax(100);
         progress.setProgress(0);
         progress.setMessage("بدء التنزيل…");
-        progress.setCancelable(false);
+        final java.util.concurrent.atomic.AtomicBoolean cancelled=new java.util.concurrent.atomic.AtomicBoolean();
+        progress.setCancelable(true);progress.setCanceledOnTouchOutside(false);progress.setOnCancelListener(d->cancelled.set(true));
         showSystemDialog(progress, activity);
 
         new Thread(() -> {
@@ -303,6 +304,7 @@ final class DarbakPanels {
                     @Override
                     public void onProgress(int percent, String message) {
                         activity.runOnUiThread(() -> {
+                            if(activity.isFinishing()||activity.isDestroyed())return;
                             progress.setProgress(percent);
                             progress.setMessage(message);
                         });
@@ -310,16 +312,18 @@ final class DarbakPanels {
 
                     @Override
                     public boolean isCancelled() {
-                        return false;
+                        return cancelled.get()||activity.isFinishing()||activity.isDestroyed();
                     }
                 });
                 activity.runOnUiThread(() -> {
+                    if(activity.isFinishing()||activity.isDestroyed())return;
                     progress.dismiss();
                     Toast.makeText(activity, "الخريطة جاهزة أوفلاين", Toast.LENGTH_SHORT).show();
                     activity.recreate();
                 });
             } catch (Exception error) {
                 activity.runOnUiThread(() -> {
+                    if(activity.isFinishing()||activity.isDestroyed())return;
                     progress.dismiss();
                     Toast.makeText(activity,
                             error.getMessage() == null ? "تعذر تنزيل الخريطة" : error.getMessage(),
@@ -335,7 +339,7 @@ final class DarbakPanels {
             try {
                 LocationManager manager = (LocationManager) activity.getSystemService(Activity.LOCATION_SERVICE);
                 Location location = manager == null ? null : manager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                if (location != null) {
+                if (com.abosultan.darbakmaps.location.LocationController.isUsable(location)) {
                     message = String.format(Locale.US, "%.6f, %.6f", location.getLatitude(), location.getLongitude());
                 }
             } catch (RuntimeException ignored) {
@@ -408,17 +412,19 @@ final class DarbakPanels {
         root.addView(title(activity, "تشخيص دربك"));
         root.addView(subtitle(activity, "معلومات فنية محلية — لا يتم إرسال شيء للخارج"));
 
-        TextView report = text(activity, DarbakPlatformRuntime.healthReport(), TEXT, 14f, Gravity.RIGHT);
+        TextView report = text(activity, DarbakPlatformRuntime.healthReport()+"\n\n"+(DarbakPlatformRuntime.lastCrash()==null?"":DarbakPlatformRuntime.lastCrash()), TEXT, 14f, Gravity.RIGHT);
         report.setTextDirection(View.TEXT_DIRECTION_RTL);
         report.setPadding(dp(activity, 18), dp(activity, 14), dp(activity, 18), dp(activity, 14));
         report.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(80, 57, 169, 255)));
-        root.addView(report, new LinearLayout.LayoutParams(-1, dp(activity, 230)));
+        report.setTextIsSelectable(true);
+        ScrollView reportScroll=new ScrollView(activity);reportScroll.addView(report);root.addView(reportScroll,new LinearLayout.LayoutParams(-1,dp(activity,230)));
 
         TextView clear = action(activity, "مسح آخر Crash", SURFACE_ALT, TEXT);
-        clear.setOnClickListener(view -> {
+        clear.setText("مسح السجل — اضغط مطولًا");
+        clear.setOnLongClickListener(view -> {
             DarbakPlatformRuntime.clearCrash();
             Toast.makeText(activity, "تم مسح سجل الانهيار", Toast.LENGTH_SHORT).show();
-            dialog.dismiss();
+            dialog.dismiss();return true;
         });
         LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(activity, 210), dp(activity, 48));
         clearParams.gravity = Gravity.CENTER;
@@ -543,7 +549,7 @@ final class DarbakPanels {
             Window shown = dialog.getWindow();
             if (shown != null) {
                 shown.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-                shown.setLayout(dp(activity, widthDp), WindowManager.LayoutParams.WRAP_CONTENT);
+                shown.setLayout(Math.min(dp(activity,widthDp),activity.getResources().getDisplayMetrics().widthPixels-dp(activity,24)), Math.min(dp(activity,500),activity.getResources().getDisplayMetrics().heightPixels-dp(activity,24)));
                 shown.getDecorView().setSystemUiVisibility(immersiveFlags());
                 shown.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             }
@@ -579,3 +585,4 @@ final class DarbakPanels {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }
 }
+

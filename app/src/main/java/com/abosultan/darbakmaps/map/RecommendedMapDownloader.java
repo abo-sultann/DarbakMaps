@@ -25,33 +25,36 @@ public final class RecommendedMapDownloader {
         boolean isCancelled();
     }
 
-    public static final long EXPECTED_BYTES = 322_177_740L;
-    public static final String DISPLAY_SIZE = "نحو 307 م.ب";
+    public static final long EXPECTED_BYTES = 189_923_374L;
+    public static final String DISPLAY_SIZE = "نحو 181 م.ب";
 
     private static final String DOWNLOAD_URL =
-            "https://download.mapsforge.org/maps/v5/asia/gcc-states.map";
+            "https://github.com/abo-sultann/DarbakMaps/releases/download/darbak-saudi-map-v1/darbak-saudi.map";
     private static final String EXPECTED_SHA256 =
-            "635f330be605b8a77a7df6d9d4ddddf7935c8f800f98d046e323eccc96ea2ff4";
+            "409d7ecaf2d6c610921cfadd42855fbdd3ce63ae08a00ff94965b18bb25fdd1c";
     private static final long FREE_SPACE_MARGIN_BYTES = 48L * 1024L * 1024L;
     private static final int BUFFER_BYTES = 64 * 1024;
 
     private RecommendedMapDownloader() {
     }
 
+    public static boolean isAvailable() { return false; }
+
     public static File download(Context context, Listener listener) throws IOException {
+        if (!isAvailable()) throw new IOException("التنزيل المباشر غير متاح حاليًا؛ أضف خريطة دربك المعتمدة من USB أو الذاكرة");
         File directory = MapStorage.mapDirectory(context);
         if (!directory.exists() && !directory.mkdirs()) {
             throw new IOException("تعذر إنشاء مجلد الخرائط");
         }
 
-        File pending = new File(directory, "gcc-states.map.download");
+        File pending = new File(directory, "darbak-saudi.map.download");
         if (pending.length() > EXPECTED_BYTES) {
             pending.delete();
         }
         long remainingBytes = Math.max(0L, EXPECTED_BYTES - pending.length());
         long availableBytes = new StatFs(directory.getAbsolutePath()).getAvailableBytes();
         if (availableBytes < remainingBytes + FREE_SPACE_MARGIN_BYTES) {
-            throw new IOException("المساحة غير كافية؛ وفر قرابة 360 م.ب ثم أعد المحاولة");
+            throw new IOException("المساحة غير كافية؛ وفر قرابة 230 م.ب ثم أعد المحاولة");
         }
 
         if (pending.length() < EXPECTED_BYTES) {
@@ -98,7 +101,7 @@ public final class RecommendedMapDownloader {
         }
         pending.delete();
         backup.delete();
-        listener.onProgress(100, "تم تجهيز خريطة الخليج للعمل أوفلاين");
+        listener.onProgress(100, "تم تجهيز خريطة دربك السعودية للعمل أوفلاين");
         return target;
     }
 
@@ -141,7 +144,7 @@ public final class RecommendedMapDownloader {
                     int progress = (int) Math.min(98L, (downloaded * 100L) / EXPECTED_BYTES);
                     if (progress != lastProgress) {
                         lastProgress = progress;
-                        listener.onProgress(progress, "تنزيل خريطة الخليج " + progress + "%");
+                        listener.onProgress(progress, "تنزيل خريطة دربك السعودية " + progress + "%");
                     }
                 }
                 output.getFD().sync();
@@ -218,3 +221,4 @@ public final class RecommendedMapDownloader {
         }
     }
 }
+

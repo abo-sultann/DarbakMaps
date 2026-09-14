@@ -37,6 +37,8 @@ public final class MapRuntimeBridge {
         if (activeController != null) activeController.setOrientationMode(mode);
     }
 
+    public static synchronized void suspendFollow(){if(activeController!=null)activeController.suspendFollow();}
+    public static synchronized void resumeFollow(){if(activeController!=null)activeController.resumeFollow();}
     public static synchronized void showPoint(double latitude, double longitude) {
         if (activeController != null) activeController.showPoint(latitude, longitude);
     }
@@ -47,7 +49,7 @@ public final class MapRuntimeBridge {
             activeController.showSavedPlaces(java.util.Collections.emptyList(), false);
             return;
         }
-        activeController.showSavedPlaces(new PlaceRepository(context).all(), MapUiPreferences.showSavedLabels(context));
+        try { activeController.showSavedPlaces(new PlaceRepository(context).all(), MapUiPreferences.showSavedLabels(context)); } catch(RuntimeException error) { android.widget.Toast.makeText(context,"تعذر عرض المحفوظات؛ بياناتك الأصلية محفوظة",android.widget.Toast.LENGTH_LONG).show(); }
     }
 
     public static synchronized void navigateTo(Context context, double latitude, double longitude) {
@@ -55,6 +57,7 @@ public final class MapRuntimeBridge {
         activeController.setNavigationTarget(latitude, longitude, MapUiPreferences.routingMode(context));
     }
 
+    public static synchronized void navigateToFix(Context c,double lat,double lon){if(activeController!=null)activeController.updateNavigationTarget(lat,lon,MapUiPreferences.routingMode(c));}
     public static synchronized void clearNavigation() {
         if (activeController != null) activeController.clearNavigationTarget();
     }
@@ -80,6 +83,7 @@ public final class MapRuntimeBridge {
     }
 
     public static String routingLabel(int mode) {
-        return mode == MapUiPreferences.ROUTING_ROADS ? "مع الطرق" : "مباشر";
+        return mode == MapUiPreferences.ROUTING_ROADS ? "طرق تجريبي — خط مباشر" : "مباشر";
     }
 }
+
