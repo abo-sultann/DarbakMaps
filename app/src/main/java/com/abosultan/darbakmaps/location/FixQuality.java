@@ -5,13 +5,14 @@ public final class FixQuality {
     private FixQuality() {}
 
     public static boolean usable(long ageMillis,
+                                 long maxAgeMillis,
                                  boolean hasAccuracy,
                                  float accuracyMeters,
                                  float maxAccuracyMeters,
                                  double latitude,
                                  double longitude) {
         return ageMillis >= 0L
-                && ageMillis <= 15_000L
+                && ageMillis <= maxAgeMillis
                 && hasAccuracy
                 && accuracyMeters >= 0f
                 && accuracyMeters <= maxAccuracyMeters
