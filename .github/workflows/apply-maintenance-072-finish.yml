@@ -1,0 +1,36 @@
+name: Apply maintenance 0.7.2 finish
+
+on:
+  push:
+    branches: [maintenance-0.7.2]
+    paths:
+      - '.github/workflows/apply-maintenance-072-finish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: maintenance-0.7.2
+          fetch-depth: 0
+      - name: Apply patches
+        run: python3 tools/apply_maintenance_072_finish.py
+      - name: Commit patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/abosultan/darbakmaps/MainActivity.java \
+                  app/src/main/java/com/abosultan/darbakmaps/map/OfflineMapController.java
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git commit -m 'fix: finish Darbak Maps 0.7.2 maintenance hardening'
+          git push origin HEAD:maintenance-0.7.2
