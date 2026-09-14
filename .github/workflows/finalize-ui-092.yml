@@ -4,6 +4,7 @@ on:
     branches: [darbakmaps-review-0.9.1]
     paths:
       - '.github/workflows/finalize-ui-092.yml'
+      - '.github/scripts/finalize_ui_092.py'
 permissions:
   contents: write
 jobs:
@@ -24,6 +25,7 @@ jobs:
       - name: Audit UI leftovers
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist
           {
             echo '=== legacy rgb blue ==='
@@ -39,28 +41,24 @@ jobs:
             echo '=== stock AlertDialog builders ==='
             grep -R -n "new AlertDialog.Builder" app/src/main/java/com/abosultan/darbakmaps || true
           } | tee dist/ui-audit.txt
+          if grep -R -q "57, 169, 255" app/src/main/java app/src/main/res; then exit 1; fi
+          if grep -R -q "#39A9FF" app/src/main/java app/src/main/res; then exit 1; fi
+          if grep -R -q "new ProgressDialog" app/src/main/java/com/abosultan/darbakmaps; then exit 1; fi
+          if grep -q "new Spinner" app/src/main/java/com/abosultan/darbakmaps/PointEditor.java; then exit 1; fi
+          if grep -q "LinearLayout sidePanel" app/src/main/java/com/abosultan/darbakmaps/CarScreenLayout.java; then exit 1; fi
+          grep -q "DarbakProgressDialog" app/src/main/java/com/abosultan/darbakmaps/MainActivity.java
+          grep -q "DarbakProgressDialog" app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java
       - name: Unit tests
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew --no-daemon :app:testDebugUnitTest 2>&1 | tee dist/unit-test.log
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
       - name: Compile UI
-        id: compile
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew --no-daemon :app:compileDebugJavaWithJavac 2>&1 | tee dist/compile.log
-      - name: Upload UI diagnostics
+        run: ./gradlew --no-daemon :app:compileDebugJavaWithJavac
+      - name: Upload UI audit
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: DarbakMaps-UI-Diagnostics-0.9.2
-          path: dist/
+          name: DarbakMaps-UI-Audit-0.9.2
+          path: dist/ui-audit.txt
           retention-days: 1
-      - name: Fail on compile error
-        if: steps.compile.outcome != 'success'
-        run: exit 1
       - name: Commit final UI
         run: |
           git config user.name 'Darbak CI'
