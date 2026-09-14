@@ -536,9 +536,9 @@ public final class MainActivity extends Activity implements LocationController.C
                 mapController.beginTrack();
                 restoreActiveTrack();
             }
-        } else if (mapController != null) {
-            mapController.beginTrack();
         }
+        // retain active track until finalize result: on failure the user must still see
+        // the recoverable path instead of losing the visual context before persistence ends.
         syncBackgroundTrackUi();
     }
 
@@ -926,6 +926,7 @@ public final class MainActivity extends Activity implements LocationController.C
             speedValue.setText("—");
             if (!enabled) {
                 NavigationGuidance.stop(this);
+                BacktrackGuidance.stop(this);
                 View nav = findViewById(R.id.nav_panel);
                 if (nav != null) nav.setVisibility(View.GONE);
             }
@@ -986,6 +987,9 @@ public final class MainActivity extends Activity implements LocationController.C
         if (result != null) {
             TrackRuntimeState.clearResult(this);
             if (result.success) {
+                if (mapController != null && !MapUiPreferences.backgroundTrackEnabled(this)) {
+                    mapController.showActiveTrack(java.util.Collections.emptyList());
+                }
                 toast(result.message);
             } else {
                 showImmersive(new AlertDialog.Builder(this)
