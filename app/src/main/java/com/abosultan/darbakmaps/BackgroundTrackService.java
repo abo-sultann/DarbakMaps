@@ -41,8 +41,12 @@ public final class BackgroundTrackService extends Service implements LocationLis
     private static final long MIN_TIME_MS = 1500L;
     private static final float MIN_DISTANCE_METERS = 3f;
     private static final long GAP_NEW_SEGMENT_MS = 30_000L;
+    private static final float MAX_PLAUSIBLE_SPEED_MPS = 80f;
+    private static final float STATIONARY_SPEED_MPS = 0.7f;
+    private static final float STATIONARY_DRIFT_METERS = 8f;
 
     private final ExecutorService trackIo = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;
     private Location lastAccepted;
     private long lastAcceptedElapsedMs;
@@ -96,13 +100,27 @@ public final class BackgroundTrackService extends Service implements LocationLis
     public void onCreate() {
         super.onCreate();
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-        startForeground(NOTIFICATION_ID, notification("تسجيل مسارك مستمر في الخلفية"));
+        startForeground(NOTIFICATION_ID, notification(
+                TrackRuntimeState.isFinalizing(this)
+                        ? "جارٍ استكمال حفظ المسار بعد إعادة تشغيل الخدمة"
+                        : "تسجيل آخر 1000 كم مستمر في الخلفية"));
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? ACTION_START : intent.getAction();
+        String action = intent == null ? null : intent.getAction();
+        if (intent == null && TrackRuntimeState.isFinalizing(this)) {
+            beginFinalize(startId);
+            return START_NOT_STICKY;
+        }
+        if (action == null) action = ACTION_START;
+
         if (ACTION_START.equals(action)) {
+            if (!MapUiPreferences.backgroundTrackEnabled(this)) {
+                stopForeground(true);
+                stopSelfResult(startId);
+                return START_NOT_STICKY;
+            }
             if (stopping) {
                 TrackRuntimeState.requestRestart(this);
                 return START_STICKY;
@@ -126,7 +144,11 @@ public final class BackgroundTrackService extends Service implements LocationLis
         finalizeStartId = startId;
         TrackRuntimeState.setState(this, TrackRuntimeState.FINALIZING);
         stopTracking();
-        updateNotification("جارٍ إنهاء وحفظ المسار…");
+        updateNotification("جارٍ حفظ نسخة متسقة من المسار…");
+
+        // Single-thread executor acts as a barrier: all fixes accepted before stopTracking() are
+        // committed before this snapshot task runs. Accepted fixes are never dropped merely because
+        // stopping became true after they were queued.
         trackIo.execute(() -> {
             boolean success = false;
             String message;
@@ -134,15 +156,14 @@ public final class BackgroundTrackService extends Service implements LocationLis
             try {
                 saved = BackgroundTrackStore.finalizeActive(this);
                 success = true;
-                message = saved == null ? "لا يوجد مسار نشط للحفظ" : "تم حفظ المسار بنجاح";
-                TrackSessionState.reset(this);
+                message = saved == null ? "لا يوجد مسار نشط للحفظ" : "تم حفظ نسخة من المسار بنجاح";
                 TrackRuntimeState.clearWriteError(this);
             } catch (IOException error) {
                 message = error.getMessage() == null
-                        ? "تعذر حفظ المسار؛ احتفظ التطبيق بالتسجيل القابل للاستعادة"
+                        ? "تعذر حفظ نسخة المسار؛ بقي السجل التلقائي محفوظًا"
                         : error.getMessage();
             } catch (RuntimeException error) {
-                message = "تعذر إنهاء المسار؛ احتفظ التطبيق بالتسجيل القابل للاستعادة";
+                message = "تعذر إنهاء الحفظ؛ بقي السجل التلقائي محفوظًا";
             }
 
             TrackRuntimeState.recordFinalizeResult(this, success, message);
@@ -154,8 +175,7 @@ public final class BackgroundTrackService extends Service implements LocationLis
             sendBroadcast(result);
 
             final String finalMessage = message;
-            new Handler(Looper.getMainLooper()).post(() ->
-                    Toast.makeText(getApplicationContext(), finalMessage, Toast.LENGTH_LONG).show());
+            mainHandler.post(() -> Toast.makeText(getApplicationContext(), finalMessage, Toast.LENGTH_LONG).show());
 
             boolean restart = success
                     && TrackRuntimeState.consumeRestart(this)
@@ -165,8 +185,11 @@ public final class BackgroundTrackService extends Service implements LocationLis
                 lastAccepted = null;
                 lastAcceptedElapsedMs = 0L;
                 TrackSessionState.beginIfNeeded(this);
-                TrackRuntimeState.setState(this, TrackRuntimeState.RUNNING);
-                updateNotification("تسجيل مسارك مستمر في الخلفية");
+                TrackRuntimeState.setState(this, TrackSessionState.isPaused(this)
+                        ? TrackRuntimeState.PAUSED : TrackRuntimeState.RUNNING);
+                updateNotification(TrackSessionState.isPaused(this)
+                        ? "تسجيل المسار متوقف مؤقتًا"
+                        : "تسجيل آخر 1000 كم مستمر في الخلفية");
                 startTracking();
                 return;
             }
@@ -178,6 +201,10 @@ public final class BackgroundTrackService extends Service implements LocationLis
     }
 
     private void startTracking() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::startTracking);
+            return;
+        }
         if (listening || locationManager == null || stopping) return;
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             TrackRuntimeState.setWriteError(this, "صلاحية الموقع غير متاحة لتسجيل المسار");
@@ -188,7 +215,8 @@ public final class BackgroundTrackService extends Service implements LocationLis
                     LocationManager.GPS_PROVIDER,
                     MIN_TIME_MS,
                     MIN_DISTANCE_METERS,
-                    this);
+                    this,
+                    Looper.getMainLooper());
             listening = true;
         } catch (RuntimeException error) {
             listening = false;
@@ -197,6 +225,10 @@ public final class BackgroundTrackService extends Service implements LocationLis
     }
 
     private void stopTracking() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::stopTracking);
+            return;
+        }
         if (!listening || locationManager == null) return;
         try {
             locationManager.removeUpdates(this);
@@ -219,21 +251,36 @@ public final class BackgroundTrackService extends Service implements LocationLis
         final long revision = TrackSessionState.revision(this);
         final long receivedElapsed = SystemClock.elapsedRealtime();
         trackIo.execute(() -> {
-            if (stopping || TrackSessionState.isPaused(this) || revision != TrackSessionState.revision(this)) return;
-            if (lastAccepted != null) {
-                if (lastAccepted.distanceTo(accepted) < MIN_DISTANCE_METERS) return;
-            }
-            boolean gap = lastAcceptedElapsedMs > 0L
-                    && receivedElapsed - lastAcceptedElapsedMs > GAP_NEW_SEGMENT_MS;
+            // Do not check stopping here: this runnable may have been accepted before stopTracking().
+            if (TrackSessionState.isPaused(this) || revision != TrackSessionState.revision(this)) return;
+
+            boolean gap = lastAccepted == null
+                    || (lastAcceptedElapsedMs > 0L
+                    && receivedElapsed - lastAcceptedElapsedMs > GAP_NEW_SEGMENT_MS);
             boolean newSegment = gap || TrackSessionState.needsNewSegment(this);
+            double connectedMeters = 0d;
+
+            if (lastAccepted != null && !newSegment) {
+                float distance = lastAccepted.distanceTo(accepted);
+                long elapsedMs = Math.max(1L, receivedElapsed - lastAcceptedElapsedMs);
+                float derivedSpeed = distance / (elapsedMs / 1000f);
+
+                if (distance < MIN_DISTANCE_METERS) return;
+                if (derivedSpeed > MAX_PLAUSIBLE_SPEED_MPS) return;
+                if (accepted.hasSpeed() && accepted.getSpeed() < STATIONARY_SPEED_MPS
+                        && distance < STATIONARY_DRIFT_METERS) return;
+                connectedMeters = distance;
+            }
+
             try {
-                BackgroundTrackStore.append(this, accepted, newSegment);
+                BackgroundTrackStore.append(this, accepted, newSegment, connectedMeters);
                 if (newSegment) TrackSessionState.markSegmentWritten(this);
                 TrackSessionState.onCommittedFix(this, accepted);
                 lastAccepted = new Location(accepted);
                 lastAcceptedElapsedMs = receivedElapsed;
                 TrackRuntimeState.clearWriteError(this);
-                TrackRuntimeState.setState(this, TrackRuntimeState.RUNNING);
+                TrackRuntimeState.setState(this, TrackSessionState.isPaused(this)
+                        ? TrackRuntimeState.PAUSED : TrackRuntimeState.RUNNING);
             } catch (IOException error) {
                 TrackRuntimeState.setWriteError(this,
                         error.getMessage() == null ? "تعذر كتابة نقطة في المسار" : error.getMessage());
@@ -287,7 +334,7 @@ public final class BackgroundTrackService extends Service implements LocationLis
                     CHANNEL_ID,
                     "تسجيل مسار دربك",
                     NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("يبقي تسجيل المسار مستمرًا عند إغلاق التطبيق");
+            channel.setDescription("يسجل آخر 1000 كم ويستمر عند إغلاق واجهة التطبيق");
             manager.createNotificationChannel(channel);
         }
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
@@ -295,7 +342,7 @@ public final class BackgroundTrackService extends Service implements LocationLis
                 : new Notification.Builder(this);
         return builder
                 .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("دربك — تسجيل المسار")
+                .setContentTitle("دربك — التسجيل التلقائي")
                 .setContentText(text)
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_SERVICE)
