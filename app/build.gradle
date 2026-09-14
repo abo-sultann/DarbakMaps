@@ -44,7 +44,7 @@ android {
             buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://raw.githubusercontent.com/abo-sultann/DarbakMaps/main/update-manifest-debug.json"'
         }
         release {
-            // Keep the historical car-screen package so future stable updates stay on one lineage.
+            // Stable 0.8.0 keeps the historical car-screen package; this comment also marks the final validation pass.
             applicationIdSuffix '.debug'
             minifyEnabled true
             shrinkResources true
