@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.location.Location;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -65,6 +66,7 @@ public final class BacktrackGuidance {
             } catch (Exception error) {
                 activity.runOnUiThread(() -> {
                     stop(activity);
+                    NavigationGuidance.stop(activity);
                     Toast.makeText(activity, "تعذر استعادة مسار الرجوع", Toast.LENGTH_LONG).show();
                 });
             }
@@ -91,7 +93,18 @@ public final class BacktrackGuidance {
             return;
         }
         GeoPoint target = navigator.update(location.getLatitude(), location.getLongitude());
-        if (target == null) return;
+        if (target == null) {
+            if (navigator.stoppedAtGap()) {
+                stop(activity);
+                NavigationGuidance.stop(activity);
+                View panel = activity.findViewById(R.id.nav_panel);
+                if (panel != null) panel.setVisibility(View.GONE);
+                Toast.makeText(activity,
+                        "وصلت إلى بداية هذا المقطع. يوجد فاصل تسجيل؛ لم يتم توجيهك عبره.",
+                        Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
 
         NavigationGuidance.guideTo(activity, location,
                 "رجوع على المسار • نقطة " + (navigator.targetIndex() + 1),
@@ -103,12 +116,8 @@ public final class BacktrackGuidance {
             lastDistanceCheck = now;
         }
         TextView detail = activity.findViewById(R.id.nav_detail);
-        if (detail != null) {
-            if (navigator.crossesGap()) {
-                detail.append(" • فاصل تسجيل؛ اتبع المسار الظاهر بحذر");
-            } else if (nearestMeters > 120d) {
-                detail.append(" • خارج المسار " + Math.round(nearestMeters) + "م");
-            }
+        if (detail != null && nearestMeters > 120d) {
+            detail.append(" • خارج المسار " + Math.round(nearestMeters) + "م");
         }
         if (MapUiPreferences.offRouteAlert(activity)
                 && nearestMeters > 180d && now - lastAlert > 30000L) {
