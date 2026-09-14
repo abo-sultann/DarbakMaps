@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Triggered after workflow installation; patch remains deterministic and single-use.
 path = Path('app/src/main/java/com/abosultan/darbakmaps/map/OfflineMapController.java')
 s = path.read_text(encoding='utf-8')
 
@@ -160,6 +161,5 @@ if anchor not in s:
     raise SystemExit('missing icon method anchor')
 s = s.replace(anchor, methods + anchor, 1)
 
-# remove now-unused glyph local variable
 s = s.replace('''        String glyph = PlaceRepository.iconGlyph(place.iconKey);\n''', '')
 path.write_text(s, encoding='utf-8')
