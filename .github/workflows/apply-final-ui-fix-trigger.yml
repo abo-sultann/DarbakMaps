@@ -1,0 +1,47 @@
+name: Apply Darbak Maps final UI fix
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-final-ui-fix-trigger.yml'
+permissions:
+  contents: write
+jobs:
+  patch-final-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: darbakmaps-final-0.8.0
+          fetch-depth: 0
+      - name: Patch final wording
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/abosultan/darbakmaps/MainActivity.java')
+          s=p.read_text()
+          replacements={
+            '.setTitle("خريطة الخليج")':'.setTitle("خريطة دربك السعودية")',
+            '"بدء تنزيل خريطة الخليج…"':'"بدء تنزيل خريطة دربك السعودية…"',
+            '"تمت إضافة خريطة الخليج وأصبحت جاهزة أوفلاين"':'"تمت إضافة خريطة دربك السعودية وأصبحت جاهزة أوفلاين"',
+            '"تم إيقاف التسجيل وحفظ المسار"':'"جارٍ إنهاء وحفظ المسار…"',
+            '"تنزيل خريطة الخليج الموصى بها ("':'"تنزيل خريطة دربك السعودية ("'
+          }
+          for old,new in replacements.items():
+              s=s.replace(old,new)
+          p.write_text(s)
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :app:compileDebugJavaWithJavac
+      - name: Commit patch to final branch
+        run: |
+          git config user.name 'Darbak CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java/com/abosultan/darbakmaps/MainActivity.java
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'fix: show real save state and Saudi map wording'
+          git push origin HEAD:darbakmaps-final-0.8.0
