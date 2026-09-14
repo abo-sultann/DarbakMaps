@@ -19,6 +19,7 @@ public final class MapUiPreferences {
     private static final String KEY_SHOW_SPEED = "show_speed";
     private static final String KEY_KEEP_SCREEN = "keep_screen_on";
     private static final String KEY_BACKGROUND_TRACK = "background_track";
+    private static final String KEY_AUTO_TRACK_V2 = "automatic_rolling_track_v2";
     private static final String KEY_FOLLOW_VEHICLE = "follow_vehicle";
     private static final String KEY_SHOW_TRACK_STATS = "show_track_stats";
     private static final String KEY_OFF_ROUTE_ALERT = "off_route_alert";
@@ -81,6 +82,19 @@ public final class MapUiPreferences {
 
     public static void setBackgroundTrackEnabled(Context context, boolean value) {
         prefs(context).edit().putBoolean(KEY_BACKGROUND_TRACK, value).apply();
+    }
+
+    /**
+     * One-time migration to the approved automatic last-1000-km recorder. Call only after location
+     * permission is granted. Pause state remains independent and is respected across restarts.
+     */
+    public static void ensureAutomaticTracking(Context context) {
+        SharedPreferences p = prefs(context);
+        if (p.getBoolean(KEY_AUTO_TRACK_V2, false)) return;
+        p.edit()
+                .putBoolean(KEY_BACKGROUND_TRACK, true)
+                .putBoolean(KEY_AUTO_TRACK_V2, true)
+                .commit();
     }
 
     public static boolean followVehicle(Context context) {
