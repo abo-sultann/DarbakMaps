@@ -1,0 +1,37 @@
+name: Preserve Approved Saudi Map
+on:
+  push:
+    branches: [darbakmaps-ui-stage5]
+    paths:
+      - '.github/workflows/preserve-saudi-map-release.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_SHA256: 409d7ecaf2d6c610921cfadd42855fbdd3ce63ae08a00ff94965b18bb25fdd1c
+      EXPECTED_BYTES: '189923374'
+      TAG: darbak-saudi-map-v1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified source artifact
+        run: gh run download 34758044067 -n DarbakMaps-offline-map-final -D map-source
+      - name: Verify exact approved map
+        run: |
+          test -f map-source/darbak-saudi.map
+          test "$(stat -c%s map-source/darbak-saudi.map)" = "$EXPECTED_BYTES"
+          echo "$EXPECTED_SHA256  map-source/darbak-saudi.map" | sha256sum -c -
+      - name: Create or update permanent release
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Darbak Saudi Offline Map v1" --notes "Approved Darbak Maps Saudi offline map. SHA-256: $EXPECTED_SHA256"
+          fi
+          gh release upload "$TAG" map-source/darbak-saudi.map --clobber
+          gh release upload "$TAG" map-source/darbak-saudi.map.sha256 --clobber
+      - name: Verify published asset metadata
+        run: gh release view "$TAG" --json tagName,assets
