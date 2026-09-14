@@ -1,6 +1,7 @@
 package com.abosultan.darbakmaps.location;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
@@ -46,6 +47,7 @@ public final class LocationController implements LocationListener {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    @SuppressLint("MissingPermission")
     public void start() {
         if (!hasPermission() || locationManager == null) {
             clearUnavailable();
@@ -53,8 +55,8 @@ public final class LocationController implements LocationListener {
         }
         try {
             if (!listening) {
-                // Register even while GPS is disabled so Android 7.x can deliver onProviderEnabled
-                // without requiring the Activity to be restarted.
+                // This method is guarded by hasPermission() above. Keep the registration active
+                // while GPS is disabled so Android 7.x can deliver onProviderEnabled later.
                 locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, this);
                 listening = true;
             }
@@ -68,6 +70,8 @@ public final class LocationController implements LocationListener {
             Location cached = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             if (usable(cached)) onLocationChanged(cached);
             else scheduleStaleTimeout(MAX_FIX_AGE_MS);
+        } catch (SecurityException ignored) {
+            clearUnavailable();
         } catch (RuntimeException ignored) {
             clearUnavailable();
         }
