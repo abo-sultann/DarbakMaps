@@ -36,11 +36,32 @@ public final class RecommendedMapDownloader {
 
     private RecommendedMapDownloader() {}
 
+    /** Restores a previously-active map if the process died between backup and activation. */
+    public static void recoverInterruptedInstall(Context context) throws IOException {
+        File directory = MapStorage.mapDirectory(context);
+        if (!directory.exists()) return;
+        File target = MapStorage.activeMap(context);
+        File backup = new File(directory, "saudi-active.map.backup");
+        File installing = new File(directory, "saudi-active.map.installing");
+        if ((!target.isFile() || target.length() == 0L) && backup.isFile() && backup.length() > 0L) {
+            if (target.exists()) target.delete();
+            if (!backup.renameTo(target)) {
+                copyFile(backup, target);
+                if (!target.isFile() || target.length() == 0L) {
+                    throw new IOException("تعذر استعادة الخريطة السابقة");
+                }
+            }
+        }
+        if (installing.exists()) installing.delete();
+        if (target.isFile() && target.length() > 0L && backup.exists()) backup.delete();
+    }
+
     public static File download(Context context, Listener listener) throws IOException {
         File directory = MapStorage.mapDirectory(context);
         if (!directory.exists() && !directory.mkdirs()) {
             throw new IOException("تعذر إنشاء مجلد الخرائط");
         }
+        recoverInterruptedInstall(context);
 
         File pending = new File(directory, "darbak-saudi.map.download");
         if (pending.length() > EXPECTED_BYTES) pending.delete();
@@ -65,29 +86,54 @@ public final class RecommendedMapDownloader {
 
         File target = MapStorage.activeMap(context);
         File backup = new File(directory, "saudi-active.map.backup");
-        backup.delete();
-        if (target.exists() && !target.renameTo(backup)) {
+        File installing = new File(directory, "saudi-active.map.installing");
+        boolean hadTarget = target.isFile() && target.length() > 0L;
+        if (backup.exists() && !backup.delete()) {
+            throw new IOException("تعذر تجهيز نسخة أمان للخريطة الحالية");
+        }
+        if (installing.exists()) installing.delete();
+        if (hadTarget && !target.renameTo(backup)) {
             throw new IOException("تعذر تجهيز الخريطة الحالية للاستبدال");
         }
 
-        boolean activated = pending.renameTo(target);
-        if (!activated) {
-            File installing = new File(directory, "saudi-active.map.installing");
-            installing.delete();
-            try {
+        boolean activated = false;
+        try {
+            if (pending.renameTo(target)) {
+                activated = true;
+            } else {
                 copyFile(pending, installing);
-                activated = installing.renameTo(target);
-            } finally {
-                installing.delete();
+                validateMap(installing);
+                if (!installing.renameTo(target)) {
+                    throw new IOException("تعذر تفعيل ملف الخريطة الجديد");
+                }
+                activated = true;
             }
+            validateMap(target);
+            if (!EXPECTED_SHA256.equalsIgnoreCase(sha256(target))) {
+                throw new IOException("فشل التحقق بعد تفعيل الخريطة الجديدة");
+            }
+        } catch (IOException | RuntimeException error) {
+            if (target.exists()) target.delete();
+            if (hadTarget && backup.isFile()) {
+                if (!backup.renameTo(target)) {
+                    try {
+                        copyFile(backup, target);
+                    } catch (IOException restoreError) {
+                        IOException combined = new IOException("فشل تفعيل الخريطة وتعذر استعادة السابقة", error);
+                        combined.addSuppressed(restoreError);
+                        throw combined;
+                    }
+                }
+            }
+            if (error instanceof IOException) throw (IOException) error;
+            throw new IOException("تعذر تفعيل الخريطة؛ تمت محاولة استعادة السابقة", error);
+        } finally {
+            if (installing.exists()) installing.delete();
         }
 
-        if (!activated) {
-            if (backup.exists()) backup.renameTo(target);
-            throw new IOException("تعذر تفعيل الخريطة؛ أُبقيت الخريطة السابقة");
-        }
+        if (!activated) throw new IOException("تعذر تفعيل الخريطة");
         pending.delete();
-        backup.delete();
+        if (backup.exists()) backup.delete();
         listener.onProgress(100, "تم تجهيز خريطة دربك السعودية للعمل أوفلاين");
         return target;
     }
@@ -111,9 +157,8 @@ public final class RecommendedMapDownloader {
             }
             if (!append) existing = 0L;
 
-            BufferedInputStream input = new BufferedInputStream(connection.getInputStream(), BUFFER_BYTES);
-            FileOutputStream output = new FileOutputStream(pending, append);
-            try {
+            try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream(), BUFFER_BYTES);
+                 FileOutputStream output = new FileOutputStream(pending, append)) {
                 byte[] buffer = new byte[BUFFER_BYTES];
                 long downloaded = existing;
                 int lastProgress = -1;
@@ -122,6 +167,9 @@ public final class RecommendedMapDownloader {
                     if (listener.isCancelled()) throw new CancelledException();
                     output.write(buffer, 0, read);
                     downloaded += read;
+                    if (downloaded > EXPECTED_BYTES) {
+                        throw new IOException("حجم تنزيل الخريطة تجاوز الحجم المعتمد");
+                    }
                     int progress = (int) Math.min(98L, (downloaded * 100L) / EXPECTED_BYTES);
                     if (progress != lastProgress) {
                         lastProgress = progress;
@@ -129,9 +177,6 @@ public final class RecommendedMapDownloader {
                     }
                 }
                 output.getFD().sync();
-            } finally {
-                output.close();
-                input.close();
             }
         } finally {
             connection.disconnect();
@@ -151,29 +196,22 @@ public final class RecommendedMapDownloader {
     }
 
     private static void copyFile(File source, File target) throws IOException {
-        FileInputStream input = new FileInputStream(source);
-        FileOutputStream output = new FileOutputStream(target);
-        try {
+        try (FileInputStream input = new FileInputStream(source);
+             FileOutputStream output = new FileOutputStream(target)) {
             byte[] buffer = new byte[BUFFER_BYTES];
             int read;
             while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
             output.getFD().sync();
-        } finally {
-            output.close();
-            input.close();
         }
     }
 
     private static String sha256(File file) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            FileInputStream input = new FileInputStream(file);
-            try {
+            try (FileInputStream input = new FileInputStream(file)) {
                 byte[] buffer = new byte[BUFFER_BYTES];
                 int read;
                 while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
-            } finally {
-                input.close();
             }
             StringBuilder value = new StringBuilder(64);
             for (byte item : digest.digest()) value.append(String.format(Locale.US, "%02x", item & 0xff));
