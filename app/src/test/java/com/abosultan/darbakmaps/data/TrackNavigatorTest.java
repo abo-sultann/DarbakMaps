@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class TrackNavigatorTest {
@@ -43,5 +44,24 @@ public class TrackNavigatorTest {
         TrackNavigator navigator = new TrackNavigator(points);
         double gapMiddle = navigator.offTrack(25.5000, 45.5000);
         assertTrue(gapMiddle > 10000d);
+    }
+
+    @Test
+    public void reverseGuidanceStopsAtStartOfCurrentSegment() {
+        List<GeoPoint> points = Arrays.asList(
+                new GeoPoint(25.0000, 45.0000, 1L, true),
+                new GeoPoint(25.0000, 45.0100, 2L),
+                new GeoPoint(26.0000, 46.0000, 3L, true),
+                new GeoPoint(26.0000, 46.0100, 4L)
+        );
+        TrackNavigator navigator = new TrackNavigator(points);
+        GeoPoint firstTarget = navigator.update(26.0000, 46.0099);
+        assertEquals(2, navigator.targetIndex());
+        assertEquals(points.get(2).longitude, firstTarget.longitude, 0.000001);
+
+        GeoPoint acrossGap = navigator.update(26.0000, 46.0000);
+        assertNull(acrossGap);
+        assertTrue(navigator.stoppedAtGap());
+        assertEquals(2, navigator.targetIndex());
     }
 }
