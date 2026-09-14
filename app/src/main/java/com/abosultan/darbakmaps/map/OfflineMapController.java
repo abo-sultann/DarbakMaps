@@ -13,6 +13,8 @@ import com.abosultan.darbakmaps.MapRuntimeBridge;
 import com.abosultan.darbakmaps.MapUiPreferences;
 import com.abosultan.darbakmaps.data.GeoPoint;
 import com.abosultan.darbakmaps.data.PlaceRepository;
+import com.abosultan.darbakmaps.data.SavedPlaceSpatialSelector;
+import com.abosultan.darbakmaps.data.TrackDisplayPolicy;
 
 import org.mapsforge.core.graphics.Style;
 import org.mapsforge.core.model.LatLong;
@@ -284,17 +286,8 @@ public final class OfflineMapController {
         int height = mapView.getHeight() > 0 ? mapView.getHeight() : 600;
         double metersPerPixel = 156543.03392d * Math.cos(Math.toRadians(center.latitude)) / Math.pow(2d, zoom);
         double radiusMeters = Math.hypot(width, height) * 0.72d * Math.max(0.2d, metersPerPixel);
-        List<PlaceRepository.Place> candidates = new ArrayList<>();
-        for (PlaceRepository.Place place : allSavedPlaces) {
-            if (distanceMeters(center.latitude, center.longitude, place.latitude, place.longitude) <= radiusMeters) {
-                candidates.add(place);
-            }
-        }
-        Collections.sort(candidates, Comparator.comparingDouble(
-                place -> distanceMeters(center.latitude, center.longitude, place.latitude, place.longitude)));
-        if (candidates.size() > MAX_VISIBLE_SAVED_MARKERS) {
-            candidates = new ArrayList<>(candidates.subList(0, MAX_VISIBLE_SAVED_MARKERS));
-        }
+        List<PlaceRepository.Place> candidates = SavedPlaceSpatialSelector.select(
+                allSavedPlaces, center.latitude, center.longitude, radiusMeters, MAX_VISIBLE_SAVED_MARKERS);
         displayedSavedPlaces.addAll(candidates);
         for (PlaceRepository.Place place : candidates) {
             Marker marker = new Marker(new LatLong(place.latitude, place.longitude),
@@ -435,15 +428,15 @@ public final class OfflineMapController {
         for (int i = 0; i < points.size(); i++) {
             if (i == 0 || points.get(i).segmentStart) totalSegments++;
         }
-        int segmentsToSkip = Math.max(0, totalSegments - maxSegments);
+        java.util.Set<Integer> selectedSegments = TrackDisplayPolicy.selectSegments(totalSegments, maxSegments);
         int currentSegment = -1;
         int step = Math.max(1, (int) Math.ceil(points.size() / (double) maxPoints));
         Polyline segment = null;
         for (int index = 0; index < points.size(); index++) {
             GeoPoint point = points.get(index);
             boolean boundary = point.segmentStart || index == 0;
-            if (boundary) currentSegment++;
-            if (currentSegment < segmentsToSkip) continue;
+            if (boundary) { currentSegment++; segment = null; }
+            if (!selectedSegments.contains(currentSegment)) continue;
             boolean keep = boundary || index == points.size() - 1 || index % step == 0
                     || (index + 1 < points.size() && points.get(index + 1).segmentStart);
             if (!keep) continue;
