@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, darbak-platform-v1, production-hardening-v1, darbakmaps-0.2.4-ui, darbakmaps-0.2.5-owner-fix, darbakmaps-0.3.0]
+    branches: [main, darbak-platform-v1, production-hardening-v1, darbakmaps-0.2.4-ui, darbakmaps-0.2.5-owner-fix, darbakmaps-0.3.0, darbakmaps-final-0.8.0]
     paths-ignore:
       - 'tools/map/**'
       - '.github/workflows/map-build.yml'
@@ -69,13 +69,32 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+      - name: Unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Release lint
+        run: ./gradlew --no-daemon :app:lintRelease
+
+      - name: Build signed release APK
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Verify signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/release/app-release.apk'
+          test -s "$APK"
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs "$APK"
+          sha256sum "$APK" | tee DarbakMaps-0.8.0-sha256.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DarbakMaps-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: DarbakMaps-0.8.0-production
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            DarbakMaps-0.8.0-sha256.txt
+            app/build/reports/lint-results-release.html
+            app/build/reports/tests/
           retention-days: 1
           if-no-files-found: error
