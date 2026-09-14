@@ -141,6 +141,12 @@ public final class PlaceRepository {
         return result;
     }
 
+    public Place findById(String id) {
+        if (id == null) return null;
+        for (Place place : all()) if (id.equals(place.id)) return place;
+        return null;
+    }
+
     public List<Place> search(String query) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) return all();

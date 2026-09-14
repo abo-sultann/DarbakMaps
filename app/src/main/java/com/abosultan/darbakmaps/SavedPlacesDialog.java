@@ -15,6 +15,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.AbsListView;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -65,6 +66,8 @@ public final class SavedPlacesDialog {
         private Location location;
         private String iconFilter;
         private boolean touching;
+        private boolean scrolling;
+        private boolean pendingReorder;
         private long lastUiUpdate;
 
         Panel(Activity activity, PlaceRepository repository, Location location, Navigator navigator) {
@@ -107,14 +110,16 @@ public final class SavedPlacesDialog {
             list.setDividerHeight(1);
             list.setAdapter(adapter);
             list.setOnItemClickListener((parent, view, position, id) -> {
-                PlaceRepository.Place place = adapter.getItem(position);
+                String placeId = adapter.idAt(position);
+                PlaceRepository.Place place = repository.findById(placeId);
                 if (place != null && navigator != null) {
                     navigator.navigateTo(place);
                     if (dialog != null) dialog.dismiss();
                 }
             });
             list.setOnItemLongClickListener((parent, view, position, id) -> {
-                PlaceRepository.Place place = adapter.getItem(position);
+                String placeId = adapter.idAt(position);
+                PlaceRepository.Place place = repository.findById(placeId);
                 if (place != null) showEditDelete(place);
                 return true;
             });
@@ -123,9 +128,19 @@ public final class SavedPlacesDialog {
                 if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) touching = true;
                 if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                     touching = false;
-                    rebuild(true);
+                    pendingReorder = true;
                 }
                 return false;
+            });
+            list.setOnScrollListener(new AbsListView.OnScrollListener() {
+                @Override public void onScrollStateChanged(AbsListView view, int state) {
+                    scrolling = state != AbsListView.OnScrollListener.SCROLL_STATE_IDLE;
+                    if (!scrolling && !touching && pendingReorder) {
+                        pendingReorder = false;
+                        rebuild(true);
+                    }
+                }
+                @Override public void onScroll(AbsListView view, int first, int visible, int total) {}
             });
             root.addView(list, new LinearLayout.LayoutParams(-1, dp(350)));
 
@@ -147,11 +162,40 @@ public final class SavedPlacesDialog {
         }
 
         void updateLocation(Location value) {
-            location = value == null ? null : new Location(value);
+            Location next = isFresh(value) ? new Location(value) : null;
+            if (next == null) {
+                location = null;
+                adapter.clearHeadingSmoothing();
+                lastUiUpdate = 0L;
+                activity.runOnUiThread(() -> rebuild(false));
+                return;
+            }
+            location = next;
             long now = SystemClock.elapsedRealtime();
-            if (now - lastUiUpdate < 800L) return;
+            if (now - lastUiUpdate < 800L) {
+                activity.runOnUiThread(() -> adapter.updateLocationOnly(location));
+                return;
+            }
             lastUiUpdate = now;
-            activity.runOnUiThread(() -> rebuild(!touching));
+            activity.runOnUiThread(() -> {
+                if (touching || scrolling) {
+                    pendingReorder = true;
+                    adapter.updateLocationOnly(location);
+                } else {
+                    rebuild(true);
+                }
+            });
+        }
+
+        private boolean isFresh(Location value) {
+            if (value == null) return false;
+            long elapsedNanos = value.getElapsedRealtimeNanos();
+            if (elapsedNanos > 0L) {
+                long age = SystemClock.elapsedRealtimeNanos() - elapsedNanos;
+                return age >= 0L && age <= 10_000_000_000L;
+            }
+            long time = value.getTime();
+            return time > 0L && Math.max(0L, System.currentTimeMillis() - time) <= 10_000L;
         }
 
         private void addFilter(LinearLayout parent, String label, String key) {
@@ -168,13 +212,27 @@ public final class SavedPlacesDialog {
 
         private void rebuild(boolean reorder) {
             if (dialog == null || !dialog.isShowing()) return;
-            List<PlaceRepository.Place> places = iconFilter == null
+            List<PlaceRepository.Place> fresh = iconFilter == null
                     ? new ArrayList<>(repository.all())
                     : new ArrayList<>(repository.byIcon(iconFilter));
             if (reorder && location != null) {
-                Collections.sort(places, (a, b) -> Float.compare(distance(location, a), distance(location, b)));
+                Collections.sort(fresh, (a, b) -> Float.compare(distance(location, a), distance(location, b)));
+                adapter.setData(fresh, location, true);
+                return;
             }
-            adapter.setData(places, location, reorder);
+            if (!reorder && adapter.getCount() > 0) {
+                Map<String, PlaceRepository.Place> byId = new HashMap<>();
+                for (PlaceRepository.Place place : fresh) byId.put(place.id, place);
+                List<PlaceRepository.Place> stable = new ArrayList<>();
+                for (String id : adapter.currentIds()) {
+                    PlaceRepository.Place place = byId.remove(id);
+                    if (place != null) stable.add(place);
+                }
+                stable.addAll(byId.values());
+                adapter.setData(stable, location, false);
+            } else {
+                adapter.setData(fresh, location, reorder);
+            }
         }
 
         private void showEditDelete(PlaceRepository.Place place) {
@@ -240,13 +298,36 @@ public final class SavedPlacesDialog {
             data.clear();
             data.addAll(places);
             this.location = location == null ? null : new Location(location);
-            if (reordered && data.isEmpty()) smoothed.clear();
+            if (this.location == null) smoothed.clear();
             notifyDataSetChanged();
+        }
+
+        void updateLocationOnly(Location value) {
+            this.location = value == null ? null : new Location(value);
+            if (this.location == null) smoothed.clear();
+            notifyDataSetChanged();
+        }
+
+        void clearHeadingSmoothing() { smoothed.clear(); updateLocationOnly(null); }
+
+        List<String> currentIds() {
+            List<String> ids = new ArrayList<>();
+            for (PlaceRepository.Place p : data) ids.add(p.id);
+            return ids;
+        }
+
+        String idAt(int position) {
+            PlaceRepository.Place p = getItem(position);
+            return p == null ? null : p.id;
         }
 
         @Override public int getCount() { return data.size(); }
         @Override public PlaceRepository.Place getItem(int position) { return position >= 0 && position < data.size() ? data.get(position) : null; }
-        @Override public long getItemId(int position) { return position; }
+        @Override public long getItemId(int position) {
+            String id = idAt(position);
+            return id == null ? 0L : id.hashCode();
+        }
+        @Override public boolean hasStableIds() { return true; }
 
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {

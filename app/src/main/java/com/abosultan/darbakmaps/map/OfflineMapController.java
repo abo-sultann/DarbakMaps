@@ -17,6 +17,7 @@ import com.abosultan.darbakmaps.data.PlaceRepository;
 import org.mapsforge.core.graphics.Style;
 import org.mapsforge.core.model.LatLong;
 import org.mapsforge.core.model.MapPosition;
+import org.mapsforge.core.model.Point;
 import org.mapsforge.core.model.Rotation;
 import org.mapsforge.map.android.graphics.AndroidBitmap;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
@@ -33,6 +34,8 @@ import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 public final class OfflineMapController {
@@ -40,12 +43,23 @@ public final class OfflineMapController {
     private static final int MAX_STORED_DRAW_POINTS = 10000;
     private static final int MAX_ACTIVE_DRAW_SEGMENTS = 160;
     private static final int MAX_STORED_DRAW_SEGMENTS = 320;
+    private static final int MAX_VISIBLE_SAVED_MARKERS = 300;
+    private static final float SAVED_TAP_RADIUS_PX = 44f;
+
+    public interface SavedPlaceTapListener {
+        void onSavedPlaceTap(PlaceRepository.Place place);
+        void onSavedPlaceClusterTap(List<PlaceRepository.Place> places);
+    }
 
     private final MapView mapView;
     private final TileCache tileCache;
     private final TileRendererLayer rendererLayer;
     private final XmlRenderTheme darbakTheme;
     private final List<Marker> savedMarkers = new ArrayList<>();
+    private final List<PlaceRepository.Place> allSavedPlaces = new ArrayList<>();
+    private final List<PlaceRepository.Place> displayedSavedPlaces = new ArrayList<>();
+    private SavedPlaceTapListener savedPlaceTapListener;
+    private boolean savedShowLabels;
     private final List<Polyline> activeTrackSegments = new ArrayList<>();
     private final List<Polyline> storedTrackSegments = new ArrayList<>();
     private Marker locationMarker;
@@ -71,6 +85,9 @@ public final class OfflineMapController {
         mapView.setClickable(true);
         mapView.setOnTouchListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) followSuspended = true;
+            if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                mapView.postDelayed(this::refreshSavedPlacesForViewport, 120L);
+            }
             return false;
         });
         mapView.setBuiltInZoomControls(false);
@@ -111,11 +128,13 @@ public final class OfflineMapController {
     public void zoomIn() {
         byte current = mapView.getModel().mapViewPosition.getZoomLevel();
         mapView.getModel().mapViewPosition.setZoomLevel((byte) Math.min(20, current + 1));
+        mapView.post(this::refreshSavedPlacesForViewport);
     }
 
     public void zoomOut() {
         byte current = mapView.getModel().mapViewPosition.getZoomLevel();
         mapView.getModel().mapViewPosition.setZoomLevel((byte) Math.max(3, current - 1));
+        mapView.post(this::refreshSavedPlacesForViewport);
     }
 
     public void centerOn(double latitude, double longitude) {
@@ -239,21 +258,78 @@ public final class OfflineMapController {
         mapView.getLayerManager().redrawLayers();
     }
 
+    public void setSavedPlaceTapListener(SavedPlaceTapListener listener) {
+        this.savedPlaceTapListener = listener;
+    }
+
     public void showSavedPlaces(List<PlaceRepository.Place> places, boolean showLabels) {
+        allSavedPlaces.clear();
+        if (places != null) allSavedPlaces.addAll(places);
+        savedShowLabels = showLabels;
+        refreshSavedPlacesForViewport();
+    }
+
+    private void refreshSavedPlacesForViewport() {
         for (Marker marker : savedMarkers) mapView.getLayerManager().getLayers().remove(marker);
         savedMarkers.clear();
-        if (places != null) {
-            int limit = Math.min(places.size(), 250);
-            for (int i = 0; i < limit; i++) {
-                PlaceRepository.Place place = places.get(i);
-                Marker marker = new Marker(new LatLong(place.latitude, place.longitude),
-                        createSavedMarker(place, showLabels), 0, -20);
-                marker.setBillboard(true);
-                savedMarkers.add(marker);
-                mapView.getLayerManager().getLayers().add(marker);
+        displayedSavedPlaces.clear();
+        if (allSavedPlaces.isEmpty()) {
+            mapView.getLayerManager().redrawLayers();
+            return;
+        }
+        LatLong center = mapView.getModel().mapViewPosition.getCenter();
+        byte zoom = mapView.getModel().mapViewPosition.getZoomLevel();
+        int width = mapView.getWidth() > 0 ? mapView.getWidth() : 1024;
+        int height = mapView.getHeight() > 0 ? mapView.getHeight() : 600;
+        double metersPerPixel = 156543.03392d * Math.cos(Math.toRadians(center.latitude)) / Math.pow(2d, zoom);
+        double radiusMeters = Math.hypot(width, height) * 0.72d * Math.max(0.2d, metersPerPixel);
+        List<PlaceRepository.Place> candidates = new ArrayList<>();
+        for (PlaceRepository.Place place : allSavedPlaces) {
+            if (distanceMeters(center.latitude, center.longitude, place.latitude, place.longitude) <= radiusMeters) {
+                candidates.add(place);
             }
         }
+        Collections.sort(candidates, Comparator.comparingDouble(
+                place -> distanceMeters(center.latitude, center.longitude, place.latitude, place.longitude)));
+        if (candidates.size() > MAX_VISIBLE_SAVED_MARKERS) {
+            candidates = new ArrayList<>(candidates.subList(0, MAX_VISIBLE_SAVED_MARKERS));
+        }
+        displayedSavedPlaces.addAll(candidates);
+        for (PlaceRepository.Place place : candidates) {
+            Marker marker = new Marker(new LatLong(place.latitude, place.longitude),
+                    createSavedMarker(place, savedShowLabels), 0, -20) {
+                @Override public boolean onTap(LatLong tapLatLong, Point layerXY, Point tapXY) {
+                    return handleSavedPlaceTap(tapLatLong);
+                }
+            };
+            marker.setBillboard(true);
+            savedMarkers.add(marker);
+            mapView.getLayerManager().getLayers().add(marker);
+        }
         mapView.getLayerManager().redrawLayers();
+    }
+
+    private boolean handleSavedPlaceTap(LatLong tap) {
+        if (savedPlaceTapListener == null || tap == null) return false;
+        byte zoom = mapView.getModel().mapViewPosition.getZoomLevel();
+        double metersPerPixel = 156543.03392d * Math.cos(Math.toRadians(tap.latitude)) / Math.pow(2d, zoom);
+        double hitMeters = Math.max(12d, SAVED_TAP_RADIUS_PX * Math.max(0.2d, metersPerPixel));
+        List<PlaceRepository.Place> hit = new ArrayList<>();
+        for (PlaceRepository.Place place : displayedSavedPlaces) {
+            if (distanceMeters(tap.latitude, tap.longitude, place.latitude, place.longitude) <= hitMeters) hit.add(place);
+        }
+        if (hit.isEmpty()) return false;
+        if (hit.size() == 1) savedPlaceTapListener.onSavedPlaceTap(hit.get(0));
+        else savedPlaceTapListener.onSavedPlaceClusterTap(hit);
+        return true;
+    }
+
+    private double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+        double dLat = Math.toRadians(lat2 - lat1), dLon = Math.toRadians(lon2 - lon1);
+        double h = Math.sin(dLat / 2d) * Math.sin(dLat / 2d)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2d) * Math.sin(dLon / 2d);
+        return 6371000d * 2d * Math.asin(Math.sqrt(Math.max(0d, Math.min(1d, h))));
     }
 
     public void setNavigationTarget(double latitude, double longitude, int mode) {

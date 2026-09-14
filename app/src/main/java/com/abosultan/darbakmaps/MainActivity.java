@@ -260,6 +260,14 @@ public final class MainActivity extends Activity implements LocationController.C
         if (mapFile.isFile() && mapFile.length() > 0) {
             try {
                 mapController = new OfflineMapController(this, mapFile);
+                mapController.setSavedPlaceTapListener(new OfflineMapController.SavedPlaceTapListener() {
+                    @Override public void onSavedPlaceTap(PlaceRepository.Place place) {
+                        startDirectNavigation(place.name, place.latitude, place.longitude);
+                    }
+                    @Override public void onSavedPlaceClusterTap(List<PlaceRepository.Place> places) {
+                        showSavedPlaceCluster(places);
+                    }
+                });
                 mapContainer.addView(mapController.view(), new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT
@@ -586,6 +594,20 @@ public final class MainActivity extends Activity implements LocationController.C
         Location current = locationController == null ? null : locationController.getLastLocation();
         SavedPlacesDialog.show(this, placeRepository, current,
                 place -> startDirectNavigation(place.name, place.latitude, place.longitude));
+    }
+
+    private void showSavedPlaceCluster(List<PlaceRepository.Place> places) {
+        if (places == null || places.isEmpty()) return;
+        String[] labels = new String[places.size()];
+        for (int i = 0; i < places.size(); i++) labels[i] = places.get(i).name;
+        showImmersive(new AlertDialog.Builder(this)
+                .setTitle("عدة مواقع في نفس المكان")
+                .setItems(labels, (dialog, which) -> {
+                    PlaceRepository.Place selected = places.get(which);
+                    startDirectNavigation(selected.name, selected.latitude, selected.longitude);
+                })
+                .setNegativeButton("إلغاء", null)
+                .create());
     }
 
     private void startDirectNavigation(String name, double latitude, double longitude) {
