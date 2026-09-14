@@ -27,4 +27,6 @@ jobs:
           git add app/src/main/java/com/abosultan/darbakmaps/MainActivity.java app/src/main/java/com/abosultan/darbakmaps/DarbakPanels.java
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'feat: expose legacy data migration and partial search state'
+          git fetch origin darbakmaps-final-0.8.0
+          git rebase origin/darbakmaps-final-0.8.0
           git push origin HEAD:darbakmaps-final-0.8.0
