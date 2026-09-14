@@ -14,8 +14,7 @@ import android.os.SystemClock;
 import androidx.core.content.ContextCompat;
 
 public final class LocationController implements LocationListener {
-    private static final long MAX_CACHED_AGE_MS = 30_000L;
-    private static final long FIX_TIMEOUT_MS = 15_000L;
+    private static final long MAX_FIX_AGE_MS = 15_000L;
     // Kept permissive until the real T3 antenna is measured; freshness is enforced independently.
     private static final float MAX_ACCEPTABLE_ACCURACY_METERS = 250f;
 
@@ -30,6 +29,7 @@ public final class LocationController implements LocationListener {
     private final Handler handler;
     private final Runnable staleFixRunnable;
     private Location lastLocation;
+    private boolean listening;
 
     public LocationController(Context context, Callback callback) {
         this.context = context.getApplicationContext();
@@ -49,44 +49,47 @@ public final class LocationController implements LocationListener {
 
     public void start() {
         if (!hasPermission() || locationManager == null) {
-            lastLocation = null;
-            callback.onProviderState(false);
+            clearUnavailable();
             return;
         }
         try {
+            if (!listening) {
+                // Register even while GPS is disabled so Android 7.x can deliver onProviderEnabled
+                // without requiring the Activity to be restarted.
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, this);
+                listening = true;
+            }
             boolean enabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
             callback.onProviderState(enabled);
             if (!enabled) {
                 lastLocation = null;
+                handler.removeCallbacks(staleFixRunnable);
                 return;
             }
             Location cached = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (usable(cached, MAX_CACHED_AGE_MS)) onLocationChanged(cached);
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, this);
-            scheduleStaleTimeout();
-        } catch (SecurityException ignored) {
-            lastLocation = null;
-            callback.onProviderState(false);
-        } catch (RuntimeException ignored) {
-            lastLocation = null;
-            callback.onProviderState(false);
+            if (usable(cached)) onLocationChanged(cached);
+            else scheduleStaleTimeout(MAX_FIX_AGE_MS);
+        } catch (SecurityException | RuntimeException ignored) {
+            clearUnavailable();
         }
     }
 
     public void stop() {
         handler.removeCallbacks(staleFixRunnable);
-        if (locationManager == null) return;
+        if (locationManager == null || !listening) return;
         try {
             locationManager.removeUpdates(this);
         } catch (SecurityException ignored) {
             // Permission may have been revoked while the app was running.
         } catch (RuntimeException ignored) {
             // Some vendor ROMs throw during provider teardown.
+        } finally {
+            listening = false;
         }
     }
 
     public Location getLastLocation() {
-        if (!usable(lastLocation, FIX_TIMEOUT_MS)) {
+        if (!usable(lastLocation)) {
             lastLocation = null;
             return null;
         }
@@ -95,23 +98,27 @@ public final class LocationController implements LocationListener {
 
     @Override
     public void onLocationChanged(Location location) {
-        if (!usable(location, MAX_CACHED_AGE_MS)) return;
+        if (!usable(location)) return;
+        long age = ageMillis(location);
         lastLocation = new Location(location);
+        callback.onProviderState(true);
         callback.onLocation(new Location(location));
-        scheduleStaleTimeout();
+        scheduleStaleTimeout(Math.max(1L, MAX_FIX_AGE_MS - age));
     }
 
     @Override
     public void onProviderEnabled(String provider) {
+        if (!LocationManager.GPS_PROVIDER.equals(provider)) return;
         callback.onProviderState(true);
-        scheduleStaleTimeout();
+        // The listener is already registered; do not manufacture a fresh fix.
+        lastLocation = null;
+        scheduleStaleTimeout(MAX_FIX_AGE_MS);
     }
 
     @Override
     public void onProviderDisabled(String provider) {
-        handler.removeCallbacks(staleFixRunnable);
-        lastLocation = null;
-        callback.onProviderState(false);
+        if (!LocationManager.GPS_PROVIDER.equals(provider)) return;
+        clearUnavailable();
     }
 
     @Override
@@ -119,21 +126,27 @@ public final class LocationController implements LocationListener {
         // Required on Android 7.x.
     }
 
-    private void scheduleStaleTimeout() {
+    private void scheduleStaleTimeout(long delayMs) {
         handler.removeCallbacks(staleFixRunnable);
-        handler.postDelayed(staleFixRunnable, FIX_TIMEOUT_MS);
+        handler.postDelayed(staleFixRunnable, Math.max(1L, delayMs));
     }
 
-    private static boolean usable(Location location, long maxAgeMs) {
+    private void clearUnavailable() {
+        handler.removeCallbacks(staleFixRunnable);
+        lastLocation = null;
+        callback.onProviderState(false);
+    }
+
+    private static boolean usable(Location location) {
         if (location == null) return false;
         long age = ageMillis(location);
-        return FixQuality.usable(age, maxAgeMs,
+        return FixQuality.usable(age, MAX_FIX_AGE_MS,
                 location.hasAccuracy(), location.hasAccuracy() ? location.getAccuracy() : Float.MAX_VALUE,
                 MAX_ACCEPTABLE_ACCURACY_METERS,
                 location.getLatitude(), location.getLongitude());
     }
 
-    private static long ageMillis(Location location) {
+    static long ageMillis(Location location) {
         long elapsedNanos = location.getElapsedRealtimeNanos();
         if (elapsedNanos > 0L) {
             long now = SystemClock.elapsedRealtimeNanos();
