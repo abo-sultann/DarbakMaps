@@ -294,7 +294,7 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void confirmRecommendedMapDownload() {
         showImmersive(new AlertDialog.Builder(this)
-                .setTitle("خريطة الخليج")
+                .setTitle("خريطة دربك السعودية")
                 .setMessage(RecommendedMapDownloader.DISPLAY_SIZE + " • Wi‑Fi")
                 .setNegativeButton("إلغاء", null)
                 .setPositiveButton("تنزيل", (dialog, which) -> downloadRecommendedMap())
@@ -308,7 +308,7 @@ public final class MainActivity extends Activity implements LocationController.C
         progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
         progress.setMax(100);
         progress.setProgress(0);
-        progress.setMessage("بدء تنزيل خريطة الخليج…");
+        progress.setMessage("بدء تنزيل خريطة دربك السعودية…");
         progress.setCancelable(true);
         progress.setCanceledOnTouchOutside(false);
         progress.setOnCancelListener(dialog -> mapDownloadCancelled = true);
@@ -337,7 +337,7 @@ public final class MainActivity extends Activity implements LocationController.C
                         return;
                     }
                     progress.dismiss();
-                    toast("تمت إضافة خريطة الخليج وأصبحت جاهزة أوفلاين");
+                    toast("تمت إضافة خريطة دربك السعودية وأصبحت جاهزة أوفلاين");
                     loadActiveMap();
                 });
             } catch (RecommendedMapDownloader.CancelledException cancelled) {
@@ -464,7 +464,7 @@ public final class MainActivity extends Activity implements LocationController.C
         onBackgroundTrackSettingChanged(enabled);
         toast(enabled
                 ? "بدأ رسم وتسجيل المسار — سيستمر عند إغلاق التطبيق"
-                : "تم إيقاف التسجيل وحفظ المسار");
+                : "جارٍ إنهاء وحفظ المسار…");
     }
 
     void onBackgroundTrackSettingChanged(boolean enabled) {
@@ -736,7 +736,7 @@ public final class MainActivity extends Activity implements LocationController.C
                 ? "الخريطة الحالية: " + Math.max(1, file.length() / (1024 * 1024)) + " م.ب\nجاهزة للعمل بدون إنترنت"
                 : "لا توجد حزمة خريطة مضافة";
         String[] actions = {
-                "تنزيل خريطة الخليج الموصى بها (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
+                "تنزيل خريطة دربك السعودية (" + RecommendedMapDownloader.DISPLAY_SIZE + ")",
                 "إضافة خريطة من USB أو الذاكرة"
         };
         showImmersive(new AlertDialog.Builder(this)
