@@ -2,7 +2,7 @@ name: Darbak Maps Final Candidate
 
 on:
   push:
-    branches: [darbakmaps-final-0.8.0]
+    branches: [darbakmaps-final-0.8.0, darbakmaps-review-0.9.1]
     paths:
       - 'app/**'
       - 'build.gradle'
