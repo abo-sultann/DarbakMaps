@@ -29,27 +29,45 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Resolve app version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_NAME=$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" app/build.gradle | head -n1)
+          VERSION_CODE=$(sed -n "s/^[[:space:]]*versionCode[[:space:]]*\([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)
+          test -n "$VERSION_NAME"
+          test -n "$VERSION_CODE"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
       - name: Unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
       - name: Release lint
         run: ./gradlew --no-daemon :app:lintRelease
       - name: Build unsigned release
         run: ./gradlew --no-daemon :app:assembleRelease
-      - name: Verify candidate exists
+      - name: Verify and name candidate
+        shell: bash
         run: |
           set -euo pipefail
-          APK='app/build/outputs/apk/release/app-release-unsigned.apk'
-          test -s "$APK"
-          sha256sum "$APK" > candidate-sha256.txt
+          SOURCE='app/build/outputs/apk/release/app-release-unsigned.apk'
+          test -s "$SOURCE"
+          mkdir -p dist
+          APK="dist/DarbakMaps-${{ steps.version.outputs.name }}-vc${{ steps.version.outputs.code }}-unsigned.apk"
+          cp "$SOURCE" "$APK"
+          sha256sum "$APK" > dist/candidate-sha256.txt
+          printf 'versionName=%s\nversionCode=%s\ncommit=%s\npackage=com.abosultan.darbakmaps.debug\n' \
+            '${{ steps.version.outputs.name }}' '${{ steps.version.outputs.code }}' '${{ github.sha }}' \
+            > dist/candidate-metadata.txt
           ls -lh "$APK"
-          cat candidate-sha256.txt
+          cat dist/candidate-sha256.txt
+          cat dist/candidate-metadata.txt
       - name: Upload candidate
         uses: actions/upload-artifact@v4
         with:
-          name: DarbakMaps-0.8.0-unsigned
+          name: DarbakMaps-${{ steps.version.outputs.name }}-vc${{ steps.version.outputs.code }}-unsigned
           path: |
-            app/build/outputs/apk/release/app-release-unsigned.apk
-            candidate-sha256.txt
+            dist/
             app/build/reports/lint-results-release.html
             app/build/reports/tests/
           retention-days: 1
