@@ -38,10 +38,22 @@ jobs:
           java-version: '17'
 
       - name: Restore stable debug signing key
+        id: signing-key-cache
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: darbakmaps-debug-signing-v1
+
+      - name: Verify stable signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY="$HOME/.android/debug.keystore"
+          if [ ! -s "$KEY" ]; then
+            echo '::error::Darbak Maps signing key is missing. Refusing to build with a newly generated Android debug key.'
+            exit 1
+          fi
+          keytool -list -keystore "$KEY" -storepass android -alias androiddebugkey >/dev/null
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
