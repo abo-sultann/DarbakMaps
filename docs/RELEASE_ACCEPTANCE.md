@@ -1,75 +1,68 @@
 # DarbakMaps — RELEASE ACCEPTANCE
 
-الإصدار المرشح: **0.9.0 / vc21**  
+المرشح الجاري: **0.9.1 / vc22 بعد بوابة الإصدار**  
 الحزمة: `com.abosultan.darbakmaps.debug`  
-مصدر APK: `1da936e63bd42a6214a0afb76c337f66c00d31be`  
-Final Candidate: workflow `34884270566` — **SUCCESS**  
-الحالة: **مرشح اختبار ميداني**، لا يسمى Production قبل تحقق شهادة النسخة المثبتة واختبارات T3.
+الحالة: **Field Candidate فقط** حتى اختبارات T3 والتوقيع المثبت.
 
-## التسجيل التلقائي وآخر 1000 كم
-- ✅ اختبار وحدة: رحلة صناعية >1200 كم، وبعد التقليم يبقى أحدث ~1000 كم ضمن هامش أخذ العينات الموثق.
-- ✅ اختبار وحدة: فجوة segment لا تدخل حساب المسافة.
-- ✅ اختبار وحدة: استعادة backup عند فقد ملف primary أثناء نافذة trim.
-- ✅ compile/integration: snapshot GPX لا يمسح rolling journal.
-- ✅ compile/integration: pause/resume وخدمة التسجيل الجديدة.
-- ⬜ ميداني: إغلاق Activity، screen off، reboot، GPS loss/recovery، الوقوف الطويل.
-- ⬜ fault: kill أثناء write/trim، storage full والتعافي.
-- ⬜ أداء: recording + search + navigation طويلًا مع قياس RAM على T3.
+## 1. الرسم والتسجيل
+- ✅ **اختبار سلوك:** `TrackJournalPreviewTest` يكتب >6000 نقطة مع bend قوي وgap ويتحقق أن preview لا يختفي، يبقى محدودًا، ويحافظ على gap/bend/latest. Workflow `34887402112`.
+- ✅ **اختبار سلوك:** `TrackRenderGateTest` يمنع async load أقدم من استبدال generation أحدث.
+- ✅ المصدر الوحيد للرسم أصبح snapshot من journal بعد commit؛ MainActivity لا يرسم raw GPS.
+- ✅ **اختبار سلوك:** `TrackDisplayPolicyTest` مع 1000 segment / cap 160 يحتفظ بالبداية والنهاية وكل المقاطع الحديثة وعينة موزعة من التاريخ الأقدم. Workflow `34888533307`.
+- ⬜ T3: فقد/عودة GPS + trim >1000km + background/resume مع مطابقة بصرية للسجل.
 
-## البحث
-- ✅ compile/lint: تطبيع عربي، partial match، aliases، POI + Way/area، وفئات البر.
-- ✅ compile/integration: حول موقعي وحول معلم بنطاقات 5/10/25/50/100 كم.
-- ✅ compile: حالات partial/truncated بدل «لا توجد» قبل اكتمال الفهرسة.
-- ✅ compile: persistent index مربوط بهوية ملف الخريطة.
-- ⬜ بيانات فعلية: اختيار عينات مؤكدة من ملف السعودية لكل فئة وإثبات الدقة/إزالة التكرار.
-- ⬜ أداء: زمن البحث/RAM على T3 قبل/بعد اكتمال الفهرس.
+## 2. المحفوظات
+- ✅ **اختبار سلوك:** `StableIdOrderTest` يثبت الحفاظ على ترتيب IDs أثناء تحديث بيانات الصفوف. Workflow `34887515362`.
+- ✅ null/stale GPS يتجاوز throttle فورًا، يمسح location/smoothing ويعرض انتظار GPS.
+- ✅ click/long-click يقرأ stable place ID من repository، لا index متغير.
+- ✅ map Marker tap يوجه لموقع منفرد؛ تداخل عدة علامات يفتح chooser ولا يختار عشوائيًا.
+- ✅ **اختبار سلوك:** `SavedPlaceSpatialSelectorTest` ينشئ 300 موقع ويثبت أن الموقع الأخير يظهر عند تحريك viewport إليه. Workflow `34888533307`.
+- ⬜ T3: حفظ 3 سمان بلا أسماء والنقر على كل أيقونة فعلية + scroll/touch متكرر.
 
-## المحفوظات والأيقونات
-- ✅ compile: حفظ icon-first والاسم اختياري وauto-label مؤرخ.
-- ✅ compile: Canvas icons ثابتة، ومنها طير السمان، دون الاعتماد على Emoji.
-- ✅ compile/integration: filters، nearest، direct distance، no-GPS state، undo delete.
-- ✅ unit: اتجاه 359↔0 صحيح وcircular smoothing.
-- ✅ unit: اتجاهات جغرافية عربية fallback عند غياب heading موثوق.
-- ⬜ ميداني: حفظ 3 سمان بلا أسماء + نوع آخر، reboot، touch no-reorder، توجيه للإحداثيات الفعلية.
+## 3. البحث
+- ✅ لا يوجد hard cap يوقف index وسط tile؛ الفهرس sharded على القرص (`pending → fsync → rename`).
+- ✅ اكتمال index منفصل عن read failure وعن query-more؛ progress يُشتق من shards الصالحة، فلا تكفي state قديمة لإعلان complete.
+- ✅ لا `readIds` شامل؛ query يحتفظ بصفحة محدودة فقط.
+- ✅ **اختبار سلوك:** `سـمان` يساوي `سمان` بعد حذف التطويل لا تحويله لمسافة. Workflow `34888101861`.
+- ✅ **اختبار سلوك:** Way يعبر مركز البحث يلتقط بقرب الهندسة حتى لو endpoints بعيدة.
+- ✅ **اختبار سلوك:** Keyset pagination يصل إلى 95 نتيجة عبر `40 + 40 + 15` بلا تكرار وبذاكرة O(page). Workflow `34888316301`.
+- ✅ نتائج الصفحة تظهر أيضًا على الخريطة بحد عرض، والبحث حول نقطة map متاح من long press.
 
-## التوجيه والعودة
-- ✅ compile: التوجيه المباشر يوضح أنه خط هدف لا طريق صالح مضمون.
-- ✅ unit: backtrack لا يعبر gaps.
-- ✅ unit: لا يختار هدفًا افتراضيًا إذا لا يوجد connected segment.
-- ⬜ ميداني: GPS stale/loss أثناء التوجيه والعودة.
+### خريطة السعودية الفعلية
+Workflow `34888782778` استخدم asset المعتمد نفسه:
+- SHA-256: `409d7ecaf2d6c610921cfadd42855fbdd3ce63ae08a00ff94965b18bb25fdd1c`
+- الحجم: `189923374` bytes.
+- نتائج مجمعة لدوائر 100km حول الرياض/القصيم/حائل: خدمات=5، قرى=45، شعاب وأودية=120، مياه وآبار=120، معالم=120، جبال=0 في هذه العينات.
+- أمثلة مثبتة: الرياض/الدرعية/بريدة/حائل، شعيب النقيب، وادي الأديرع، ومياه/آبار غير مسماة.
+- أبطأ query على GitHub CI: `1897 ms`.
+- أعلى heap delta على CI: `121542688` bytes (~116 MiB).
+- ⚠️ هذه ليست أرقام T3؛ فئة الجبال غير مثبتة في المناطق الثلاث ولا تُفسر تلقائيًا كعطل واجهة.
 
-## حماية البيانات والخريطة
-- ✅ compile/lint: LegacyMigration يفحص إلى staging قبل live state، يتحقق من الهوية/الحجم/المساحة، ويستخدم rollback وlock مشترك.
-- ✅ compile/lint: runtime recording prefs القديمة لا تستورد.
-- ✅ compile/lint: map replacement لا يحذف backup إلا بعد تحقق البديل كاملًا.
-- ⬜ fault: corrupted archive/wrong identity/space failure/forced replacement failure على Android.
-- ⬜ fault: انقطاع نسخ الخريطة ثم reboot.
+## 4. LegacyMigration
+- ✅ stage/identity/space validation قبل live mutation.
+- ✅ transaction dir دائم، نسخ أصلية للمفضلات، manifests للمسارات، `APPLYING/COMMITTED`, startup recovery.
+- ✅ legacy `active-track.csv` يتحول إلى GPX منفصل ولا يستبدل rolling journal الحالي.
+- ✅ tests/compile في workflow `34887602753`.
+- ⬜ **لم يُنفذ process kill حقيقي** بين تطبيق ملفي preferences؛ لا يسمى البند ميدانيًا مغلقًا حتى ذلك.
 
-## Final Candidate 0.9.0
-workflow `34884270566` نفذ من نفس source commit:
-- ✅ `testDebugUnitTest`
-- ✅ `lintRelease`
-- ✅ `assembleRelease`
-- ✅ candidate metadata + SHA
-- ✅ artifact upload
+## 5. بوابة البناء المطلوبة
+قبل التسليم يجب أن ينجح من commit واحد:
+- `:app:testDebugUnitTest`
+- `:app:lintRelease`
+- `:app:assembleRelease`
+- artifact metadata/version/SHA.
+سيضاف رقم run وSHA هنا بعد نجاح 0.9.1.
 
-Artifact CI: `DarbakMaps-0.9.0-vc21-unsigned`  
-SHA-256 للـAPK غير الموقع:  
-`adfec3b578aecf0060bd10df254d465ba3cd132f4ceac5fbde75798331b1f6c4`
+## 6. التوقيع والتحديث
+- Production channel يبقى **hold**.
+- APK غير موقع ليس تحديثًا جاهزًا.
+- Field Candidate الموقّع يجب التحقق منه بـ`apksigner verify --print-certs` إن توفرت build-tools.
+- لم تُقرأ شهادة التطبيق المثبت فعليًا على شاشة السيارة؛ لذلك لا يوجد دليل update-in-place بعد.
+- لا تحذف النسخة القديمة. الاختبار المطلوب: مقارنة الشهادة ثم تثبيت فوق النسخة الموجودة والتأكد من بقاء المواقع والمسارات والإعدادات.
 
-## التوقيع والتحديث
-- تم العثور على سلسلة توقيع Darbak stable خارج المستودع، وإنشاء **Field Candidate موقّع** منها والتحقق من سلامة توقيع JAR.
-- يوجد APK انتقال موقّع سابق في ملفات المشروع بنفس سلسلة Darbak stable، بينما يوجد APK أقدم في Drive بشهادة مختلفة.
-- **لم تُقرأ شهادة التطبيق المثبت فعليًا على شاشة السيارة في هذه الجولة**؛ لذلك لا يمكن وصف Field Candidate بأنه update-in-place مضمون.
-- لا تطلب إزالة النسخة الحالية. أول خطوة ميدانية هي قراءة شهادة APK المثبت/نسخة APK منه، ثم مقارنة الشهادة.
-- update manifest الخاص بـProduction يبقى hold حتى نجاح هذه الخطوة واختبار بقاء البيانات.
+## 7. ما بقي ميدانيًا
+- T3: reboot/screen-off/GPS loss/long drive/RAM.
+- fault injection: storage full، kill أثناء migration/trim/map replacement، انقطاع طاقة.
+- التوقيع المثبت وupdate-in-place.
 
-Field Candidate الموقّع:
-- `DarbakMaps-0.9.0-vc21-field-signed.apk`
-- SHA-256: `650ca55ebf19b9381e277cdee68fde229d02160ac841144717d95132b926b376`
-
-## بيئة الاختبار وما لم يُنفذ
-- CI: GitHub Actions / Ubuntu / Temurin Java 17 / Gradle.
-- التوقيع: JDK jarsigner/keytool في بيئة خاصة؛ لم يوضع المفتاح أو كلمات المرور في المستودع.
-- الجهاز المستهدف: Allwinner T3 / Android 7.1 / 1024×600 / ~1GB.
-- لم يتم تشغيل Android emulator أو T3 فعلي في هذه الجولة، لذلك يبقى الوصف الصحيح: **مرشح اختبار ميداني**.
+لذلك الوصف الصحيح حتى إتمام هذه البنود: **مرشح اختبار ميداني، وليس إصدار Production نهائيًا**.
