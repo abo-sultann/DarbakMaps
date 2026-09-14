@@ -6,6 +6,9 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.net.Uri;
@@ -31,6 +34,7 @@ import com.abosultan.darbakmaps.data.LegacyMigration;
 import com.abosultan.darbakmaps.data.PlaceRepository;
 import com.abosultan.darbakmaps.data.TrackStorage;
 import com.abosultan.darbakmaps.data.BackgroundTrackStore;
+import com.abosultan.darbakmaps.data.TrackRenderGate;
 import com.abosultan.darbakmaps.location.LocationController;
 import com.abosultan.darbakmaps.map.DarbakPreviewMapView;
 import com.abosultan.darbakmaps.map.MapStorage;
@@ -57,6 +61,15 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final OfflineMapSearchEngine searchEngine = new OfflineMapSearchEngine();
+    private final TrackRenderGate trackRenderGate = new TrackRenderGate();
+    private boolean trackReceiverRegistered;
+    private final BroadcastReceiver trackCommitReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent == null || !BackgroundTrackService.ACTION_TRACK_COMMITTED.equals(intent.getAction())) return;
+            long generation = intent.getLongExtra(BackgroundTrackService.EXTRA_GENERATION, 0L);
+            requestCommittedTrackRender(generation);
+        }
+    };
 
     private LicenseManager licenseManager;
     private LocationController locationController;
@@ -624,7 +637,6 @@ public final class MainActivity extends Activity implements LocationController.C
             onBackgroundTrackSettingChanged(true);
         }
         boolean paused = TrackSessionState.togglePaused(this);
-        if (!paused && mapController != null) mapController.startTrackSegment();
         syncBackgroundTrackUi();
         toast(paused
                 ? "توقف التسجيل التلقائي مؤقتًا — السجل محفوظ"
@@ -675,13 +687,18 @@ public final class MainActivity extends Activity implements LocationController.C
 
     private void restoreActiveTrack() {
         if (!MapUiPreferences.backgroundTrackEnabled(this) || mapController == null) return;
-        mapController.beginTrack();
+        requestCommittedTrackRender(BackgroundTrackStore.generation(this));
+    }
+
+    private void requestCommittedTrackRender(long minimumGeneration) {
+        if (mapController == null) return;
+        final long token = trackRenderGate.request(minimumGeneration);
         ioExecutor.execute(() -> {
-            List<GeoPoint> points = BackgroundTrackStore.loadActive(this);
+            BackgroundTrackStore.Snapshot snapshot = BackgroundTrackStore.loadActiveSnapshot(this);
             runOnUiThread(() -> {
-                if (!isActivityUnavailable() && mapController != null && points.size() >= 2) {
-                    mapController.showActiveTrack(points);
-                }
+                if (isActivityUnavailable() || mapController == null) return;
+                if (!trackRenderGate.mayApply(token, snapshot.generation)) return;
+                mapController.showActiveTrack(snapshot.points);
             });
         });
     }
@@ -1034,9 +1051,6 @@ public final class MainActivity extends Activity implements LocationController.C
                 mapController.updateLocation(location.getLatitude(), location.getLongitude(),
                         location.hasBearing() ? location.getBearing() : Float.NaN);
             }
-            if (MapUiPreferences.backgroundTrackEnabled(this) && !TrackSessionState.isPaused(this) && mapController != null) {
-                mapController.addTrackPoint(location.getLatitude(), location.getLongitude());
-            }
             NavigationGuidance.update(this, location);
             BacktrackGuidance.update(this, location);
             SavedPlacesDialog.updateLocation(location);
@@ -1104,8 +1118,13 @@ public final class MainActivity extends Activity implements LocationController.C
             locationController.start();
         }
         if (initialized) {
+            if (!trackReceiverRegistered) {
+                registerReceiver(trackCommitReceiver, new IntentFilter(BackgroundTrackService.ACTION_TRACK_COMMITTED));
+                trackReceiverRegistered = true;
+            }
             BackgroundTrackService.ensureRunning(this);
             syncBackgroundTrackUi();
+            restoreActiveTrack();
             showPendingTrackResult();
         }
     }
@@ -1135,9 +1154,11 @@ public final class MainActivity extends Activity implements LocationController.C
 
     @Override
     protected void onPause() {
-        if (locationController != null) {
-            locationController.stop();
+        if (trackReceiverRegistered) {
+            try { unregisterReceiver(trackCommitReceiver); } catch (RuntimeException ignored) {}
+            trackReceiverRegistered = false;
         }
+        if (locationController != null) locationController.stop();
         super.onPause();
     }
 

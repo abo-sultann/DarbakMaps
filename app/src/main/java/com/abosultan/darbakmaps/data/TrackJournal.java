@@ -57,31 +57,101 @@ public final class TrackJournal {
         recoverInterruptedTrim(file);
         List<GeoPoint> points = new ArrayList<>();
         if (!file.isFile()) return points;
-        long count = 0;
+        final int boundedLimit = Math.max(16, limit);
+
+        long count = 0L;
         try (BufferedReader in = new BufferedReader(new FileReader(file))) {
-            String s;
-            while ((s = in.readLine()) != null) if (parse(s, false) != null) count++;
+            String line;
+            while ((line = in.readLine()) != null) if (parse(line, false) != null) count++;
         }
-        long step = Math.max(1, (count + Math.max(2, limit) - 1) / Math.max(2, limit));
+        if (count <= boundedLimit) {
+            try (BufferedReader in = new BufferedReader(new FileReader(file))) {
+                String line;
+                boolean segmentStart = true;
+                while ((line = in.readLine()) != null) {
+                    if (line.startsWith("#segment")) { segmentStart = true; continue; }
+                    GeoPoint pnt = parse(line, segmentStart);
+                    if (pnt == null) continue;
+                    points.add(pnt);
+                    segmentStart = false;
+                }
+            }
+            return points;
+        }
+
+        // Streaming largest-turn-per-bucket sampler. Memory remains O(limit), while every segment
+        // boundary and each bucket's strongest bend are preferred over blind every-Nth sampling.
+        long bucketSize = Math.max(2L, (count + boundedLimit - 1L) / boundedLimit);
         try (BufferedReader in = new BufferedReader(new FileReader(file))) {
-            String s;
-            long index = 0;
-            boolean segment = true;
-            while ((s = in.readLine()) != null) {
-                if (s.startsWith("#segment")) {
-                    segment = true;
+            String line;
+            long validIndex = 0L;
+            boolean segmentStart = true;
+            GeoPoint previousKept = null;
+            GeoPoint candidate = null;
+            GeoPoint candidatePrev = null;
+            double candidateTurn = -1d;
+            long bucket = -1L;
+            while ((line = in.readLine()) != null) {
+                if (line.startsWith("#segment")) {
+                    if (candidate != null) addPreviewPoint(points, candidate, candidate.segmentStart);
+                    candidate = null; candidatePrev = null; candidateTurn = -1d;
+                    previousKept = points.isEmpty() ? null : points.get(points.size() - 1);
+                    segmentStart = true;
+                    bucket = -1L;
                     continue;
                 }
-                GeoPoint p = parse(s, segment);
-                if (p == null) continue;
-                if (index % step == 0 || index == count - 1) {
-                    points.add(new GeoPoint(p.latitude, p.longitude, p.timeMillis, segment));
-                    segment = false;
+                GeoPoint current = parse(line, segmentStart);
+                if (current == null) continue;
+                long currentBucket = validIndex / bucketSize;
+                if (segmentStart) {
+                    addPreviewPoint(points, current, true);
+                    previousKept = current;
+                    candidate = null; candidatePrev = null; candidateTurn = -1d;
+                    bucket = currentBucket;
+                    segmentStart = false;
+                    validIndex++;
+                    continue;
                 }
-                index++;
+                if (bucket != currentBucket) {
+                    if (candidate != null) {
+                        addPreviewPoint(points, candidate, false);
+                        previousKept = candidate;
+                    }
+                    candidate = current;
+                    candidatePrev = previousKept;
+                    candidateTurn = -1d;
+                    bucket = currentBucket;
+                } else {
+                    double turn = triangleArea(previousKept, candidate, current);
+                    if (candidate == null || turn >= candidateTurn) {
+                        candidatePrev = previousKept;
+                        candidate = current;
+                        candidateTurn = turn;
+                    }
+                }
+                validIndex++;
             }
+            if (candidate != null) addPreviewPoint(points, candidate, candidate.segmentStart);
         }
         return points;
+    }
+
+    private static void addPreviewPoint(List<GeoPoint> points, GeoPoint point, boolean segmentStart) {
+        if (point == null) return;
+        if (!points.isEmpty()) {
+            GeoPoint last = points.get(points.size() - 1);
+            if (last.latitude == point.latitude && last.longitude == point.longitude && last.timeMillis == point.timeMillis) return;
+        }
+        points.add(new GeoPoint(point.latitude, point.longitude, point.timeMillis, segmentStart));
+    }
+
+    private static double triangleArea(GeoPoint a, GeoPoint b, GeoPoint c) {
+        if (a == null || b == null || c == null) return 0d;
+        double scale = Math.cos(Math.toRadians(b.latitude));
+        double ax = a.longitude * scale, ay = a.latitude;
+        double bx = b.longitude * scale, by = b.latitude;
+        double cx = c.longitude * scale, cy = c.latitude;
+        return Math.abs((ax - cx) * (by - ay) - (ax - bx) * (cy - ay));
     }
 
     /** Returns connected-track distance only; segment gaps never contribute distance. */

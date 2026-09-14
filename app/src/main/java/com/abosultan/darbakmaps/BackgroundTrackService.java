@@ -33,6 +33,9 @@ public final class BackgroundTrackService extends Service implements LocationLis
     private static final String ACTION_STOP = "com.abosultan.darbakmaps.TRACK_STOP";
     private static final String ACTION_RETRY_FINALIZE = "com.abosultan.darbakmaps.TRACK_RETRY_FINALIZE";
     public static final String ACTION_FINALIZE_RESULT = "com.abosultan.darbakmaps.TRACK_FINALIZE_RESULT";
+    public static final String ACTION_TRACK_COMMITTED = "com.abosultan.darbakmaps.TRACK_COMMITTED";
+    public static final String EXTRA_GENERATION = "generation";
+    public static final String EXTRA_TRIMMED = "trimmed";
     public static final String EXTRA_SUCCESS = "success";
     public static final String EXTRA_MESSAGE = "message";
     public static final String EXTRA_FILE = "file";
@@ -273,9 +276,15 @@ public final class BackgroundTrackService extends Service implements LocationLis
             }
 
             try {
-                BackgroundTrackStore.append(this, accepted, newSegment, connectedMeters);
+                BackgroundTrackStore.AppendResult append = BackgroundTrackStore.append(
+                        this, accepted, newSegment, connectedMeters);
                 if (newSegment) TrackSessionState.markSegmentWritten(this);
                 TrackSessionState.onCommittedFix(this, accepted);
+                Intent committed = new Intent(ACTION_TRACK_COMMITTED);
+                committed.setPackage(getPackageName());
+                committed.putExtra(EXTRA_GENERATION, append.generation);
+                committed.putExtra(EXTRA_TRIMMED, append.trimmed);
+                sendBroadcast(committed);
                 lastAccepted = new Location(accepted);
                 lastAcceptedElapsedMs = receivedElapsed;
                 TrackRuntimeState.clearWriteError(this);

@@ -325,31 +325,12 @@ public final class OfflineMapController {
     }
 
     public void beginTrack() {
-        clearActiveTrackLayers();
-        startTrackSegment();
+        // Rendering is replaced only from a committed journal snapshot.
     }
 
     public void startTrackSegment() {
-        while (activeTrackSegments.size() >= MAX_ACTIVE_DRAW_SEGMENTS) {
-            Polyline oldest = activeTrackSegments.remove(0);
-            mapView.getLayerManager().getLayers().remove(oldest);
-        }
-        activeTrack = newTrackPolyline(255, 236, 122, 37, 7f);
-        activeTrackSegments.add(activeTrack);
-        mapView.getLayerManager().getLayers().add(activeTrack);
-    }
-
-    public void addTrackPoint(double latitude, double longitude) {
-        if (activeTrack == null) startTrackSegment();
-        if (activeTrackPointCount >= MAX_ACTIVE_DRAW_POINTS) {
-            // Bound only the live representation. The authoritative journal/GPX remains complete.
-            clearActiveTrackLayers();
-            startTrackSegment();
-            activeTrackPointCount = 0;
-        }
-        activeTrack.addPoint(new LatLong(latitude, longitude));
-        activeTrackPointCount++;
-        mapView.getLayerManager().redrawLayers();
+        // Retained for binary/source compatibility. The service decides segment boundaries and
+        // showActiveTrack() renders the resulting committed snapshot.
     }
 
     private void drawSegmentedTrack(List<GeoPoint> points, List<Polyline> targetLayers, int maxPoints,
