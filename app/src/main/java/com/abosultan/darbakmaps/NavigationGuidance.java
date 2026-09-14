@@ -58,10 +58,22 @@ public final class NavigationGuidance {
 
     public static void update(Activity activity, Location location) {
         if (!isActive(activity) || location == null) return;
-        double lat = targetLat(activity);
-        double lon = targetLon(activity);
+        render(activity, location, targetName(activity), targetLat(activity), targetLon(activity), true);
+    }
+
+    /** Render a transient target without replacing the persisted saved-place destination. */
+    public static void guideTo(Activity activity, Location location, String name,
+                               double latitude, double longitude, boolean allowArrivalToast) {
+        if (activity == null || location == null) return;
+        MapRuntimeBridge.navigateTo(activity, latitude, longitude);
+        render(activity, location, name == null ? "رجوع على المسار" : name,
+                latitude, longitude, allowArrivalToast);
+    }
+
+    private static void render(Activity activity, Location location, String targetName,
+                               double latitude, double longitude, boolean allowArrivalToast) {
         float[] result = new float[3];
-        Location.distanceBetween(location.getLatitude(), location.getLongitude(), lat, lon, result);
+        Location.distanceBetween(location.getLatitude(), location.getLongitude(), latitude, longitude, result);
         float meters = Math.max(0f, result[0]);
         float targetBearing = normalize(result[1]);
         float vehicleBearing = location.hasBearing() ? normalize(location.getBearing()) : 0f;
@@ -74,7 +86,7 @@ public final class NavigationGuidance {
         TextView detail = activity.findViewById(R.id.nav_detail);
         if (panel != null) panel.setVisibility(View.VISIBLE);
         if (arrow != null) arrow.setRotation(relative);
-        if (name != null) name.setText(targetName(activity));
+        if (name != null) name.setText(targetName);
         if (distance != null) distance.setText(formatDistance(meters));
 
         String eta = "";
@@ -89,9 +101,9 @@ public final class NavigationGuidance {
                     mode, Math.round(targetBearing), eta, warning));
         }
 
-        if (meters <= 40f && !arrivalShown) {
+        if (allowArrivalToast && meters <= 40f && !arrivalShown) {
             arrivalShown = true;
-            Toast.makeText(activity, "وصلت إلى " + targetName(activity), Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, "وصلت إلى " + targetName, Toast.LENGTH_SHORT).show();
         }
     }
 
