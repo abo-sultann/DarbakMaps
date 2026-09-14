@@ -497,7 +497,7 @@ public final class OfflineMapController {
         Canvas canvas = new Canvas(bitmap);
 
         Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
-        bg.setColor(Color.argb(235, 7, 17, 29));
+        bg.setColor(Color.argb(235, 8, 39, 31));
         canvas.drawRoundRect(new RectF(1, 1, width - 1, height - 8), 18, 18, bg);
 
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);

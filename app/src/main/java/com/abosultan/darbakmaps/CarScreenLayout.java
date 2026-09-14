@@ -49,7 +49,7 @@ final class CarScreenLayout {
         searchBox.setGravity(Gravity.CENTER_VERTICAL);
         searchBox.setOrientation(LinearLayout.HORIZONTAL);
         searchBox.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
-        searchBox.setBackground(round(Color.argb(238, 17, 29, 43), dp(activity, 24), Color.argb(100, 216, 180, 91)));
+        searchBox.setBackground(round(Color.argb(238, 16, 52, 42), dp(activity, 24), Color.argb(100, 216, 180, 91)));
         EditText search = new EditText(activity);
         search.setId(R.id.search_input);
         search.setSingleLine(true);
@@ -81,7 +81,7 @@ final class CarScreenLayout {
         TextView gps = label(activity, "GPS بانتظار الإشارة", TEXT, 13f, Gravity.CENTER);
         gps.setId(R.id.gps_status);
         gps.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
-        gps.setBackground(round(Color.argb(232, 17, 29, 43), dp(activity, 18), Color.argb(75, 216, 180, 91)));
+        gps.setBackground(round(Color.argb(232, 16, 52, 42), dp(activity, 18), Color.argb(75, 216, 180, 91)));
         tools.addView(gps, frame(-2, dp(activity, 36), Gravity.TOP | Gravity.RIGHT, dp(activity, 14), dp(activity, 78), 0, 0));
 
 
@@ -90,7 +90,7 @@ final class CarScreenLayout {
         navPanel.setOrientation(LinearLayout.HORIZONTAL);
         navPanel.setGravity(Gravity.CENTER_VERTICAL);
         navPanel.setPadding(dp(activity, 14), dp(activity, 6), dp(activity, 14), dp(activity, 6));
-        navPanel.setBackground(round(Color.argb(246, 7, 17, 29), dp(activity, 20), Color.argb(160, 215, 173, 85)));
+        navPanel.setBackground(round(Color.argb(246, 8, 39, 31), dp(activity, 20), Color.argb(160, 216, 180, 91)));
         TextView navArrow = label(activity, "➤", GOLD, 34f, Gravity.CENTER);
         navArrow.setId(R.id.nav_arrow);
         navPanel.addView(navArrow, new LinearLayout.LayoutParams(dp(activity, 58), -1));
@@ -109,7 +109,7 @@ final class CarScreenLayout {
         navPanel.addView(navText, new LinearLayout.LayoutParams(0, -1, 1f));
         TextView navStop = label(activity, "×", TEXT, 25f, Gravity.CENTER);
         navStop.setId(R.id.nav_stop);
-        navStop.setBackground(round(SURFACE_ALT, dp(activity, 14), Color.argb(85, 215, 173, 85)));
+        navStop.setBackground(round(SURFACE_ALT, dp(activity, 14), Color.argb(85, 216, 180, 91)));
         navPanel.addView(navStop, new LinearLayout.LayoutParams(dp(activity, 42), dp(activity, 42)));
         navPanel.setVisibility(View.GONE);
         tools.addView(navPanel, frame(dp(activity, 470), dp(activity, 88), Gravity.TOP | Gravity.CENTER_HORIZONTAL,
@@ -144,7 +144,7 @@ final class CarScreenLayout {
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(dp(activity, 8), dp(activity, 4), dp(activity, 8), dp(activity, 4));
-        dock.setBackground(round(Color.argb(242, 7, 17, 29), dp(activity, 22), Color.argb(105, 216, 180, 91)));
+        dock.setBackground(round(Color.argb(242, 8, 39, 31), dp(activity, 22), Color.argb(105, 216, 180, 91)));
                 dock.addView(dockAction(activity, "حفظ موقع", R.id.action_save), weighted());
         dock.addView(dockAction(activity, "المسار", R.id.action_record), weighted());
         dock.addView(dockAction(activity, "المحفوظات", R.id.action_saved), weighted());
@@ -159,7 +159,7 @@ final class CarScreenLayout {
         speedPill.setOrientation(LinearLayout.HORIZONTAL);
         speedPill.setGravity(Gravity.CENTER);
         speedPill.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
-        speedPill.setBackground(round(Color.argb(218, 7, 17, 29), dp(activity, 18), Color.argb(65, 216, 180, 91)));
+        speedPill.setBackground(round(Color.argb(218, 8, 39, 31), dp(activity, 18), Color.argb(65, 216, 180, 91)));
         TextView speed = label(activity, "—", TEXT, 31f, Gravity.CENTER);
         speed.setId(R.id.speed_value);
         speedPill.addView(speed, new LinearLayout.LayoutParams(dp(activity, 62), -1));
@@ -172,7 +172,7 @@ final class CarScreenLayout {
         trackStatsPanel.setId(R.id.track_stats_panel);
         trackStatsPanel.setGravity(Gravity.CENTER);
         trackStatsPanel.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
-        trackStatsPanel.setBackground(round(Color.argb(228, 7, 17, 29), dp(activity, 16), Color.argb(95, 215, 173, 85)));
+        trackStatsPanel.setBackground(round(Color.argb(228, 8, 39, 31), dp(activity, 16), Color.argb(95, 216, 180, 91)));
         TextView trackStats = label(activity, "", TEXT, 12f, Gravity.CENTER);
         trackStats.setId(R.id.track_stats_text);
         trackStatsPanel.addView(trackStats, new LinearLayout.LayoutParams(-1, -1));
@@ -185,7 +185,7 @@ final class CarScreenLayout {
         empty.setOrientation(LinearLayout.VERTICAL);
         empty.setGravity(Gravity.CENTER);
         empty.setPadding(dp(activity, 28), dp(activity, 22), dp(activity, 28), dp(activity, 22));
-        empty.setBackground(round(Color.argb(248, 17, 29, 43), dp(activity, 24), Color.argb(100, 216, 180, 91)));
+        empty.setBackground(round(Color.argb(248, 16, 52, 42), dp(activity, 24), Color.argb(100, 216, 180, 91)));
         empty.addView(label(activity, "الخريطة غير محمّلة", TEXT, 21f, Gravity.CENTER), new LinearLayout.LayoutParams(-1, dp(activity, 42)));
         Button download = button(activity, "خريطة دربك", R.id.download_map, PRIMARY, NIGHT);
         download.setVisibility(View.GONE);
@@ -199,7 +199,7 @@ final class CarScreenLayout {
 
         TextView attribution = label(activity, "© OpenStreetMap", MUTED, 9f, Gravity.CENTER);
         attribution.setPadding(dp(activity, 6), dp(activity, 2), dp(activity, 6), dp(activity, 2));
-        attribution.setBackground(round(Color.argb(190, 7, 17, 29), dp(activity, 8), Color.TRANSPARENT));
+        attribution.setBackground(round(Color.argb(190, 8, 39, 31), dp(activity, 8), Color.TRANSPARENT));
         root.addView(attribution, frame(-2, -2, Gravity.BOTTOM | Gravity.LEFT, 0, 0, dp(activity, 8), dp(activity, 6)));
 
         map.post(map::showToolsTemporarily);
@@ -215,7 +215,7 @@ final class CarScreenLayout {
     private static TextView control(Activity activity, String text, int id, float size) {
         TextView view = label(activity, text, PRIMARY, size, Gravity.CENTER);
         view.setId(id);
-        view.setBackground(round(Color.argb(242, 17, 29, 43), dp(activity, 24), Color.argb(75, 216, 180, 91)));
+        view.setBackground(round(Color.argb(242, 16, 52, 42), dp(activity, 24), Color.argb(75, 216, 180, 91)));
         return view;
     }
 
@@ -254,7 +254,7 @@ final class CarScreenLayout {
     private static TextView panelAction(Activity activity, String text) {
         TextView view = label(activity, text, TEXT, 14f, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         view.setPadding(dp(activity, 14), 0, dp(activity, 14), 0);
-        view.setBackground(round(SURFACE_ALT, dp(activity, 16), Color.argb(60, 215, 173, 85)));
+        view.setBackground(round(SURFACE_ALT, dp(activity, 16), Color.argb(60, 216, 180, 91)));
         return view;
     }
 

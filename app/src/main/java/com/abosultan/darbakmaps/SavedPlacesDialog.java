@@ -2,6 +2,7 @@ package com.abosultan.darbakmaps;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.DialogInterface;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -63,7 +64,7 @@ public final class SavedPlacesDialog {
         private final PlaceRepository repository;
         private final Navigator navigator;
         private final PlacesAdapter adapter;
-        private AlertDialog dialog;
+        private Dialog dialog;
         private ListView list;
         private Location location;
         private String iconFilter;
@@ -86,6 +87,13 @@ public final class SavedPlacesDialog {
             root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
             root.setPadding(dp(14), dp(10), dp(14), dp(10));
             root.setBackground(round(Color.rgb(8, 39, 31), dp(22), Color.argb(150, 216, 180, 91)));
+
+            TextView heading = new TextView(activity);
+            heading.setText("المواقع المحفوظة");
+            heading.setTextSize(22f);
+            heading.setTextColor(Color.rgb(247, 242, 231));
+            heading.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            root.addView(heading, new LinearLayout.LayoutParams(-1, dp(38)));
 
             TextView help = new TextView(activity);
             help.setText("اضغط للتوجيه • ضغط مطوّل للتعديل أو الحذف");
@@ -149,14 +157,36 @@ public final class SavedPlacesDialog {
             });
             root.addView(list, new LinearLayout.LayoutParams(-1, dp(350)));
 
-            dialog = new AlertDialog.Builder(activity)
-                    .setTitle("المواقع المحفوظة")
-                    .setView(root)
-                    .setNegativeButton("إغلاق", null)
-                    .create();
+            TextView close = new TextView(activity);
+            close.setText("إغلاق");
+            close.setTextSize(14f);
+            close.setTextColor(Color.rgb(185, 179, 165));
+            close.setGravity(Gravity.CENTER);
+            close.setBackground(round(Color.rgb(16, 52, 42), dp(14), Color.argb(50, 216, 180, 91)));
+            close.setOnClickListener(v -> { if (dialog != null) dialog.dismiss(); });
+            LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(dp(150), dp(42));
+            closeParams.gravity = Gravity.CENTER;
+            closeParams.topMargin = dp(8);
+            root.addView(close, closeParams);
+
+            dialog = new Dialog(activity);
+            dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+            dialog.setContentView(root);
             dialog.setOnDismissListener(d -> {
                 Panel current = active.get();
                 if (current == this) active.clear();
+            });
+            dialog.setOnShowListener(d -> {
+                android.view.Window window = dialog.getWindow();
+                if (window != null) {
+                    window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                    window.setLayout(dp(820), dp(520));
+                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                    window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LOW_PROFILE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+                }
             });
             dialog.show();
             rebuild(true);
@@ -256,35 +286,24 @@ public final class SavedPlacesDialog {
         }
 
         private void showEditDelete(PlaceRepository.Place place) {
-            String[] actions = {"تعديل", "حذف"};
-            new AlertDialog.Builder(activity)
-                    .setTitle(place.name)
-                    .setItems(actions, (d, which) -> {
-                        if (which == 0) {
-                            PointEditor.show(activity, place.latitude, place.longitude, place);
-                        } else {
-                            confirmDelete(place);
-                        }
-                    })
-                    .setNegativeButton("إلغاء", null)
-                    .show();
+            String[] actions = {"تعديل الموقع", "حذف الموقع"};
+            DarbakChoiceDialog.show(activity, place.name,
+                    "إدارة الموقع المحفوظ", actions, which -> {
+                        if (which == 0) PointEditor.show(activity, place.latitude, place.longitude, place);
+                        else confirmDelete(place);
+                    });
         }
 
         private void confirmDelete(PlaceRepository.Place place) {
-            new AlertDialog.Builder(activity)
-                    .setTitle("حذف الموقع؟")
-                    .setMessage(place.name)
-                    .setNegativeButton("إلغاء", null)
-                    .setPositiveButton("حذف", (d, w) -> {
+            DarbakConfirmDialog.show(activity, "حذف الموقع؟", place.name,
+                    "حذف", true, () -> {
                         try {
                             if (!repository.delete(place.id)) throw new IllegalStateException("الموقع لم يعد موجودًا");
                             MapRuntimeBridge.refreshSavedPlaces(activity);
                             rebuild(true);
-                            new AlertDialog.Builder(activity)
-                                    .setTitle("تم حذف الموقع")
-                                    .setMessage("يمكن التراجع الآن دون تغيير الإحداثيات أو الأيقونة.")
-                                    .setNegativeButton("إغلاق", null)
-                                    .setPositiveButton("تراجع", (undoDialog, undoWhich) -> {
+                            DarbakConfirmDialog.show(activity, "تم حذف الموقع",
+                                    "يمكن التراجع الآن دون تغيير الإحداثيات أو الأيقونة.",
+                                    "تراجع", false, () -> {
                                         try {
                                             repository.restore(place);
                                             MapRuntimeBridge.refreshSavedPlaces(activity);
@@ -292,15 +311,13 @@ public final class SavedPlacesDialog {
                                         } catch (RuntimeException error) {
                                             Toast.makeText(activity, "تعذر التراجع عن الحذف", Toast.LENGTH_SHORT).show();
                                         }
-                                    })
-                                    .show();
+                                    });
                         } catch (RuntimeException error) {
                             Toast.makeText(activity,
                                     error.getMessage() == null ? "تعذر حذف الموقع" : error.getMessage(),
                                     Toast.LENGTH_LONG).show();
                         }
-                    })
-                    .show();
+                    });
         }
     }
 

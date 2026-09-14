@@ -292,46 +292,45 @@ public final class MainActivity extends Activity implements LocationController.C
             else toast(MapStorage.activeMap(this).isFile() ? "لا توجد نتائج مطابقة" : "أضف خريطة دربك للبحث في المعالم");
             return;
         }
-        String[] labels = new String[results.size()];
+        int extra = queryMore ? 1 : 0;
+        String[] labels = new String[results.size() + extra];
         for (int i = 0; i < results.size(); i++) {
             OfflineMapSearchEngine.Result result = results.get(i);
             String distance = formatDistance(result.distanceMeters);
-            labels[i] = result.name + "\n" + result.source + (distance.isEmpty() ? "" : " • " + distance);
+            labels[i] = result.name + "   •   " + result.source + (distance.isEmpty() ? "" : "   •   " + distance);
         }
-        String state = complete ? "نتائج البحث" : "نتائج من الجزء المفهرس — الفهرسة مستمرة";
-        if (failed) state += " • تعذر جزء من الخريطة";
-        AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle(state + (request.offset > 0 ? " • صفحة " + (request.offset / Math.max(1, request.limit) + 1) : ""))
-                .setItems(labels, (dialog, which) -> showSearchResultActions(results.get(which)))
-                .setNegativeButton("إغلاق", null);
-        if (queryMore) builder.setPositiveButton("المزيد", (dialog, which) -> {
-            OfflineMapSearchEngine.SearchRequest next = searchEngine.nextPageRequest(request);
-            if (next != null && next != request) executeSearch(next, "بحث");
-        });
-        showImmersive(builder.create());
+        if (queryMore) labels[labels.length - 1] = "عرض المزيد من النتائج";
+        String state = complete ? "نتائج البحث" : "نتائج الجزء المفهرس";
+        if (failed) state += " • يوجد جزء تعذر قراءته";
+        int page = request.offset > 0 ? request.offset / Math.max(1, request.limit) + 1 : 1;
+        DarbakChoiceDialog.show(this, state,
+                "صفحة " + page + " • اختر نتيجة لعرض الخيارات",
+                labels, index -> {
+                    if (index < results.size()) {
+                        showSearchResultActions(results.get(index));
+                    } else {
+                        OfflineMapSearchEngine.SearchRequest next = searchEngine.nextPageRequest(request);
+                        if (next != null && next != request) executeSearch(next, "بحث");
+                    }
+                }, queryMore ? labels.length - 1 : -1);
     }
 
     private void showSearchResultActions(OfflineMapSearchEngine.Result result) {
         String distance = formatDistance(result.distanceMeters);
-        String[] actions = {"عرض على الخريطة", "حفظ بالأيقونة", "توجيه مباشر", "البحث حول هذا المعلم"};
-        String message = result.source + (distance.isEmpty() ? "" : " • " + distance)
-                + "\n" + coordinates(result.latitude, result.longitude);
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(result.name)
-                .setMessage(message)
-                .setItems(actions, (dialog, which) -> {
-                    if (which == 0) {
-                        if (mapController != null) mapController.showPoint(result.latitude, result.longitude);
-                    } else if (which == 1) {
-                        PointEditor.show(this, result.latitude, result.longitude, null);
-                    } else if (which == 2) {
-                        startDirectNavigation(result.name, result.latitude, result.longitude);
-                    } else {
-                        showNearbySearchOptions(result.latitude, result.longitude, result.name);
-                    }
-                })
-                .setNegativeButton("إغلاق", null)
-                .create());
+        String[] actions = {"عرض على الخريطة", "حفظ الموقع", "توجيه مباشر", "البحث حول هذا المعلم"};
+        String detail = result.source + (distance.isEmpty() ? "" : " • " + distance)
+                + " • " + coordinates(result.latitude, result.longitude);
+        DarbakChoiceDialog.show(this, result.name, detail, actions, which -> {
+            if (which == 0) {
+                if (mapController != null) mapController.showPoint(result.latitude, result.longitude);
+            } else if (which == 1) {
+                PointEditor.show(this, result.latitude, result.longitude, null);
+            } else if (which == 2) {
+                startDirectNavigation(result.name, result.latitude, result.longitude);
+            } else {
+                showNearbySearchOptions(result.latitude, result.longitude, result.name);
+            }
+        });
     }
 
     void showNearbySearchFromCurrentLocation() {
@@ -348,21 +347,17 @@ public final class MainActivity extends Activity implements LocationController.C
                 OfflineMapSearchEngine.CATEGORY_MOUNTAINS, OfflineMapSearchEngine.CATEGORY_LANDMARKS,
                 OfflineMapSearchEngine.CATEGORY_VILLAGES, OfflineMapSearchEngine.CATEGORY_WATER,
                 OfflineMapSearchEngine.CATEGORY_SERVICES };
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("بحث حول " + centerLabel)
-                .setItems(categories, (dialog, categoryIndex) -> showNearbyRadiusPicker(latitude, longitude, centerLabel, categories[categoryIndex]))
-                .setNegativeButton("إلغاء", null)
-                .create());
+        DarbakChoiceDialog.show(this, "بحث حول " + centerLabel,
+                "اختر نوع المعالم", categories,
+                categoryIndex -> showNearbyRadiusPicker(latitude, longitude, centerLabel, categories[categoryIndex]));
     }
 
     private void showNearbyRadiusPicker(double latitude, double longitude, String centerLabel, String category) {
         int[] radii = {5, 10, 25, 50, 100};
         String[] labels = {"5 كم", "10 كم", "25 كم", "50 كم", "100 كم"};
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle(category + " • حول " + centerLabel)
-                .setItems(labels, (dialog, which) -> runNearbySearch(latitude, longitude, centerLabel, category, radii[which]))
-                .setNegativeButton("إلغاء", null)
-                .create());
+        DarbakChoiceDialog.show(this, category,
+                "نطاق البحث حول " + centerLabel, labels,
+                which -> runNearbySearch(latitude, longitude, centerLabel, category, radii[which]));
     }
 
     private void runNearbySearch(double latitude, double longitude, String centerLabel, String category, int radiusKm) {
@@ -384,14 +379,11 @@ public final class MainActivity extends Activity implements LocationController.C
         if (places == null || places.isEmpty()) return;
         String[] labels = new String[places.size()];
         for (int i = 0; i < places.size(); i++) labels[i] = places.get(i).name;
-        showImmersive(new AlertDialog.Builder(this)
-                .setTitle("عدة مواقع في نفس المكان")
-                .setItems(labels, (dialog, which) -> {
+        DarbakChoiceDialog.show(this, "مواقع متقاربة",
+                "اختر الموقع المطلوب بدقة", labels, which -> {
                     PlaceRepository.Place selected = places.get(which);
                     startDirectNavigation(selected.name, selected.latitude, selected.longitude);
-                })
-                .setNegativeButton("إلغاء", null)
-                .create());
+                });
     }
 
     private void startDirectNavigation(String name, double latitude, double longitude) {
@@ -482,22 +474,27 @@ public final class MainActivity extends Activity implements LocationController.C
     private void showSavedHub() {
         String[] items = { "المواقع المحفوظة (" + placeRepository.all().size() + ")", "الأقرب إلى موقعي",
                 "حفظ نسخة من آخر 1000 كم", "المسارات السابقة (" + TrackStorage.list(this).length + ")" };
-        showImmersive(new AlertDialog.Builder(this).setTitle("المحفوظات والمسارات")
-                .setItems(items, (dialog, which) -> {
+        DarbakChoiceDialog.show(this, "المحفوظات والمسارات",
+                "مواقعك ومساراتك محفوظة محليًا", items, which -> {
                     if (which == 0) showPlaces(placeRepository.all(), "المواقع المحفوظة");
                     else if (which == 1) showNearbyPlaces();
                     else if (which == 2) saveAutomaticTrackSnapshot();
                     else showTracks();
-                }).setNegativeButton("إغلاق", null).create());
+                });
     }
 
     private void showPlaces(List<PlaceRepository.Place> places, String title) {
         if (places.isEmpty()) { toast("لا توجد مواقع محفوظة بعد"); return; }
         String[] labels = new String[places.size()];
-        for (int i = 0; i < places.size(); i++) labels[i] = places.get(i).name + "\n" + coordinates(places.get(i).latitude, places.get(i).longitude);
-        showImmersive(new AlertDialog.Builder(this).setTitle(title)
-                .setItems(labels, (dialog, which) -> { PlaceRepository.Place place = places.get(which); startDirectNavigation(place.name, place.latitude, place.longitude); })
-                .setNegativeButton("إغلاق", null).create());
+        for (int i = 0; i < places.size(); i++) {
+            PlaceRepository.Place place = places.get(i);
+            labels[i] = place.name + "   •   " + coordinates(place.latitude, place.longitude);
+        }
+        DarbakChoiceDialog.show(this, title,
+                "اختر موقعًا لبدء التوجيه المباشر", labels, which -> {
+                    PlaceRepository.Place place = places.get(which);
+                    startDirectNavigation(place.name, place.latitude, place.longitude);
+                });
     }
 
     private void showNearbyPlaces() {
@@ -512,8 +509,8 @@ public final class MainActivity extends Activity implements LocationController.C
         if (tracks.length == 0) { toast("لا توجد مسارات محفوظة بعد"); return; }
         String[] names = new String[tracks.length];
         for (int i = 0; i < tracks.length; i++) names[i] = tracks[i].getName();
-        showImmersive(new AlertDialog.Builder(this).setTitle("المسارات السابقة")
-                .setItems(names, (dialog, which) -> openTrack(tracks[which])).setNegativeButton("إغلاق", null).create());
+        DarbakChoiceDialog.show(this, "المسارات السابقة",
+                "اختر مسارًا لعرضه على الخريطة", names, which -> openTrack(tracks[which]));
     }
 
     private void openTrack(File file) {
@@ -531,10 +528,10 @@ public final class MainActivity extends Activity implements LocationController.C
     }
 
     private void promptBacktrack(File file) {
-        showImmersive(new AlertDialog.Builder(this).setTitle("مسار محفوظ")
-                .setMessage("يمكن عرض المسار فقط، أو تشغيل وضع العودة لاتباع نفس الأثر بالعكس دون حساب طريق جديد.")
-                .setNegativeButton("عرض فقط", null)
-                .setPositiveButton("ابدأ العودة", (dialog, which) -> startBacktrack(file)).create());
+        String[] actions = {"عرض المسار فقط", "ابدأ العودة على نفس الأثر"};
+        DarbakChoiceDialog.show(this, "مسار محفوظ",
+                "يمكن عرضه فقط أو اتباع نفس الأثر بالعكس دون حساب طريق جديد.",
+                actions, which -> { if (which == 1) startBacktrack(file); }, 1);
     }
 
     private void startBacktrack(File file) {

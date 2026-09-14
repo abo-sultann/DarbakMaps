@@ -80,16 +80,14 @@ final class DarbakMapContainer extends FrameLayout {
         Activity activity = (Activity) getContext();
         MapRuntimeBridge.showPoint(point.latitude, point.longitude);
         String[] actions = {"حفظ موقع هنا", "البحث حول هذه النقطة"};
-        new AlertDialog.Builder(activity)
-                .setTitle("النقطة المحددة")
-                .setItems(actions, (dialog, which) -> {
+        DarbakChoiceDialog.show(activity, "النقطة المحددة",
+                String.format(java.util.Locale.US, "%.6f • %.6f", point.latitude, point.longitude),
+                actions, which -> {
                     if (which == 0) PointEditor.show(activity, point.latitude, point.longitude, null);
                     else if (activity instanceof MainActivity) {
                         ((MainActivity) activity).showNearbySearchAroundPoint(point.latitude, point.longitude);
                     }
-                })
-                .setNegativeButton("إلغاء", null)
-                .show();
+                });
     }
 
     private void toggleTools() {

@@ -18,7 +18,7 @@ final class DarbakOrientationButton extends TextView {
         setTextColor(PRIMARY);
         setTextSize(13f);
         setPadding(dp(8), 0, dp(8), 0);
-        setBackground(round(Color.argb(247, 17, 29, 43), dp(22), Color.argb(90, 216, 180, 91)));
+        setBackground(round(Color.argb(247, 16, 52, 42), dp(22), Color.argb(90, 216, 180, 91)));
         refresh();
         setOnClickListener(view -> {
             int mode = MapRuntimeBridge.cycleOrientation(getContext());

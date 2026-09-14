@@ -115,7 +115,7 @@ final class DarbakPanels {
         TextView routing = text(activity,
                 "نمط التوجيه: " + MapRuntimeBridge.routingLabel(MapUiPreferences.routingMode(activity)) + "  •  اضغط للتغيير",
                 TEXT, 15f, Gravity.CENTER);
-        routing.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(90, 215, 173, 85)));
+        routing.setBackground(round(SURFACE_ALT, dp(activity, 20), Color.argb(90, 216, 180, 91)));
         routing.setOnClickListener(view -> {
             int next = MapUiPreferences.routingMode(activity) == MapUiPreferences.ROUTING_DIRECT
                     ? MapUiPreferences.ROUTING_ROADS : MapUiPreferences.ROUTING_DIRECT;
