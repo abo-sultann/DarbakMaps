@@ -20,10 +20,11 @@ public final class TrackSessionState {
     private static final String PAUSE_STARTED = "pause_started";
     private static final String PAUSED_TOTAL = "paused_total";
     private static final String NEW_SEGMENT = "new_segment";
+    private static final String REVISION = "revision";
 
     private TrackSessionState() {}
 
-    public static void beginIfNeeded(Context context) {
+    public static synchronized void beginIfNeeded(Context context) {
         SharedPreferences p = prefs(context);
         if (p.getLong(START, 0L) == 0L) {
             p.edit()
@@ -32,23 +33,29 @@ public final class TrackSessionState {
                     .putLong(PAUSE_STARTED, 0L)
                     .putLong(PAUSED_TOTAL, 0L)
                     .putBoolean(NEW_SEGMENT, false)
-                    .apply();
+                    .putLong(REVISION, 1L)
+                    .commit();
         }
     }
 
-    public static void reset(Context context) {
-        prefs(context).edit().clear().apply();
+    public static synchronized void reset(Context context) {
+        prefs(context).edit().clear().commit();
     }
 
     public static boolean isPaused(Context context) {
         return prefs(context).getBoolean(PAUSED, false);
     }
 
-    public static boolean togglePaused(Context context) {
+    public static long revision(Context context) {
+        return prefs(context).getLong(REVISION, 1L);
+    }
+
+    public static synchronized boolean togglePaused(Context context) {
         SharedPreferences p = prefs(context);
         boolean currentlyPaused = p.getBoolean(PAUSED, false);
         long now = System.currentTimeMillis();
-        SharedPreferences.Editor editor = p.edit();
+        long revision = p.getLong(REVISION, 1L) + 1L;
+        SharedPreferences.Editor editor = p.edit().putLong(REVISION, revision);
         if (currentlyPaused) {
             long started = p.getLong(PAUSE_STARTED, 0L);
             long total = p.getLong(PAUSED_TOTAL, 0L);
@@ -58,12 +65,14 @@ public final class TrackSessionState {
                     .putLong(PAUSED_TOTAL, total)
                     .putBoolean(HAS_LAST, false)
                     .putBoolean(NEW_SEGMENT, true);
+            TrackRuntimeState.setState(context, TrackRuntimeState.RUNNING);
         } else {
             editor.putBoolean(PAUSED, true)
                     .putLong(PAUSE_STARTED, now)
                     .putBoolean(HAS_LAST, false);
+            TrackRuntimeState.setState(context, TrackRuntimeState.PAUSED);
         }
-        editor.apply();
+        editor.commit();
         return !currentlyPaused;
     }
 
@@ -71,11 +80,12 @@ public final class TrackSessionState {
         return prefs(context).getBoolean(NEW_SEGMENT, false);
     }
 
-    public static void markSegmentWritten(Context context) {
-        prefs(context).edit().putBoolean(NEW_SEGMENT, false).apply();
+    public static synchronized void markSegmentWritten(Context context) {
+        prefs(context).edit().putBoolean(NEW_SEGMENT, false).commit();
     }
 
-    public static void onFix(Context context, Location location) {
+    /** Call only after the point was successfully written to the journal. */
+    public static synchronized void onCommittedFix(Context context, Location location) {
         if (location == null || isPaused(context)) return;
         beginIfNeeded(context);
         SharedPreferences p = prefs(context);
@@ -95,7 +105,7 @@ public final class TrackSessionState {
                 .putLong(LAST_LAT, Double.doubleToLongBits(location.getLatitude()))
                 .putLong(LAST_LON, Double.doubleToLongBits(location.getLongitude()))
                 .putBoolean(HAS_LAST, true)
-                .apply();
+                .commit();
     }
 
     public static String summary(Context context) {
@@ -118,7 +128,9 @@ public final class TrackSessionState {
 
     public static void updateActionLabel(TextView view, Context context) {
         if (view == null) return;
-        if (!MapUiPreferences.backgroundTrackEnabled(context)) {
+        if (TrackRuntimeState.isFinalizing(context)) {
+            view.setText("جارٍ الحفظ…");
+        } else if (!MapUiPreferences.backgroundTrackEnabled(context)) {
             view.setText("تسجيل مسار");
         } else if (isPaused(context)) {
             view.setText("متابعة المسار");
