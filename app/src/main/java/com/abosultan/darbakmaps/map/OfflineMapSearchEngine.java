@@ -52,7 +52,6 @@ public final class OfflineMapSearchEngine {
     private static final long INDEX_BUDGET_NANOS = 1_400_000_000L;
     private static final int MAX_LOCAL_TILES = 220;
     private static final int MAX_PAGE_SIZE = 200;
-    private static final int MAX_QUERY_WINDOW = 2000;
 
     private volatile boolean complete;
     private volatile boolean failed;
@@ -60,6 +59,7 @@ public final class OfflineMapSearchEngine {
     private volatile boolean queryTruncated;
     private volatile int indexedCount;
     private volatile int nextOffset;
+    private RankedResult nextPageCursor;
     private String mapIdentity;
 
     public synchronized boolean isComplete() { return complete; }
@@ -73,7 +73,7 @@ public final class OfflineMapSearchEngine {
 
     public synchronized void clear() {
         complete = false; failed = false; indexTruncated = false; queryTruncated = false;
-        indexedCount = 0; nextOffset = 0; mapIdentity = null;
+        indexedCount = 0; nextOffset = 0; nextPageCursor = null; mapIdentity = null;
     }
 
     public synchronized List<Result> search(String query, File activeMap,
@@ -88,14 +88,15 @@ public final class OfflineMapSearchEngine {
                                              List<PlaceRepository.Place> savedPlaces) {
         failed = false;
         queryTruncated = false;
+        nextPageCursor = null;
         nextOffset = request.offset;
         String wanted = normalize(request.query);
         if (activeMap != null && activeMap.isFile()) ensureIndex(activeMap);
         else { complete = true; indexTruncated = false; indexedCount = 0; }
 
         int pageSize = Math.max(5, Math.min(MAX_PAGE_SIZE, request.limit));
-        int window = Math.min(MAX_QUERY_WINDOW, Math.max(pageSize + 1, request.offset + pageSize + 1));
-        BoundedMatches matches = new BoundedMatches(window, request);
+        // Keyset paging keeps memory O(page size) even on very late pages.
+        BoundedMatches matches = new BoundedMatches(pageSize + 1, request);
 
         if (savedPlaces != null) {
             for (PlaceRepository.Place place : savedPlaces) {
@@ -115,17 +116,31 @@ public final class OfflineMapSearchEngine {
         }
 
         List<RankedResult> sorted = matches.sortedBest();
-        int from = Math.min(request.offset, sorted.size());
-        int to = Math.min(sorted.size(), from + pageSize);
+        int to = Math.min(sorted.size(), pageSize);
         List<Result> out = new ArrayList<>();
         Set<String> emitted = new HashSet<>();
-        for (int i = from; i < to; i++) {
-            Result r = sorted.get(i).result;
-            if (emitted.add(dedupeKey(r))) out.add(r);
+        RankedResult lastEmitted = null;
+        for (int i = 0; i < to; i++) {
+            RankedResult ranked = sorted.get(i);
+            Result r = ranked.result;
+            if (emitted.add(dedupeKey(r))) { out.add(r); lastEmitted = ranked; }
         }
-        queryTruncated = matches.sawBeyondWindow() || sorted.size() > to;
-        nextOffset = queryTruncated ? request.offset + pageSize : request.offset;
+        queryTruncated = matches.sawBeyondWindow() || sorted.size() > pageSize;
+        if (queryTruncated && lastEmitted != null) {
+            nextPageCursor = lastEmitted;
+            nextOffset = request.offset + pageSize;
+        } else {
+            nextPageCursor = null;
+            nextOffset = request.offset;
+        }
         return out;
+    }
+
+    public synchronized SearchRequest nextPageRequest(SearchRequest current) {
+        if (current == null || nextPageCursor == null) return current;
+        return new SearchRequest(current.query, current.category, current.centerLatitude, current.centerLongitude,
+                current.radiusMeters, current.sortNearest, current.limit,
+                current.offset + Math.max(5, Math.min(MAX_PAGE_SIZE, current.limit)), nextPageCursor);
     }
 
     private void ensureIndex(File map) {
@@ -460,12 +475,13 @@ public final class OfflineMapSearchEngine {
     public static final class SearchRequest {
         public final String query, category; public final Double centerLatitude, centerLongitude;
         public final float radiusMeters; public final boolean sortNearest; public final int limit, offset;
-        public SearchRequest(String q,String c,Double lat,Double lon,float radius,boolean nearest,int limit){this(q,c,lat,lon,radius,nearest,limit,0);}
-        public SearchRequest(String q,String c,Double lat,Double lon,float radius,boolean nearest,int limit,int offset){
+        private final RankedResult after;
+        public SearchRequest(String q,String c,Double lat,Double lon,float radius,boolean nearest,int limit){this(q,c,lat,lon,radius,nearest,limit,0,null);}
+        public SearchRequest(String q,String c,Double lat,Double lon,float radius,boolean nearest,int limit,int offset){this(q,c,lat,lon,radius,nearest,limit,offset,null);}
+        private SearchRequest(String q,String c,Double lat,Double lon,float radius,boolean nearest,int limit,int offset,RankedResult after){
             this.query=q==null?"":q; this.category=c==null?CATEGORY_ALL:c; centerLatitude=lat; centerLongitude=lon;
-            radiusMeters=Math.max(0f,radius); sortNearest=nearest; this.limit=limit; this.offset=Math.max(0,offset);
+            radiusMeters=Math.max(0f,radius); sortNearest=nearest; this.limit=limit; this.offset=Math.max(0,offset); this.after=after;
         }
-        public SearchRequest nextPage(){return new SearchRequest(query,category,centerLatitude,centerLongitude,radiusMeters,sortNearest,limit,offset+Math.max(5,Math.min(MAX_PAGE_SIZE,limit)));}
     }
 
     public static final class Result {
@@ -491,7 +507,10 @@ public final class OfflineMapSearchEngine {
             if(!CATEGORY_ALL.equals(request.category)&&!request.category.equals(result.category)&&!"محفوظات".equals(result.category))return;
             if(request.radiusMeters>0f&&(result.distanceMeters==null||result.distanceMeters>request.radiusMeters))return;
             String haystack=normalize(result.name+" "+result.source+" "+result.searchText); int score=wanted.isEmpty()?10:matchScore(haystack,wanted); if(score<=0)return;
-            RankedResult candidate=new RankedResult(result,score); String key=dedupeKey(result); if(heapKeys.contains(key))return;
+            RankedResult candidate=new RankedResult(result,score);
+            // Keyset cursor: later pages only consider rows strictly after the last row of the previous page.
+            if(request.after!=null && compareRank(candidate,request.after,request)<=0)return;
+            String key=dedupeKey(result); if(heapKeys.contains(key))return;
             if(heap.size()<capacity){heap.add(candidate);heapKeys.add(key);return;}
             beyond=true; RankedResult worst=null; for(RankedResult x:heap) if(worst==null||compareRank(x,worst,request)>0) worst=x;
             if(worst!=null&&compareRank(candidate,worst,request)<0){heap.remove(worst);heapKeys.remove(dedupeKey(worst.result));heap.add(candidate);heapKeys.add(key);}
@@ -504,7 +523,8 @@ public final class OfflineMapSearchEngine {
         if(request.sortNearest){int d=Float.compare(distanceOrMax(a.result),distanceOrMax(b.result));if(d!=0)return d;}
         int s=Integer.compare(b.score,a.score);if(s!=0)return s;
         int d=Float.compare(distanceOrMax(a.result),distanceOrMax(b.result));if(d!=0)return d;
-        return a.result.name.compareTo(b.result.name);
+        int n=a.result.name.compareTo(b.result.name); if(n!=0)return n;
+        return a.result.id.compareTo(b.result.id);
     }
     private float distanceOrMax(Result r){return r.distanceMeters==null?Float.MAX_VALUE:r.distanceMeters;}
 }

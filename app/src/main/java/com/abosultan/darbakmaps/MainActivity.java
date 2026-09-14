@@ -491,7 +491,10 @@ public final class MainActivity extends Activity implements LocationController.C
                 .setTitle(state + (request.offset > 0 ? " • صفحة " + (request.offset / Math.max(1, request.limit) + 1) : ""))
                 .setItems(labels, (dialog, which) -> showSearchResultActions(results.get(which)))
                 .setNegativeButton("إغلاق", null);
-        if (queryMore) builder.setPositiveButton("المزيد", (dialog, which) -> executeSearch(request.nextPage(), "بحث"));
+        if (queryMore) builder.setPositiveButton("المزيد", (dialog, which) -> {
+            OfflineMapSearchEngine.SearchRequest next = searchEngine.nextPageRequest(request);
+            if (next != null && next != request) executeSearch(next, "بحث");
+        });
         showImmersive(builder.create());
     }
 
