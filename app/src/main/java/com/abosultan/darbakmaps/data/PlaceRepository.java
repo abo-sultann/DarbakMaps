@@ -7,8 +7,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -18,14 +20,17 @@ public final class PlaceRepository {
     private static final String KEY_PLACES = "places";
     private static final Object STORE_LOCK = new Object();
 
-    public static final String ICON_CAMP = "camp";
-    public static final String ICON_HOME = "home";
     public static final String ICON_QUAIL = "quail";
+    public static final String ICON_CAMP = "camp";
     public static final String ICON_WATER = "water";
     public static final String ICON_TREE = "tree";
+    public static final String ICON_HUNTING = "hunting";
+    public static final String ICON_STAR = "star";
+
+    // Kept for backward compatibility with already-saved locations.
+    public static final String ICON_HOME = "home";
     public static final String ICON_CAR = "car";
     public static final String ICON_GATE = "gate";
-    public static final String ICON_STAR = "star";
 
     private final SharedPreferences preferences;
 
@@ -42,14 +47,16 @@ public final class PlaceRepository {
         validateCoordinates(latitude, longitude);
         synchronized (STORE_LOCK) {
             List<Place> places = new ArrayList<>(load(true));
+            long createdAt = System.currentTimeMillis();
+            String safeIcon = safe(iconKey, ICON_STAR);
             Place place = new Place(
                     UUID.randomUUID().toString(),
-                    safeName(name),
+                    displayName(name, safeIcon, createdAt),
                     latitude,
                     longitude,
-                    System.currentTimeMillis(),
-                    safe(iconKey, ICON_STAR),
-                    safe(category, "عام"),
+                    createdAt,
+                    safeIcon,
+                    safe(category, iconLabel(safeIcon)),
                     note == null ? "" : note.trim()
             );
             places.add(0, place);
@@ -64,9 +71,10 @@ public final class PlaceRepository {
             for (int i = 0; i < places.size(); i++) {
                 Place old = places.get(i);
                 if (old.id.equals(id)) {
-                    places.set(i, new Place(old.id, safeName(name), old.latitude, old.longitude,
-                            old.createdAt, safe(iconKey, old.iconKey), safe(category, old.category),
-                            note == null ? "" : note.trim()));
+                    String safeIcon = safe(iconKey, old.iconKey);
+                    places.set(i, new Place(old.id, displayName(name, safeIcon, old.createdAt),
+                            old.latitude, old.longitude, old.createdAt, safeIcon,
+                            safe(category, iconLabel(safeIcon)), note == null ? "" : note.trim()));
                     persist(places);
                     return true;
                 }
@@ -87,6 +95,19 @@ public final class PlaceRepository {
             }
             if (removed) persist(places);
             return removed;
+        }
+    }
+
+    /** Restores a previously deleted object with the same stable id and coordinates. */
+    public boolean restore(Place place) {
+        if (place == null) return false;
+        validateCoordinates(place.latitude, place.longitude);
+        synchronized (STORE_LOCK) {
+            List<Place> places = new ArrayList<>(load(true));
+            for (Place existing : places) if (existing.id.equals(place.id)) return false;
+            places.add(0, place);
+            persist(places);
+            return true;
         }
     }
 
@@ -111,6 +132,13 @@ public final class PlaceRepository {
                 return true;
             }
         }
+    }
+
+    public List<Place> byIcon(String iconKey) {
+        if (iconKey == null || iconKey.trim().isEmpty()) return all();
+        List<Place> result = new ArrayList<>();
+        for (Place place : all()) if (iconKey.equals(place.iconKey)) result.add(place);
+        return result;
     }
 
     public List<Place> search(String query) {
@@ -144,14 +172,19 @@ public final class PlaceRepository {
             double latitude = item.getDouble("lat");
             double longitude = item.getDouble("lon");
             validateCoordinates(latitude, longitude);
+            long createdAt = item.optLong("createdAt");
+            if (createdAt <= 0L) createdAt = 1L;
+            String icon = item.optString("icon", ICON_STAR);
+            String id = item.optString("id", "").trim();
+            if (id.isEmpty()) id = legacyId(latitude, longitude, createdAt);
             result.add(new Place(
-                    item.optString("id"),
-                    item.optString("name", "موقع محفوظ"),
+                    id,
+                    displayName(item.optString("name", ""), icon, createdAt),
                     latitude,
                     longitude,
-                    item.optLong("createdAt"),
-                    item.optString("icon", ICON_STAR),
-                    item.optString("category", "عام"),
+                    createdAt,
+                    icon,
+                    item.optString("category", iconLabel(icon)),
                     item.optString("note", "")
             ));
         }
@@ -188,9 +221,37 @@ public final class PlaceRepository {
         }
     }
 
-    private static String safeName(String value) {
+    private static String displayName(String value, String iconKey, long createdAt) {
         String cleaned = value == null ? "" : value.trim();
-        return cleaned.isEmpty() ? "موقع محفوظ" : cleaned;
+        return cleaned.isEmpty() ? automaticLabel(iconKey, createdAt) : cleaned;
+    }
+
+    public static String automaticLabel(String iconKey, long createdAt) {
+        String stamp = new SimpleDateFormat("dd/MM HH:mm", Locale.US)
+                .format(new Date(Math.max(1L, createdAt)));
+        return iconLabel(iconKey) + " — " + stamp;
+    }
+
+    public static String iconLabel(String key) {
+        if (ICON_QUAIL.equals(key)) return "سمان";
+        if (ICON_CAMP.equals(key)) return "مخيم";
+        if (ICON_WATER.equals(key)) return "ماء";
+        if (ICON_TREE.equals(key)) return "شجرة";
+        if (ICON_HUNTING.equals(key)) return "موقع صيد";
+        if (ICON_HOME.equals(key)) return "استراحة";
+        if (ICON_CAR.equals(key)) return "سيارة";
+        if (ICON_GATE.equals(key)) return "بوابة";
+        return "علامة";
+    }
+
+    /** Text-only fallback for dialogs. Map/list icons are drawn with fixed Canvas artwork. */
+    public static String iconGlyph(String key) {
+        if (ICON_QUAIL.equals(key)) return "سمان";
+        if (ICON_CAMP.equals(key)) return "مخيم";
+        if (ICON_WATER.equals(key)) return "ماء";
+        if (ICON_TREE.equals(key)) return "شجرة";
+        if (ICON_HUNTING.equals(key)) return "صيد";
+        return "علامة";
     }
 
     private static String safe(String value, String fallback) {
@@ -198,15 +259,9 @@ public final class PlaceRepository {
         return cleaned.isEmpty() ? fallback : cleaned;
     }
 
-    public static String iconGlyph(String key) {
-        if (ICON_CAMP.equals(key)) return "⛺";
-        if (ICON_HOME.equals(key)) return "⌂";
-        if (ICON_QUAIL.equals(key)) return "ط";
-        if (ICON_WATER.equals(key)) return "💧";
-        if (ICON_TREE.equals(key)) return "♣";
-        if (ICON_CAR.equals(key)) return "◆";
-        if (ICON_GATE.equals(key)) return "▣";
-        return "★";
+    private static String legacyId(double latitude, double longitude, long createdAt) {
+        return "legacy-" + createdAt + "-" + Math.round(latitude * 1_000_000d)
+                + "-" + Math.round(longitude * 1_000_000d);
     }
 
     public static final class Place {
