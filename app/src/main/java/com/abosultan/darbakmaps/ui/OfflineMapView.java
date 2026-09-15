@@ -13,6 +13,8 @@ import org.mapsforge.map.layer.cache.TileCache;
 import org.mapsforge.map.layer.renderer.TileRendererLayer;
 import org.mapsforge.map.reader.MapFile;
 import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
+import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
+import com.abosultan.darbakmaps.core.LiveLocationStore;
 import com.abosultan.darbakmaps.core.OfflineMapLocator;
 
 /** Real offline map surface. Never downloads tiles or requires Play Services. */
@@ -22,6 +24,24 @@ public final class OfflineMapView extends FrameLayout {
     private MapDataStore mapDataStore;
     private TileRendererLayer renderer;
     private File activeMap;
+    private long lastFixTime;
+    private boolean followedFirstFix;
+
+    private final Runnable gpsPump = new Runnable() {
+        @Override public void run() {
+            LocationSnapshot fix = LiveLocationStore.latest();
+            if (mapView != null && fix.valid && fix.timestampMs != lastFixTime) {
+                lastFixTime = fix.timestampMs;
+                LatLong position = new LatLong(fix.lat, fix.lon);
+                if (!followedFirstFix) {
+                    mapView.setCenter(position);
+                    if (mapView.getModel().mapViewPosition.getZoomLevel() < 15) mapView.setZoomLevel((byte) 15);
+                    followedFirstFix = true;
+                }
+            }
+            postDelayed(this, 750L);
+        }
+    };
 
     public OfflineMapView(Context context) {
         super(context);
@@ -31,6 +51,12 @@ public final class OfflineMapView extends FrameLayout {
 
     public boolean hasMap() { return activeMap != null; }
     public String activeMapName() { return activeMap == null ? null : activeMap.getName(); }
+
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        removeCallbacks(gpsPump);
+        post(gpsPump);
+    }
 
     private void tryOpen(Context context) {
         try {
@@ -67,6 +93,7 @@ public final class OfflineMapView extends FrameLayout {
     }
 
     @Override protected void onDetachedFromWindow() {
+        removeCallbacks(gpsPump);
         if (mapView != null) {
             mapView.destroyAll();
             mapView = null;
