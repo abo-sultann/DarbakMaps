@@ -1,0 +1,40 @@
+name: Darbak Maps Rebuild Visual QA
+
+on:
+  push:
+    branches: [ "darbakmaps-rebuild-1.0" ]
+    paths:
+      - 'app/**'
+      - '.github/workflows/visual-qa-rebuild.yml'
+      - '.github/scripts/visual_qa_rebuild.sh'
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Render Android 7.1 / 1024x600
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 25
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash .github/scripts/visual_qa_rebuild.sh
+      - name: Upload visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-rebuild-visual-1024x600
+          path: visual-qa/**
+          retention-days: 1
