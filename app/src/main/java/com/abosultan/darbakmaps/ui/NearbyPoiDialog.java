@@ -2,6 +2,8 @@ package com.abosultan.darbakmaps.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.text.InputType;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
@@ -16,6 +18,7 @@ import java.util.Locale;
 /** Nearby POI browser backed entirely by the installed Mapsforge file. */
 final class NearbyPoiDialog {
     private static final double SEARCH_RADIUS_METERS = 20000d;
+    private static final double NAME_SEARCH_RADIUS_METERS = 30000d;
     private static final int RESULT_LIMIT = 60;
 
     static void show(Context c, OfflineMapView map) {
@@ -35,12 +38,43 @@ final class NearbyPoiDialog {
         };
         new AlertDialog.Builder(c)
                 .setTitle("القريب مني — حتى 20 كم")
-                .setItems(labels, (d, which) -> runSearch(c, map, fix, labels[which]))
+                .setItems(labels, (d, which) -> runSearch(c, map, fix, labels[which], "", SEARCH_RADIUS_METERS))
                 .setNegativeButton("إلغاء", null)
                 .show();
     }
 
-    private static void runSearch(Context c, OfflineMapView map, LocationSnapshot fix, String category) {
+    static void showNameSearch(Context c, OfflineMapView map) {
+        LocationSnapshot fix = LiveLocationStore.latest();
+        if (!fix.valid) {
+            Toast.makeText(c, "بانتظار إشارة GPS للبحث القريب", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        EditText input = new EditText(c);
+        input.setHint("مثال: شعيب، جبل، قرية، محطة");
+        input.setSingleLine(true);
+        input.setTextSize(20f);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        int pad = DarbakUi.dp(c, 18);
+        input.setPadding(pad, pad, pad, pad);
+
+        new AlertDialog.Builder(c)
+                .setTitle("بحث قريب بالاسم")
+                .setMessage("يبحث داخل الخريطة الأوفلاين حول موقعك حتى 30 كم، ويقبل الاسم العربي أو الاسم البديل إذا كان موجودًا في الخريطة.")
+                .setView(input)
+                .setPositiveButton("بحث", (d, w) -> {
+                    String query = input.getText().toString().trim();
+                    if (query.length() < 2) {
+                        Toast.makeText(c, "اكتب حرفين على الأقل", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    runSearch(c, map, fix, NearbyPoiSearch.ALL, query, NAME_SEARCH_RADIUS_METERS);
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private static void runSearch(Context c, OfflineMapView map, LocationSnapshot fix,
+                                  String category, String query, double radiusMeters) {
         List<File> maps = OfflineMapLocator.find(c);
         if (maps.isEmpty()) {
             Toast.makeText(c, "لم يتم العثور على ملف الخريطة", Toast.LENGTH_SHORT).show();
@@ -48,7 +82,7 @@ final class NearbyPoiDialog {
         }
         File activeMap = maps.get(0);
         AlertDialog progress = new AlertDialog.Builder(c)
-                .setTitle("القريب مني")
+                .setTitle(query.isEmpty() ? "القريب مني" : "بحث قريب")
                 .setMessage("جارٍ قراءة المعالم من الخريطة الأوفلاين…")
                 .setCancelable(false)
                 .create();
@@ -57,19 +91,21 @@ final class NearbyPoiDialog {
         new Thread(() -> {
             List<NearbyPoiSearch.Result> results = NearbyPoiSearch.search(
                     activeMap, fix.latitude, fix.longitude,
-                    SEARCH_RADIUS_METERS, category, RESULT_LIMIT);
+                    radiusMeters, category, query, RESULT_LIMIT);
             map.post(() -> {
                 if (progress.isShowing()) progress.dismiss();
                 if (!map.isAttachedToWindow()) return;
-                showResults(c, map, fix, category, results);
+                showResults(c, map, fix, category, query, results);
             });
         }, "darbak-nearby-poi").start();
     }
 
     private static void showResults(Context c, OfflineMapView map, LocationSnapshot fix,
-                                    String category, List<NearbyPoiSearch.Result> results) {
+                                    String category, String query, List<NearbyPoiSearch.Result> results) {
         if (results == null || results.isEmpty()) {
-            Toast.makeText(c, "لا توجد نتائج قريبة ضمن هذا التصنيف", Toast.LENGTH_SHORT).show();
+            Toast.makeText(c, query.isEmpty()
+                    ? "لا توجد نتائج قريبة ضمن هذا التصنيف"
+                    : "لم أجد نتيجة قريبة بهذا الاسم", Toast.LENGTH_SHORT).show();
             return;
         }
         String[] rows = new String[results.size()];
@@ -78,8 +114,9 @@ final class NearbyPoiDialog {
             double bearing = bearing(fix.latitude, fix.longitude, r.latitude, r.longitude);
             rows[i] = r.name + " • " + r.source + " • " + distance(r.distanceMeters) + " " + arrow(bearing);
         }
+        String title = query.isEmpty() ? "القريب — " + category : "نتائج: " + query;
         new AlertDialog.Builder(c)
-                .setTitle("القريب — " + category)
+                .setTitle(title)
                 .setItems(rows, (d, which) -> {
                     NearbyPoiSearch.Result result = results.get(which);
                     map.focusPlace(result.latitude, result.longitude);
