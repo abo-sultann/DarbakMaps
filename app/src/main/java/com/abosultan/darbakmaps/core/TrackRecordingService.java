@@ -13,6 +13,9 @@ import static com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
  * API 25 permits a started background service; no Play Services dependency.
  */
 public final class TrackRecordingService extends Service {
+    public static final String ACTION_PAUSE = "com.abosultan.darbakmaps.action.PAUSE_TRACK";
+    public static final String ACTION_RESUME = "com.abosultan.darbakmaps.action.RESUME_TRACK";
+
     private AndroidLocationEngine location;
     private SqliteTrackRecorder recorder;
     private Handler handler;
@@ -39,7 +42,17 @@ public final class TrackRecordingService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (location != null) location.start();
-        if (recorder != null) recorder.ensureAutomaticRecording();
+
+        String action = intent == null ? null : intent.getAction();
+        if (recorder != null) {
+            if (ACTION_PAUSE.equals(action)) {
+                recorder.pause();
+            } else if (ACTION_RESUME.equals(action)) {
+                recorder.ensureAutomaticRecording();
+            }
+            // For a normal start, keep the persisted choice restored in onCreate.
+            // This prevents simply reopening the app from silently cancelling a user pause.
+        }
         return START_STICKY;
     }
 
