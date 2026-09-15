@@ -1,24 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">دربك</string>
-    <string name="search_hint">ابحث عن مدينة أو معلم أو موقع محفوظ</string>
-    <string name="mode_desert">البر</string>
-    <string name="mode_city">المدينة</string>
-    <string name="map">الخريطة</string>
-    <string name="save_place">حفظ موقع</string>
-    <string name="record_track">تسجيل مسار</string>
-    <string name="saved">محفوظاتي</string>
-    <string name="more">المزيد</string>
-    <string name="gps_waiting">GPS ينتظر الإشارة</string>
-    <string name="offline_ready">يعمل بدون إنترنت</string>
-    <string name="kmh">كم/س</string>
-    <string name="import_map">إضافة خريطة أوفلاين</string>
-    <string name="download_gcc_map">تنزيل خريطة الخليج الموصى بها</string>
-    <string name="no_map_title">أضف حزمة خريطة للبدء</string>
-    <string name="no_map_body">نزّل خريطة الخليج الجاهزة أو اختر ملف Mapsforge بصيغة .map من USB.</string>
-    <string name="activation_title">تفعيل دربك</string>
-    <string name="activation_body">أدخل رمز التفعيل المخصص لهذا الجهاز.</string>
-    <string name="activation_code">رمز التفعيل</string>
-    <string name="activate">تفعيل</string>
-    <string name="device_code">رمز الجهاز</string>
+    <string name="app_name">دربك للخرائط</string>
+    <string name="map_waiting">الخريطة الحالية ستظهر هنا بعد ربط المحرك</string>
 </resources>

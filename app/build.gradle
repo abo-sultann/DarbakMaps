@@ -7,54 +7,19 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.abosultan.darbakmaps'
-        minSdk 24
+        // Keep the installed-package identity while the clean rebuild is developed.
+        applicationId 'com.abosultan.darbakmaps.debug'
+        minSdk 25
         targetSdk 35
-        versionCode 23
-        versionName '0.9.2'
-
-        buildConfigField 'String', 'ACTIVATION_URL', '""'
-        buildConfigField 'String', 'UPDATE_MANIFEST_URL', '""'
-    }
-
-    signingConfigs {
-        production {
-            def storePath = System.getenv('DARBAK_KEYSTORE_PATH')
-            if (storePath) {
-                storeFile file(storePath)
-                storePassword System.getenv('DARBAK_KEYSTORE_PASSWORD')
-                keyAlias System.getenv('DARBAK_KEY_ALIAS')
-                keyPassword System.getenv('DARBAK_KEY_PASSWORD')
-            }
-        }
-    }
-
-    buildFeatures {
-        buildConfig true
+        versionCode 100
+        versionName '1.0.0-rebuild-dev'
     }
 
     buildTypes {
-        debug {
-            applicationIdSuffix '.debug'
-            versionNameSuffix '-debug'
-            if (System.getenv('DARBAK_KEYSTORE_PATH')) {
-                signingConfig signingConfigs.production
-            }
-            buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'true'
-            buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://raw.githubusercontent.com/abo-sultann/DarbakMaps/main/update-manifest-debug.json"'
-        }
+        debug { minifyEnabled false }
         release {
-            // 0.9.2 keeps the 0.9.1 data/search/track fixes and rebuilds the car-screen UI around
-            // the approved Darbak green/gold/sand identity with one action path per task.
-            // Keep the historical car-screen package suffix until installed-signature compatibility is proven.
-            applicationIdSuffix '.debug'
             minifyEnabled true
             shrinkResources true
-            if (System.getenv('DARBAK_KEYSTORE_PATH')) {
-                signingConfig signingConfigs.production
-            }
-            buildConfigField 'boolean', 'ALLOW_DEVELOPMENT_ACCESS', 'true'
-            buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://raw.githubusercontent.com/abo-sultann/DarbakMaps/main/update-manifest.json"'
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -64,12 +29,6 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    packaging {
-        resources {
-            excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE']
-        }
-    }
-
     lint {
         abortOnError true
         checkReleaseBuilds true
@@ -77,15 +36,5 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.core:core:1.15.0'
-
-    def mapsforgeVersion = '0.30.0'
-    implementation "com.github.mapsforge.mapsforge:mapsforge-core:${mapsforgeVersion}@jar"
-    implementation "com.github.mapsforge.mapsforge:mapsforge-map:${mapsforgeVersion}@jar"
-    implementation "com.github.mapsforge.mapsforge:mapsforge-map-reader:${mapsforgeVersion}@jar"
-    implementation "com.github.mapsforge.mapsforge:mapsforge-map-android:${mapsforgeVersion}@jar"
-    implementation "com.github.mapsforge.mapsforge:mapsforge-themes:${mapsforgeVersion}@jar"
-    implementation 'com.caverock:androidsvg:1.4'
-
     testImplementation 'junit:junit:4.13.2'
 }

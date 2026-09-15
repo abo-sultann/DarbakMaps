@@ -1,25 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Darbak identity: desert green + warm gold + sand. No blue UI accents. -->
-    <color name="darbak_green">#123B30</color>
-    <color name="darbak_green_deep">#08271F</color>
-    <color name="darbak_green_soft">#1B493B</color>
-    <color name="darbak_gold">#D8B45B</color>
-    <color name="darbak_gold_light">#F1D88E</color>
-    <color name="darbak_orange">#C98B43</color>
-    <color name="darbak_ink">#F7F2E7</color>
-    <color name="darbak_muted">#B9B3A5</color>
-    <color name="darbak_ivory">#EDE4CF</color>
-    <color name="darbak_white">#FFFFFFFF</color>
-    <color name="darbak_transparent">#00000000</color>
-    <color name="darbak_primary">#D8B45B</color>
-    <color name="darbak_surface">#10342A</color>
-    <color name="darbak_surface_alt">#19483A</color>
-    <color name="darbak_success">#65C792</color>
-    <color name="darbak_warning">#E2B858</color>
-    <color name="darbak_error">#D9685D</color>
-    <color name="darbak_brand_gold">#D8B45B</color>
-    <color name="darbak_sand">#D8C9A7</color>
-    <color name="darbak_sand_soft">#EFE6D3</color>
-    <color name="darbak_panel">#F208271F</color>
+    <color name="darbak_background">#0A1633</color>
+    <color name="darbak_surface">#102040</color>
+    <color name="darbak_card">#102B5C</color>
+    <color name="darbak_active">#173B6C</color>
+    <color name="darbak_border">#2D5573</color>
+    <color name="darbak_accent">#19B5FF</color>
+    <color name="darbak_button">#1976B9</color>
+    <color name="darbak_text">#F3F8FF</color>
+    <color name="darbak_text_secondary">#D0E2F1</color>
+    <color name="darbak_text_helper">#A1B8D0</color>
+    <color name="darbak_success">#36C98F</color>
+    <color name="darbak_warning">#F1B84B</color>
+    <color name="darbak_error">#E45B63</color>
 </resources>
