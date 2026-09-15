@@ -2,7 +2,6 @@ package com.abosultan.darbakmaps.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
-import android.view.View;
 import android.widget.Toast;
 
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
@@ -11,16 +10,10 @@ import com.abosultan.darbakmaps.core.LiveLocationStore;
 import com.abosultan.darbakmaps.core.PlaceMath;
 import com.abosultan.darbakmaps.core.SqlitePlaceRepository;
 
-import org.mapsforge.core.model.LatLong;
-import org.mapsforge.map.android.view.MapView;
-import org.mapsforge.map.layer.overlay.Marker;
-
 import java.util.List;
 
 /** Lightweight nearest-first saved-place browser for the 1024x600 head unit. */
 final class SavedPlacesDialog {
-    private static final double MARKER_MATCH_EPSILON = 0.000001d;
-
     static void show(Context c, OfflineMapView map) {
         LocationSnapshot fix = LiveLocationStore.latest();
         if (!fix.valid) {
@@ -78,48 +71,13 @@ final class SavedPlacesDialog {
                         Toast.makeText(c, "تعذر حذف الموقع", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    removeMarkerFromMap(map, place);
+                    map.removeSavedPlaceMarker(place.id);
                     parent.dismiss();
                     Toast.makeText(c, "تم حذف الموقع", Toast.LENGTH_SHORT).show();
                     show(c, map);
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
-    }
-
-    /**
-     * Removes the corresponding saved-place marker immediately without rebuilding the heavy map.
-     * If the saved place overlaps the live vehicle position, we avoid guessing which Marker is the
-     * vehicle arrow; the deleted marker will disappear on the next map recreation instead.
-     */
-    private static void removeMarkerFromMap(OfflineMapView shell, Place place) {
-        LocationSnapshot live = LiveLocationStore.latest();
-        if (live.valid && PlaceMath.distanceMeters(live.latitude, live.longitude, place.latitude, place.longitude) < 3d) {
-            return;
-        }
-        MapView mapView = findMapView(shell);
-        if (mapView == null) return;
-        for (int i = mapView.getLayerManager().getLayers().size() - 1; i >= 0; i--) {
-            Object candidate = mapView.getLayerManager().getLayers().get(i);
-            if (!(candidate instanceof Marker)) continue;
-            Marker marker = (Marker) candidate;
-            LatLong p = marker.getLatLong();
-            if (p == null) continue;
-            if (Math.abs(p.latitude - place.latitude) <= MARKER_MATCH_EPSILON
-                    && Math.abs(p.longitude - place.longitude) <= MARKER_MATCH_EPSILON) {
-                mapView.getLayerManager().getLayers().remove(marker);
-                mapView.getLayerManager().redrawLayers();
-                return;
-            }
-        }
-    }
-
-    private static MapView findMapView(OfflineMapView shell) {
-        for (int i = 0; i < shell.getChildCount(); i++) {
-            View child = shell.getChildAt(i);
-            if (child instanceof MapView) return (MapView) child;
-        }
-        return null;
     }
 
     private static String category(String c) {
