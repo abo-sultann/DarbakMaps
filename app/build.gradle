@@ -7,19 +7,35 @@ android {
     compileSdk 35
 
     defaultConfig {
-        // Keep the installed-package identity while the clean rebuild is developed.
+        // Keep the installed identity used by the signed Darbak Maps line.
         applicationId 'com.abosultan.darbakmaps.debug'
         minSdk 25
         targetSdk 35
         versionCode 100
-        versionName '1.0.0-rebuild-dev'
+        versionName '1.0.0'
+        buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://github.com/abo-sultann/DarbakMaps/releases/latest/download/update-manifest.json"'
     }
+
+    signingConfigs {
+        production {
+            def storePath = System.getenv('DARBAK_KEYSTORE_PATH')
+            if (storePath) {
+                storeFile file(storePath)
+                storePassword System.getenv('DARBAK_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('DARBAK_KEY_ALIAS')
+                keyPassword System.getenv('DARBAK_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildFeatures { buildConfig true }
 
     buildTypes {
         debug { minifyEnabled false }
         release {
             minifyEnabled true
             shrinkResources true
+            if (System.getenv('DARBAK_KEYSTORE_PATH')) signingConfig signingConfigs.production
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -36,7 +52,7 @@ android {
 }
 
 dependencies {
-    // Pinned together: Android renderer + built-in offline render themes.
+    implementation 'androidx.core:core:1.13.1'
     implementation 'org.mapsforge:mapsforge-map-android:0.25.0'
     implementation 'org.mapsforge:mapsforge-themes:0.25.0'
     testImplementation 'junit:junit:4.13.2'

@@ -8,5 +8,14 @@
         <item name="android:statusBarColor">@color/darbak_background</item>
         <item name="android:navigationBarColor">@color/darbak_background</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:alertDialogTheme">@style/Theme.DarbakMaps.Dialog</item>
+    </style>
+
+    <style name="Theme.DarbakMaps.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_darbak_dialog</item>
+        <item name="android:colorAccent">@color/darbak_accent</item>
+        <item name="android:textColorPrimary">@color/darbak_text</item>
+        <item name="android:textColorSecondary">@color/darbak_text_secondary</item>
+        <item name="android:fontFamily">sans</item>
     </style>
 </resources>

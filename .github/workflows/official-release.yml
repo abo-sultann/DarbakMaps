@@ -1,0 +1,90 @@
+name: Darbak Maps Official Release
+
+on:
+  push:
+    branches: [darbakmaps-rebuild-1.0]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: contains(github.event.head_commit.message, '[official]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore verified signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.DARBAK_MAPS_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.DARBAK_MAPS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DARBAK_MAPS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.DARBAK_MAPS_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for v in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do test -n "${!v:-}" || { echo "::error::$v is missing"; exit 1; }; done
+          KEY="$RUNNER_TEMP/darbak-maps-stable.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEY"
+          keytool -list -keystore "$KEY" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          CERT="$RUNNER_TEMP/darbak-maps-signing.der"
+          keytool -exportcert -keystore "$KEY" -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" -file "$CERT" >/dev/null
+          ACTUAL="$(sha256sum "$CERT" | cut -d ' ' -f 1)"
+          test "$ACTUAL" = "cebaccb7712e30ec2053d5e8932b921c93e51ef9dedad2c7d111709f28e14eb7" || { echo '::error::Signing certificate mismatch'; exit 1; }
+          echo "DARBAK_KEYSTORE_PATH=$KEY" >> "$GITHUB_ENV"
+          echo "DARBAK_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "DARBAK_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "DARBAK_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Quality gate
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+      - name: Verify and prepare release
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/release/app-release.apk'
+          test -s "$APK"
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs "$APK"
+          VERSION_NAME="$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle | head -1)"
+          VERSION_CODE="$(sed -n 's/.*versionCode \([0-9][0-9]*\).*/\1/p' app/build.gradle | head -1)"
+          test -n "$VERSION_NAME"; test -n "$VERSION_CODE"
+          SHA="$(sha256sum "$APK" | cut -d ' ' -f 1)"
+          OUT="DarbakMaps-${VERSION_NAME}.apk"
+          cp "$APK" "$OUT"
+          cat > update-manifest.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "packageName": "com.abosultan.darbakmaps.debug",
+            "minSdk": 25,
+            "apkUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION_NAME}/${OUT}",
+            "sha256": "${SHA}"
+          }
+          EOF
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+          echo "$SHA  $OUT" > DarbakMaps-sha256.txt
+      - name: Publish official release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$OUT" update-manifest.json DarbakMaps-sha256.txt --clobber
+          else
+            gh release create "$TAG" "$OUT" update-manifest.json DarbakMaps-sha256.txt --title "Darbak Maps ${VERSION_NAME}" --notes "النسخة الرسمية من دربك للخرائط." --latest
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-${{ env.VERSION_NAME }}-official
+          path: |
+            ${{ env.OUT }}
+            update-manifest.json
+            DarbakMaps-sha256.txt
+          retention-days: 1
+          if-no-files-found: error

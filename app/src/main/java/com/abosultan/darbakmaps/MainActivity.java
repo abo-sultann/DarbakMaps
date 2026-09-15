@@ -8,11 +8,12 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+
 import com.abosultan.darbakmaps.core.TrackRecordingService;
 import com.abosultan.darbakmaps.ui.HomeScreen;
 
 public final class MainActivity extends Activity {
-    private static final int GPS_PERMISSION = 25;
+    private static final int STARTUP_PERMISSIONS = 25;
     private static final int IMMERSIVE_FLAGS =
             View.SYSTEM_UI_FLAG_FULLSCREEN |
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
@@ -24,28 +25,31 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         applyImmersiveMode();
         setContentView(new HomeScreen(this));
-        ensureGpsPermission();
+        ensurePermissions();
     }
 
-    private void ensureGpsPermission() {
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+    private void ensurePermissions() {
+        boolean gps = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        boolean storage = checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        if (gps && storage) {
             startTrackService();
-        } else {
-            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, GPS_PERMISSION);
+            return;
         }
+        java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+        if (!gps) missing.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        if (!storage) missing.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+        requestPermissions(missing.toArray(new String[0]), STARTUP_PERMISSIONS);
     }
 
-    private void startTrackService() {
-        startService(new Intent(this, TrackRecordingService.class));
-    }
+    private void startTrackService() { startService(new Intent(this, TrackRecordingService.class)); }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == GPS_PERMISSION && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == STARTUP_PERMISSIONS
+                && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             startTrackService();
         }
         applyImmersiveMode();
@@ -56,7 +60,5 @@ public final class MainActivity extends Activity {
         if (hasFocus) applyImmersiveMode();
     }
 
-    private void applyImmersiveMode() {
-        getWindow().getDecorView().setSystemUiVisibility(IMMERSIVE_FLAGS);
-    }
+    private void applyImmersiveMode() { getWindow().getDecorView().setSystemUiVisibility(IMMERSIVE_FLAGS); }
 }
