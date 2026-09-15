@@ -3,7 +3,6 @@ package com.abosultan.darbakmaps.ui;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.Matrix;
 import android.graphics.Path;
 import android.widget.FrameLayout;
 import java.io.File;
@@ -48,8 +47,7 @@ public final class OfflineMapView extends FrameLayout {
                 lastFixTime = fix.timestampMs;
                 LatLong position = new LatLong(fix.latitude, fix.longitude);
                 if (!followedFirstFix) {
-                    mapView.setCenter(position);
-                    if (mapView.getModel().mapViewPosition.getZoomLevel() < 15) mapView.setZoomLevel((byte) 15);
+                    centerOn(position, (byte) 15);
                     followedFirstFix = true;
                 }
                 appendLiveTrack(position);
@@ -67,6 +65,31 @@ public final class OfflineMapView extends FrameLayout {
 
     public boolean hasMap() { return activeMap != null; }
     public String activeMapName() { return activeMap == null ? null : activeMap.getName(); }
+
+    public void zoomIn() {
+        if (mapView == null) return;
+        byte zoom = mapView.getModel().mapViewPosition.getZoomLevel();
+        if (zoom < 20) mapView.setZoomLevel((byte) (zoom + 1));
+    }
+
+    public void zoomOut() {
+        if (mapView == null) return;
+        byte zoom = mapView.getModel().mapViewPosition.getZoomLevel();
+        if (zoom > 3) mapView.setZoomLevel((byte) (zoom - 1));
+    }
+
+    public boolean recenterOnGps() {
+        LocationSnapshot fix = LiveLocationStore.latest();
+        if (mapView == null || !fix.valid) return false;
+        centerOn(new LatLong(fix.latitude, fix.longitude), (byte) 15);
+        followedFirstFix = true;
+        return true;
+    }
+
+    private void centerOn(LatLong position, byte minimumZoom) {
+        mapView.setCenter(position);
+        if (mapView.getModel().mapViewPosition.getZoomLevel() < minimumZoom) mapView.setZoomLevel(minimumZoom);
+    }
 
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -185,8 +208,7 @@ public final class OfflineMapView extends FrameLayout {
     }
 
     private static float angleDelta(float from, float to) {
-        float d = (to - from + 540f) % 360f - 180f;
-        return d;
+        return (to - from + 540f) % 360f - 180f;
     }
 
     @Override protected void onDetachedFromWindow() {
