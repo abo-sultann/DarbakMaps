@@ -25,9 +25,11 @@ import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 import com.abosultan.darbakmaps.core.LiveLocationStore;
 import com.abosultan.darbakmaps.core.OfflineMapLocator;
 import com.abosultan.darbakmaps.core.SessionStore;
+import com.abosultan.darbakmaps.core.SqliteTrackRecorder;
 
 /** Real offline map surface. Never downloads tiles or requires Play Services. */
 public final class OfflineMapView extends FrameLayout {
+    private static final int RESTORE_TRACK_POINTS = 4000;
     private MapView mapView;
     private TileCache tileCache;
     private MapDataStore mapDataStore;
@@ -37,6 +39,7 @@ public final class OfflineMapView extends FrameLayout {
     private Marker vehicleMarker;
     private File activeMap;
     private SessionStore sessionStore;
+    private SqliteTrackRecorder trackStore;
     private long lastFixTime;
     private boolean followedFirstFix;
     private LatLong lastTrackPoint;
@@ -62,6 +65,7 @@ public final class OfflineMapView extends FrameLayout {
     public OfflineMapView(Context context) {
         super(context);
         sessionStore = new SessionStore(context);
+        trackStore = new SqliteTrackRecorder(context);
         setBackgroundColor(0xFFE8E1CF);
         tryOpen(context);
     }
@@ -121,6 +125,7 @@ public final class OfflineMapView extends FrameLayout {
             renderer.setXmlRenderTheme(MapsforgeThemes.MOTORIDER);
             mapView.getLayerManager().getLayers().add(renderer);
             createTrackLayers(context);
+            restoreTrack();
 
             SessionStore.Viewport saved = sessionStore.restoreViewport();
             if (saved != null && saved.latitude >= -90d && saved.latitude <= 90d && saved.longitude >= -180d && saved.longitude <= 180d) {
@@ -156,6 +161,17 @@ public final class OfflineMapView extends FrameLayout {
         trackPaint.setStrokeWidth(DarbakUi.dp(context, (int) TrackStyle.ACTIVE_TRACK_WIDTH_DP));
         activeTrack = new Polyline(trackPaint, AndroidGraphicFactory.INSTANCE);
         mapView.getLayerManager().getLayers().add(activeTrack);
+    }
+
+    private void restoreTrack() {
+        if (trackStore == null || activeTrack == null || trackOutline == null) return;
+        List<LocationSnapshot> saved = trackStore.recentPoints(RESTORE_TRACK_POINTS);
+        for (LocationSnapshot point : saved) {
+            LatLong position = new LatLong(point.latitude, point.longitude);
+            trackOutline.addPoint(position);
+            activeTrack.addPoint(position);
+            lastTrackPoint = position;
+        }
     }
 
     private void appendLiveTrack(LatLong position) {
@@ -238,6 +254,10 @@ public final class OfflineMapView extends FrameLayout {
         if (mapDataStore != null) {
             mapDataStore.close();
             mapDataStore = null;
+        }
+        if (trackStore != null) {
+            trackStore.close();
+            trackStore = null;
         }
         super.onDetachedFromWindow();
     }
