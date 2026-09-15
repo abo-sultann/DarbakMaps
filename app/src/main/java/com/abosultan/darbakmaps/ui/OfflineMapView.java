@@ -47,6 +47,8 @@ public final class OfflineMapView extends FrameLayout {
     private static final int RESTORE_TRACK_POINTS = 4000;
     private static final int MAX_PLACE_MARKERS = 500;
     private static final long LIVE_SEGMENT_GAP_MS = 10000L;
+    private static final long LIVE_DRAW_MAX_INTERVAL_MS = 15000L;
+    private static final double LIVE_DRAW_MIN_DISTANCE_METERS = 10d;
 
     private MapView mapView;
     private TileCache tileCache;
@@ -67,6 +69,7 @@ public final class OfflineMapView extends FrameLayout {
     private boolean followedFirstFix;
     private LatLong lastTrackPoint;
     private long lastTrackPointTime;
+    private long lastLiveTrackFixTime;
     private float lastVehicleBearing = Float.NaN;
     private Place guidanceTarget;
     private boolean liveRecordingEnabled;
@@ -90,6 +93,7 @@ public final class OfflineMapView extends FrameLayout {
                 } else if (liveRecordingEnabled) {
                     lastTrackPoint = null;
                     lastTrackPointTime = 0L;
+                    lastLiveTrackFixTime = 0L;
                 }
                 liveRecordingEnabled = recording;
 
@@ -166,7 +170,6 @@ public final class OfflineMapView extends FrameLayout {
         placeMarkers.remove(marker);
         boolean removed = mapView.getLayerManager().getLayers().remove(marker);
         if (removed) {
-            // Layers.remove() only unassigns; Mapsforge does not call Marker.onDestroy() here.
             marker.onDestroy();
             mapView.getLayerManager().redrawLayers();
         }
@@ -372,6 +375,7 @@ public final class OfflineMapView extends FrameLayout {
         if (guidanceLine != null) mapView.getLayerManager().getLayers().add(guidanceLine);
         lastTrackPoint = null;
         lastTrackPointTime = 0L;
+        lastLiveTrackFixTime = 0L;
     }
 
     private void restorePlaceMarkers() {
@@ -402,7 +406,6 @@ public final class OfflineMapView extends FrameLayout {
         String key = iconCategoryKey(category);
         org.mapsforge.core.graphics.Bitmap cached = placeIconCache.get(key);
         if (cached != null && !cached.isDestroyed()) {
-            // First Marker owns refCount 0. Every additional live Marker needs one extra reference.
             cached.incrementRefCount();
             return cached;
         }
@@ -538,15 +541,24 @@ public final class OfflineMapView extends FrameLayout {
         return "موقع محفوظ";
     }
 
+    /** Thins only the live map polyline; persistent SQLite/GPX points keep full accepted fidelity. */
     private void appendLiveTrack(LocationSnapshot fix, LatLong p) {
         if (activeTrack == null || trackOutline == null) return;
-        if (lastTrackPointTime > 0L && fix.timestampMs - lastTrackPointTime > LIVE_SEGMENT_GAP_MS) {
+
+        long previousFixTime = lastLiveTrackFixTime;
+        if (previousFixTime > 0L && fix.timestampMs - previousFixTime > LIVE_SEGMENT_GAP_MS) {
             startNewLiveTrackSegment();
         }
-        if (lastTrackPoint != null && lastTrackPoint.sphericalDistance(p) < 2d) {
-            lastTrackPointTime = fix.timestampMs;
-            return;
+        lastLiveTrackFixTime = fix.timestampMs;
+
+        if (lastTrackPoint != null) {
+            double distance = lastTrackPoint.sphericalDistance(p);
+            long sinceDrawn = fix.timestampMs - lastTrackPointTime;
+            if (distance < LIVE_DRAW_MIN_DISTANCE_METERS && sinceDrawn < LIVE_DRAW_MAX_INTERVAL_MS) {
+                return;
+            }
         }
+
         trackOutline.addPoint(p);
         activeTrack.addPoint(p);
         lastTrackPoint = p;
