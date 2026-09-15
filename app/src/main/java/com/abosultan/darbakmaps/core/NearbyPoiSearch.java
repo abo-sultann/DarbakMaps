@@ -40,10 +40,18 @@ public final class NearbyPoiSearch {
 
     public static List<Result> search(File mapFile, double latitude, double longitude,
                                       double radiusMeters, String wantedCategory, int limit) {
+        return search(mapFile, latitude, longitude, radiusMeters, wantedCategory, "", limit);
+    }
+
+    /** Searches nearby names and aliases without building a national index. */
+    public static List<Result> search(File mapFile, double latitude, double longitude,
+                                      double radiusMeters, String wantedCategory,
+                                      String query, int limit) {
         if (mapFile == null || !mapFile.isFile()) return Collections.emptyList();
         double safeRadius = Math.max(1000d, Math.min(radiusMeters, 30000d));
         int safeLimit = Math.max(5, Math.min(limit, MAX_RESULTS));
         String category = wantedCategory == null ? ALL : wantedCategory;
+        String wanted = normalize(query);
 
         MapFile map = null;
         ArrayList<Result> out = new ArrayList<>();
@@ -74,14 +82,14 @@ public final class NearbyPoiSearch {
                     if (data.pois != null) {
                         for (PointOfInterest poi : data.pois) {
                             Candidate candidate = candidate(poi.tags, poi.position);
-                            add(out, seen, candidate, latitude, longitude, safeRadius, category);
+                            add(out, seen, candidate, latitude, longitude, safeRadius, category, wanted);
                         }
                     }
                     if (data.ways != null) {
                         for (Way way : data.ways) {
                             LatLong position = representativePosition(way);
                             Candidate candidate = candidate(way.tags, position);
-                            add(out, seen, candidate, latitude, longitude, safeRadius, category);
+                            add(out, seen, candidate, latitude, longitude, safeRadius, category, wanted);
                         }
                     }
                 }
@@ -104,9 +112,11 @@ public final class NearbyPoiSearch {
     }
 
     private static void add(List<Result> out, Set<String> seen, Candidate candidate,
-                            double fromLat, double fromLon, double radiusMeters, String wantedCategory) {
+                            double fromLat, double fromLon, double radiusMeters,
+                            String wantedCategory, String wantedQuery) {
         if (candidate == null) return;
         if (!ALL.equals(wantedCategory) && !wantedCategory.equals(candidate.category)) return;
+        if (!matches(candidate.searchText, wantedQuery)) return;
         double distance = PlaceMath.distanceMeters(fromLat, fromLon, candidate.latitude, candidate.longitude);
         if (distance > radiusMeters) return;
         String key = normalize(candidate.name + "|" + candidate.source) + ':'
@@ -116,17 +126,39 @@ public final class NearbyPoiSearch {
                 candidate.latitude, candidate.longitude, distance));
     }
 
+    private static boolean matches(String searchable, String wanted) {
+        if (wanted == null || wanted.isEmpty()) return true;
+        String haystack = normalize(searchable);
+        if (haystack.contains(wanted)) return true;
+        String[] words = wanted.split(" ");
+        for (String word : words) {
+            if (!word.isEmpty() && !haystack.contains(word)) return false;
+        }
+        return true;
+    }
+
     private static Candidate candidate(List<Tag> tags, LatLong position) {
         if (position == null) return null;
         Classification classification = classify(tags);
         if (classification == null) return null;
-        String name = firstNotBlank(tagValue(tags, "name:ar"), tagValue(tags, "name"), tagValue(tags, "name:en"));
-        if (name == null || name.trim().isEmpty()) {
+        String ar = tagValue(tags, "name:ar");
+        String name = tagValue(tags, "name");
+        String en = tagValue(tags, "name:en");
+        String primary = firstNotBlank(ar, name, en);
+        if (primary == null || primary.trim().isEmpty()) {
             if (!classification.allowUnnamed) return null;
-            name = classification.source;
+            primary = classification.source;
         }
-        return new Candidate(name.trim(), classification.source, classification.category,
-                position.latitude, position.longitude);
+        String aliases = joinNonBlank(
+                ar, name, en,
+                tagValue(tags, "alt_name"),
+                tagValue(tags, "old_name"),
+                tagValue(tags, "loc_name"),
+                tagValue(tags, "short_name"),
+                tagValue(tags, "official_name"));
+        String searchText = primary + " " + aliases + " " + classification.source + " " + classification.category;
+        return new Candidate(primary.trim(), classification.source, classification.category,
+                position.latitude, position.longitude, searchText);
     }
 
     private static Classification classify(List<Tag> tags) {
@@ -201,6 +233,16 @@ public final class NearbyPoiSearch {
         return null;
     }
 
+    private static String joinNonBlank(String... values) {
+        StringBuilder out = new StringBuilder();
+        for (String value : values) {
+            if (value == null || value.trim().isEmpty()) continue;
+            if (out.length() > 0) out.append(' ');
+            out.append(value.trim());
+        }
+        return out.toString();
+    }
+
     private static boolean oneOf(String value, String... choices) {
         if (value == null) return false;
         for (String choice : choices) if (choice.equals(value)) return true;
@@ -211,11 +253,13 @@ public final class NearbyPoiSearch {
         return value == null || value.isEmpty() ? null : value.toLowerCase(Locale.ROOT);
     }
 
-    private static String normalize(String value) {
+    static String normalize(String value) {
         if (value == null) return "";
-        return value.trim().toLowerCase(Locale.ROOT)
-                .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
-                .replace('ى', 'ي').replace('ة', 'ه').replace('ؤ', 'و').replace('ئ', 'ي');
+        String out = value.trim().toLowerCase(Locale.ROOT)
+                .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ٱ', 'ا')
+                .replace('ى', 'ي').replace('ة', 'ه').replace('ؤ', 'و').replace('ئ', 'ي')
+                .replace('ـ', ' ');
+        return out.replaceAll("[ًٌٍَُِّْٰ]", "").replaceAll("\\s+", " ").trim();
     }
 
     public static final class Result {
@@ -242,13 +286,15 @@ public final class NearbyPoiSearch {
         final String category;
         final double latitude;
         final double longitude;
+        final String searchText;
 
-        Candidate(String name, String source, String category, double latitude, double longitude) {
+        Candidate(String name, String source, String category, double latitude, double longitude, String searchText) {
             this.name = name;
             this.source = source;
             this.category = category;
             this.latitude = latitude;
             this.longitude = longitude;
+            this.searchText = searchText;
         }
     }
 
