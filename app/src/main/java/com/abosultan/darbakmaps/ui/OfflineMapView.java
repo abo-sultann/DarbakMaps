@@ -64,6 +64,7 @@ public final class OfflineMapView extends FrameLayout {
     private long lastTrackPointTime;
     private float lastVehicleBearing = Float.NaN;
     private Place guidanceTarget;
+    private boolean liveRecordingEnabled;
 
     private final Runnable gpsPump = new Runnable() {
         @Override public void run() {
@@ -75,7 +76,17 @@ public final class OfflineMapView extends FrameLayout {
                     centerOn(position, (byte) 15);
                     followedFirstFix = true;
                 }
-                appendLiveTrack(fix, position);
+
+                boolean recording = sessionStore != null && sessionStore.shouldResumeTrackRecording();
+                if (recording) {
+                    if (!liveRecordingEnabled) startNewLiveTrackSegment();
+                    appendLiveTrack(fix, position);
+                } else if (liveRecordingEnabled) {
+                    lastTrackPoint = null;
+                    lastTrackPointTime = 0L;
+                }
+                liveRecordingEnabled = recording;
+
                 updateVehicleMarker(position, fix.bearing);
                 updateGuidance(position);
             }
@@ -86,6 +97,7 @@ public final class OfflineMapView extends FrameLayout {
     public OfflineMapView(Context context) {
         super(context);
         sessionStore = new SessionStore(context);
+        liveRecordingEnabled = sessionStore.shouldResumeTrackRecording();
         trackStore = new SqliteTrackRecorder(context);
         placeStore = new SqlitePlaceRepository(context);
         setBackgroundColor(0xFFE8E1CF);
