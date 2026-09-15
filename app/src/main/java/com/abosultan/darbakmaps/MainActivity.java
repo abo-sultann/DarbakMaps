@@ -1,6 +1,8 @@
 package com.abosultan.darbakmaps;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
@@ -11,6 +13,7 @@ import com.abosultan.darbakmaps.core.SqliteTrackRecorder;
 import com.abosultan.darbakmaps.ui.HomeScreen;
 
 public final class MainActivity extends Activity {
+    private static final int GPS_PERMISSION = 25;
     private static final int IMMERSIVE_FLAGS =
             View.SYSTEM_UI_FLAG_FULLSCREEN |
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
@@ -41,6 +44,21 @@ public final class MainActivity extends Activity {
         trackRecorder = new SqliteTrackRecorder(this);
         trackRecorder.restoreAutomaticState();
         setContentView(new HomeScreen(this));
+        ensureGpsPermission();
+    }
+
+    private void ensureGpsPermission() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, GPS_PERMISSION);
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == GPS_PERMISSION && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            locationEngine.start();
+        }
+        applyImmersiveMode();
     }
 
     @Override protected void onResume() {
