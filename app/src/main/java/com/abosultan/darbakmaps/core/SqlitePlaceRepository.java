@@ -42,6 +42,22 @@ public final class SqlitePlaceRepository extends SQLiteOpenHelper implements Pla
         return getWritableDatabase().insertOrThrow("places", null, v);
     }
 
+    public List<Place> all(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+        ArrayList<Place> result = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("places", null, null, null, null, null, "id DESC", Integer.toString(safeLimit));
+        try {
+            int id = c.getColumnIndexOrThrow("id");
+            int lat = c.getColumnIndexOrThrow("lat");
+            int lon = c.getColumnIndexOrThrow("lon");
+            int cat = c.getColumnIndexOrThrow("category");
+            int name = c.getColumnIndexOrThrow("name");
+            int note = c.getColumnIndexOrThrow("note");
+            while (c.moveToNext()) result.add(new Place(c.getLong(id), c.getDouble(lat), c.getDouble(lon), c.getString(cat), c.getString(name), c.getString(note)));
+        } finally { c.close(); }
+        return result;
+    }
+
     @Override public List<Place> nearest(final double latitude, final double longitude, String category, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 200));
         ArrayList<Place> result = new ArrayList<>();
