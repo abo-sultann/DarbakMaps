@@ -50,17 +50,23 @@ tap_text() {
   sleep 1
 }
 
+reveal_home_controls() {
+  # UIAutomator may keep hidden dock nodes in its tree. Prefer the visible reveal button;
+  # if it is absent, the controls are already visible.
+  tap_text "≡" >/dev/null 2>&1 || true
+  sleep 1
+}
+
 home_control() {
   local text="$1"
-  if ! tap_text "$text"; then
-    tap_text "≡"
-    tap_text "$text"
-  fi
+  reveal_home_controls
+  tap_text "$text" || { echo "ERROR: home control not found: $text" >&2; return 1; }
 }
 
 longpress_home_control() {
   local text="$1" point
-  point="$(point_for_text "$text")" || { tap_text "≡"; point="$(point_for_text "$text")"; }
+  reveal_home_controls
+  point="$(point_for_text "$text")" || { echo "ERROR: home control not found for long press: $text" >&2; return 1; }
   set -- $point
   adb shell input swipe "$1" "$2" "$1" "$2" 900
   sleep 1
@@ -84,11 +90,13 @@ fi
 if ! grep -q 'دربك للخرائط' "$OUT/window.xml"; then
   echo 'ERROR: Darbak Maps home UI not found.' >&2; exit 32
 fi
+reveal_home_controls
 snapshot "01-home"
 
 # Identity-critical internal surfaces.
 home_control "المزيد"; snapshot "02-more"
-tap_text "حول دربك للخرائط"; snapshot "03-about"; adb shell input keyevent 4; sleep 1
+tap_text "حول دربك للخرائط" || { echo 'ERROR: About action did not open.' >&2; exit 34; }
+snapshot "03-about"; adb shell input keyevent 4; sleep 1
 home_control "المسارات"; snapshot "04-tracks"; adb shell input keyevent 4; sleep 1
 home_control "حفظ موقع"; snapshot "05-save-place"; adb shell input keyevent 4; sleep 1
 home_control "بحث"; snapshot "06-search"; adb shell input keyevent 4; sleep 1
@@ -114,7 +122,7 @@ cat > "$OUT/acceptance.txt" <<'EOF'
 Darbak Maps 1.0 visual gate
 Required: Android 7.1, framebuffer exactly 1024x600 landscape, 1GB AVD profile.
 Screens: home, more, about, tracks, save-place, search, hidden diagnostics.
-Forbidden: Android immersive education overlay, old green identity, old 0.9.x layouts, fatal exception.
+Forbidden: Android immersive education overlay, old green/blue identity, old 0.9.x layouts, fatal exception.
 This gate validates startup/layout/identity. Real Saudi map content and physical GPS remain hardware/data checks.
 EOF
 
