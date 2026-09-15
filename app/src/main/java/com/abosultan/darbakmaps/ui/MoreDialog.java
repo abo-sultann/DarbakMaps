@@ -2,9 +2,9 @@ package com.abosultan.darbakmaps.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.pm.PackageInfo;
 import android.widget.Toast;
 
-import com.abosultan.darbakmaps.BuildConfig;
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 import com.abosultan.darbakmaps.core.LiveLocationStore;
 import com.abosultan.darbakmaps.core.SessionStore;
@@ -18,7 +18,7 @@ final class MoreDialog {
         LocationSnapshot fix = LiveLocationStore.latest();
         String mapName = map.activeMapName();
 
-        String message = "الإصدار: " + BuildConfig.VERSION_NAME
+        String message = "الإصدار: " + versionName(c)
                 + "\nالخريطة: " + (mapName == null ? "غير جاهزة" : mapName)
                 + "\nGPS: " + (fix.valid ? "متصل" : "بانتظار الإشارة")
                 + "\nتسجيل المسار: " + (recording ? "يعمل" : "متوقف مؤقتًا")
@@ -40,6 +40,15 @@ final class MoreDialog {
                 })
                 .setNegativeButton("إغلاق", null)
                 .show();
+    }
+
+    private static String versionName(Context c) {
+        try {
+            PackageInfo info = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+            return info.versionName == null ? "—" : info.versionName;
+        } catch (Exception ignored) {
+            return "—";
+        }
     }
 
     private MoreDialog() {}
