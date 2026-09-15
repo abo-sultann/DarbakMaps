@@ -7,12 +7,14 @@ import android.widget.Toast;
 
 import com.abosultan.darbakmaps.core.BacktrackNavigator;
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
+import com.abosultan.darbakmaps.core.GpxTrackExporter;
 import com.abosultan.darbakmaps.core.LiveLocationStore;
 import com.abosultan.darbakmaps.core.SessionStore;
 import com.abosultan.darbakmaps.core.SqliteTrackRecorder;
 import com.abosultan.darbakmaps.core.SqliteTrackRecorder.TrackSegment;
 import com.abosultan.darbakmaps.core.TrackRecordingService;
 
+import java.io.File;
 import java.util.List;
 import java.util.Locale;
 
@@ -54,21 +56,31 @@ final class TracksDialog {
                 BacktrackNavigator navigator = new BacktrackNavigator(latestUsable.points);
                 double offTrack = navigator.offTrackMeters(fix.latitude, fix.longitude);
                 message.append("\nالبعد عن المسار: ").append(formatDistance(offTrack));
-                if (offTrack > OFF_TRACK_WARNING_METERS) {
-                    message.append(" ⚠");
-                }
+                if (offTrack > OFF_TRACK_WARNING_METERS) message.append(" ⚠");
             } else {
                 message.append("\nالبعد عن المسار: بانتظار GPS");
             }
         }
 
         String control = recording ? "إيقاف مؤقت" : "استئناف التسجيل";
-        String backtrack = map.isBacktrackActive() ? "إلغاء الرجوع" : "رجوع على آخر مسار";
         new AlertDialog.Builder(c)
                 .setTitle("المسارات")
                 .setMessage(message.toString())
                 .setPositiveButton(control, (d, w) -> setRecording(c, !recording))
-                .setNeutralButton(backtrack, (d, w) -> toggleBacktrack(c, map))
+                .setNeutralButton("إجراءات المسار", (d, w) -> showTrackActions(c, map))
+                .setNegativeButton("إغلاق", null)
+                .show();
+    }
+
+    private static void showTrackActions(Context c, OfflineMapView map) {
+        String backtrack = map.isBacktrackActive() ? "إلغاء الرجوع على المسار" : "رجوع على آخر مسار";
+        String[] actions = new String[]{backtrack, "حفظ نسخة GPX"};
+        new AlertDialog.Builder(c)
+                .setTitle("إجراءات المسار")
+                .setItems(actions, (d, which) -> {
+                    if (which == 0) toggleBacktrack(c, map);
+                    else exportGpx(c);
+                })
                 .setNegativeButton("إغلاق", null)
                 .show();
     }
@@ -92,6 +104,15 @@ final class TracksDialog {
             Toast.makeText(c, "لا يوجد مسار محفوظ كافٍ للرجوع", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(c, "بدأ الرجوع على آخر مسار", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private static void exportGpx(Context c) {
+        try {
+            File file = GpxTrackExporter.exportAll(c);
+            Toast.makeText(c, "تم حفظ GPX: " + file.getName(), Toast.LENGTH_LONG).show();
+        } catch (Exception error) {
+            Toast.makeText(c, "تعذر حفظ GPX", Toast.LENGTH_LONG).show();
         }
     }
 
