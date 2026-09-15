@@ -37,6 +37,15 @@ public final class SessionStore {
         return prefs.getBoolean("track_recording", true);
     }
 
+    public void setAutoLaunch(boolean enabled) {
+        prefs.edit().putBoolean("auto_launch", enabled).apply();
+    }
+
+    /** Disabled by default so installing a development build never steals the launcher unexpectedly. */
+    public boolean shouldAutoLaunch() {
+        return prefs.getBoolean("auto_launch", false);
+    }
+
     public static final class Viewport {
         public final double latitude;
         public final double longitude;

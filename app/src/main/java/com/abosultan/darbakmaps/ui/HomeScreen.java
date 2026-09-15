@@ -103,6 +103,7 @@ public final class HomeScreen extends FrameLayout {
             else if ("المواقع".equals(action)) a.setOnClickListener(v -> SavedPlacesDialog.show(c, map));
             else if ("المسارات".equals(action)) a.setOnClickListener(v -> TracksDialog.show(c, map));
             else if ("بحث".equals(action)) a.setOnClickListener(v -> showSearchMenu(c, map));
+            else if ("المزيد".equals(action)) a.setOnClickListener(v -> MoreDialog.show(c, map));
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, DarbakUi.dp(c, 56), 1f);
             if (dock.getChildCount() > 0) p.rightMargin = DarbakUi.dp(c, 8);
             dock.addView(a, p);
