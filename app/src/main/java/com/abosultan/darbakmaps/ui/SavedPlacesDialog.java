@@ -16,14 +16,12 @@ import java.util.List;
 final class SavedPlacesDialog {
     static void show(Context c, OfflineMapView map) {
         LocationSnapshot fix = LiveLocationStore.latest();
-        if (!fix.valid) {
-            Toast.makeText(c, "بانتظار إشارة GPS لترتيب المواقع حسب الأقرب", Toast.LENGTH_SHORT).show();
-            return;
-        }
         SqlitePlaceRepository repo = new SqlitePlaceRepository(c);
         final List<Place> places;
         try {
-            places = repo.nearest(fix.latitude, fix.longitude, null, 100);
+            places = fix.valid
+                    ? repo.nearest(fix.latitude, fix.longitude, null, 100)
+                    : repo.all(100);
         } finally {
             repo.close();
         }
@@ -31,16 +29,22 @@ final class SavedPlacesDialog {
             Toast.makeText(c, "لا توجد مواقع محفوظة", Toast.LENGTH_SHORT).show();
             return;
         }
+
         String[] rows = new String[places.size()];
         for (int i = 0; i < places.size(); i++) {
             Place p = places.get(i);
-            double meters = PlaceMath.distanceMeters(fix.latitude, fix.longitude, p.latitude, p.longitude);
-            double bearing = bearing(fix.latitude, fix.longitude, p.latitude, p.longitude);
-            rows[i] = category(p.category) + "   " + distance(meters) + "   " + arrow(bearing);
+            if (fix.valid) {
+                double meters = PlaceMath.distanceMeters(fix.latitude, fix.longitude, p.latitude, p.longitude);
+                double bearing = bearing(fix.latitude, fix.longitude, p.latitude, p.longitude);
+                rows[i] = category(p.category) + "   " + distance(meters) + "   " + arrow(bearing);
+            } else {
+                rows[i] = category(p.category) + "   —   GPS غير متاح";
+            }
         }
 
+        String title = fix.valid ? "المواقع المحفوظة — الأقرب أولاً" : "المواقع المحفوظة";
         AlertDialog dialog = new AlertDialog.Builder(c)
-                .setTitle("المواقع المحفوظة — الأقرب أولاً")
+                .setTitle(title)
                 .setItems(rows, (d, which) -> map.showPlaceActions(places.get(which)))
                 .setNegativeButton("إغلاق", null)
                 .create();
