@@ -113,11 +113,12 @@ public final class HomeScreen extends FrameLayout {
     }
 
     private static void showSearchMenu(Context c, OfflineMapView map) {
-        final String[] options = {"القريب مني", "بحث بإحداثيات"};
+        final String[] options = {"القريب مني", "بحث قريب بالاسم", "بحث بإحداثيات"};
         new AlertDialog.Builder(c)
                 .setTitle("البحث")
                 .setItems(options, (d, which) -> {
                     if (which == 0) NearbyPoiDialog.show(c, map);
+                    else if (which == 1) NearbyPoiDialog.showNameSearch(c, map);
                     else showCoordinateSearch(c, map);
                 })
                 .setNegativeButton("إلغاء", null)
