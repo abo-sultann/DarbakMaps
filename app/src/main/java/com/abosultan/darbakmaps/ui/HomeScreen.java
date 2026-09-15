@@ -70,9 +70,9 @@ public final class HomeScreen extends FrameLayout {
         top.addView(speedView, new LinearLayout.LayoutParams(DarbakUi.dp(c, 115), DarbakUi.dp(c, 52)));
         addView(top, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, DarbakUi.dp(c, 72), Gravity.TOP));
 
-        TextView search = DarbakUi.action(c, "⌕   ابحث بإحداثية");
+        TextView search = DarbakUi.action(c, "⌕   ابحث أو اعرض القريب");
         search.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
-        search.setOnClickListener(v -> showCoordinateSearch(c, map));
+        search.setOnClickListener(v -> showSearchMenu(c, map));
         FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(DarbakUi.dp(c, 430), DarbakUi.dp(c, 56), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         slp.topMargin = DarbakUi.dp(c, 88);
         addView(search, slp);
@@ -102,7 +102,7 @@ public final class HomeScreen extends FrameLayout {
             if ("حفظ موقع".equals(action)) a.setOnClickListener(v -> picker(c, map));
             else if ("المواقع".equals(action)) a.setOnClickListener(v -> SavedPlacesDialog.show(c, map));
             else if ("المسارات".equals(action)) a.setOnClickListener(v -> TracksDialog.show(c, map));
-            else if ("بحث".equals(action)) a.setOnClickListener(v -> showCoordinateSearch(c, map));
+            else if ("بحث".equals(action)) a.setOnClickListener(v -> showSearchMenu(c, map));
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, DarbakUi.dp(c, 56), 1f);
             if (dock.getChildCount() > 0) p.rightMargin = DarbakUi.dp(c, 8);
             dock.addView(a, p);
@@ -110,6 +110,18 @@ public final class HomeScreen extends FrameLayout {
         FrameLayout.LayoutParams dlp = new FrameLayout.LayoutParams(DarbakUi.dp(c, 680), DarbakUi.dp(c, 72), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         dlp.bottomMargin = DarbakUi.dp(c, 16);
         addView(dock, dlp);
+    }
+
+    private static void showSearchMenu(Context c, OfflineMapView map) {
+        final String[] options = {"القريب مني", "بحث بإحداثيات"};
+        new AlertDialog.Builder(c)
+                .setTitle("البحث")
+                .setItems(options, (d, which) -> {
+                    if (which == 0) NearbyPoiDialog.show(c, map);
+                    else showCoordinateSearch(c, map);
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
     }
 
     private static void showCoordinateSearch(Context c, OfflineMapView map) {
