@@ -50,25 +50,41 @@ tap_text() {
   sleep 1
 }
 
+# The API-25 software emulator makes uiautomator dumps slow enough for the 6.5s
+# auto-hide timer to race the tap. These coordinates are deliberately fixed because
+# this gate itself requires an exact 1024x600 framebuffer.
 reveal_home_controls() {
-  # UIAutomator may keep hidden dock nodes in its tree. Prefer the visible reveal button;
-  # if it is absent, the controls are already visible.
-  tap_text "≡" >/dev/null 2>&1 || true
+  adb shell input tap 44 556
   sleep 1
 }
 
 home_control() {
-  local text="$1"
+  local text="$1" x
   reveal_home_controls
-  tap_text "$text" || { echo "ERROR: home control not found: $text" >&2; return 1; }
+  case "$text" in
+    "المزيد") x=781 ;;
+    "المسارات") x=647 ;;
+    "المواقع") x=513 ;;
+    "حفظ موقع") x=379 ;;
+    "بحث") x=244 ;;
+    *) echo "ERROR: unknown home control: $text" >&2; return 1 ;;
+  esac
+  adb shell input tap "$x" 548
+  sleep 1
 }
 
 longpress_home_control() {
-  local text="$1" point
+  local text="$1" x
   reveal_home_controls
-  point="$(point_for_text "$text")" || { echo "ERROR: home control not found for long press: $text" >&2; return 1; }
-  set -- $point
-  adb shell input swipe "$1" "$2" "$1" "$2" 900
+  case "$text" in
+    "المزيد") x=781 ;;
+    "المسارات") x=647 ;;
+    "المواقع") x=513 ;;
+    "حفظ موقع") x=379 ;;
+    "بحث") x=244 ;;
+    *) echo "ERROR: unknown home control for long press: $text" >&2; return 1 ;;
+  esac
+  adb shell input swipe "$x" 548 "$x" 548 900
   sleep 1
 }
 
