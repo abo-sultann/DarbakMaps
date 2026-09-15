@@ -28,7 +28,7 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
     @Override public void start() {
         if (started || manager == null) return;
         if (!hasPermission()) {
-            latest = invalid();
+            setLatest(invalid());
             return;
         }
         try {
@@ -38,7 +38,7 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
             started = true;
         } catch (SecurityException revokedWhileStarting) {
             started = false;
-            latest = invalid();
+            setLatest(invalid());
         }
     }
 
@@ -56,7 +56,7 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
     @Override public void onLocationChanged(Location location) { update(location); }
     @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
     @Override public void onProviderEnabled(String provider) {}
-    @Override public void onProviderDisabled(String provider) { latest = invalid(); }
+    @Override public void onProviderDisabled(String provider) { setLatest(invalid()); }
 
     private boolean hasPermission() {
         return context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
@@ -66,7 +66,12 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
         if (location == null) return;
         float speed = location.hasSpeed() ? location.getSpeed() * 3.6f : 0f;
         float bearing = location.hasBearing() ? location.getBearing() : 0f;
-        latest = new LocationSnapshot(location.getLatitude(), location.getLongitude(), bearing, speed, location.getTime(), true);
+        setLatest(new LocationSnapshot(location.getLatitude(), location.getLongitude(), bearing, speed, location.getTime(), true));
+    }
+
+    private void setLatest(LocationSnapshot snapshot) {
+        latest = snapshot;
+        LiveLocationStore.publish(snapshot);
     }
 
     private static LocationSnapshot invalid() {
