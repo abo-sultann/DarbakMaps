@@ -8,6 +8,7 @@ import android.graphics.Path;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import com.abosultan.darbakmaps.core.BacktrackNavigator;
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 import com.abosultan.darbakmaps.core.CoreContracts.Place;
 import com.abosultan.darbakmaps.core.LiveLocationStore;
@@ -65,6 +66,7 @@ public final class OfflineMapView extends FrameLayout {
     private float lastVehicleBearing = Float.NaN;
     private Place guidanceTarget;
     private boolean liveRecordingEnabled;
+    private BacktrackNavigator backtrackNavigator;
 
     private final Runnable gpsPump = new Runnable() {
         @Override public void run() {
@@ -88,7 +90,8 @@ public final class OfflineMapView extends FrameLayout {
                 liveRecordingEnabled = recording;
 
                 updateVehicleMarker(position, fix.bearing);
-                updateGuidance(position);
+                if (backtrackNavigator != null) updateBacktrack(position);
+                else updateGuidance(position);
             }
             postDelayed(this, 750L);
         }
@@ -151,6 +154,42 @@ public final class OfflineMapView extends FrameLayout {
         }
     }
 
+    boolean isBacktrackActive() { return backtrackNavigator != null; }
+
+    boolean startBacktrack() {
+        if (trackStore == null || mapView == null) return false;
+        List<TrackSegment> segments = trackStore.recentSegments(RESTORE_TRACK_POINTS);
+        TrackSegment selected = null;
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            TrackSegment candidate = segments.get(i);
+            if (candidate.points.size() >= 2) {
+                selected = candidate;
+                break;
+            }
+        }
+        if (selected == null) return false;
+
+        BacktrackNavigator navigator = new BacktrackNavigator(selected.points);
+        if (!navigator.usable()) return false;
+        guidanceTarget = null;
+        backtrackNavigator = navigator;
+        if (guidanceLine != null) guidanceLine.clear();
+
+        LocationSnapshot fix = LiveLocationStore.latest();
+        if (fix.valid) {
+            LatLong current = new LatLong(fix.latitude, fix.longitude);
+            updateBacktrack(current);
+            centerOn(current, (byte) 15);
+        }
+        return true;
+    }
+
+    void stopBacktrack() {
+        backtrackNavigator = null;
+        if (guidanceLine != null) guidanceLine.clear();
+        if (mapView != null) mapView.getLayerManager().redrawLayers();
+    }
+
     /** Shared action sheet used from both the saved-place list and the map marker itself. */
     void showPlaceActions(final Place place) {
         if (place == null) return;
@@ -176,6 +215,7 @@ public final class OfflineMapView extends FrameLayout {
     }
 
     private void startGuidance(Place place) {
+        backtrackNavigator = null;
         guidanceTarget = place;
         LocationSnapshot fix = LiveLocationStore.latest();
         if (fix.valid) updateGuidance(new LatLong(fix.latitude, fix.longitude));
@@ -195,6 +235,24 @@ public final class OfflineMapView extends FrameLayout {
         guidanceLine.clear();
         guidanceLine.addPoint(current);
         guidanceLine.addPoint(new LatLong(guidanceTarget.latitude, guidanceTarget.longitude));
+        if (mapView != null) mapView.getLayerManager().redrawLayers();
+    }
+
+    private void updateBacktrack(LatLong current) {
+        if (guidanceLine == null || backtrackNavigator == null || current == null) return;
+        LocationSnapshot target = backtrackNavigator.update(current.latitude, current.longitude);
+        if (target == null) {
+            stopBacktrack();
+            return;
+        }
+        if (backtrackNavigator.finished(current.latitude, current.longitude)) {
+            stopBacktrack();
+            Toast.makeText(getContext(), "وصلت إلى بداية المسار", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        guidanceLine.clear();
+        guidanceLine.addPoint(current);
+        guidanceLine.addPoint(new LatLong(target.latitude, target.longitude));
         if (mapView != null) mapView.getLayerManager().redrawLayers();
     }
 
