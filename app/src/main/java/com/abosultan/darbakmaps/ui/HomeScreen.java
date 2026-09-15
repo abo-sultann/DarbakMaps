@@ -10,7 +10,7 @@ import android.widget.TextView;
 import com.abosultan.darbakmaps.core.AndroidLocationEngine;
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 
-/** Lightweight 1024x600 shell. Live GPS status is independent from the future map renderer. */
+/** Lightweight 1024x600 shell over a real offline map surface. */
 public final class HomeScreen extends FrameLayout {
     private final AndroidLocationEngine location;
     private TextView gpsView;
@@ -34,7 +34,7 @@ public final class HomeScreen extends FrameLayout {
         location = new AndroidLocationEngine(context);
         setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         setBackgroundColor(DarbakUi.BG);
-        setContentDescription("Darbak Maps Home Visual Gate 2");
+        setContentDescription("Darbak Maps Offline Home");
         build(context);
     }
 
@@ -52,7 +52,7 @@ public final class HomeScreen extends FrameLayout {
     }
 
     private void build(Context c) {
-        MapPlaceholderView map = new MapPlaceholderView(c);
+        OfflineMapView map = new OfflineMapView(c);
         addView(map, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         LinearLayout top = new LinearLayout(c);
@@ -89,12 +89,14 @@ public final class HomeScreen extends FrameLayout {
         toolsLp.leftMargin = DarbakUi.dp(c, 18);
         addView(tools, toolsLp);
 
-        TextView mapState = text(c, "الخريطة الأوفلاين • بانتظار ربط محرك العرض", 16, false);
-        mapState.setGravity(Gravity.CENTER);
-        mapState.setBackground(DarbakUi.rounded(0xE6102040, DarbakUi.BORDER, 16, c));
-        FrameLayout.LayoutParams stateLp = new FrameLayout.LayoutParams(DarbakUi.dp(c, 350), DarbakUi.dp(c, 48), Gravity.CENTER);
-        stateLp.topMargin = DarbakUi.dp(c, 85);
-        addView(mapState, stateLp);
+        if (!map.hasMap()) {
+            TextView mapState = text(c, "ضع ملف .map في DarbakMaps أو Maps على الذاكرة/SD", 15, false);
+            mapState.setGravity(Gravity.CENTER);
+            mapState.setBackground(DarbakUi.rounded(0xE6102040, DarbakUi.BORDER, 16, c));
+            FrameLayout.LayoutParams stateLp = new FrameLayout.LayoutParams(DarbakUi.dp(c, 470), DarbakUi.dp(c, 48), Gravity.CENTER);
+            stateLp.topMargin = DarbakUi.dp(c, 85);
+            addView(mapState, stateLp);
+        }
 
         LinearLayout dock = new LinearLayout(c);
         dock.setGravity(Gravity.CENTER);
