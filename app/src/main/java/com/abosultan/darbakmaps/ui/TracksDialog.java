@@ -16,7 +16,7 @@ import java.util.List;
 final class TracksDialog {
     private static final int STATS_POINT_LIMIT = 10000;
 
-    static void show(Context c, OfflineMapView map) {
+    static void show(Context c) {
         SessionStore session = new SessionStore(c);
         boolean recording = session.shouldResumeTrackRecording();
 
@@ -41,13 +41,12 @@ final class TracksDialog {
         new AlertDialog.Builder(c)
                 .setTitle("المسارات")
                 .setMessage(message)
-                .setPositiveButton(control, (d, w) -> setRecording(c, map, !recording))
-                .setNeutralButton("تحديث العرض", (d, w) -> map.refreshRecordedTracks())
+                .setPositiveButton(control, (d, w) -> setRecording(c, !recording))
                 .setNegativeButton("إغلاق", null)
                 .show();
     }
 
-    private static void setRecording(Context c, OfflineMapView map, boolean enabled) {
+    private static void setRecording(Context c, boolean enabled) {
         SessionStore session = new SessionStore(c);
         session.setTrackRecording(enabled);
 
@@ -55,7 +54,6 @@ final class TracksDialog {
         service.setAction(enabled ? TrackRecordingService.ACTION_RESUME : TrackRecordingService.ACTION_PAUSE);
         c.startService(service);
 
-        map.onTrackRecordingChanged(enabled);
         Toast.makeText(c, enabled ? "تم استئناف تسجيل المسار" : "تم إيقاف تسجيل المسار مؤقتًا", Toast.LENGTH_SHORT).show();
     }
 
