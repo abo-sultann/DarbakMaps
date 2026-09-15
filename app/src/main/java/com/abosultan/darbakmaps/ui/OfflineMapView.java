@@ -32,7 +32,7 @@ public final class OfflineMapView extends FrameLayout {
             LocationSnapshot fix = LiveLocationStore.latest();
             if (mapView != null && fix.valid && fix.timestampMs != lastFixTime) {
                 lastFixTime = fix.timestampMs;
-                LatLong position = new LatLong(fix.lat, fix.lon);
+                LatLong position = new LatLong(fix.latitude, fix.longitude);
                 if (!followedFirstFix) {
                     mapView.setCenter(position);
                     if (mapView.getModel().mapViewPosition.getZoomLevel() < 15) mapView.setZoomLevel((byte) 15);
