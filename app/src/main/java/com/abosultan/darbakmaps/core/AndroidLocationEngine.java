@@ -27,18 +27,29 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
 
     @Override public void start() {
         if (started || manager == null) return;
-        if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (!hasPermission()) {
             latest = invalid();
             return;
         }
-        Location last = manager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-        if (last != null) update(last);
-        manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, this);
-        started = true;
+        try {
+            Location last = manager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (last != null) update(last);
+            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, this);
+            started = true;
+        } catch (SecurityException revokedWhileStarting) {
+            started = false;
+            latest = invalid();
+        }
     }
 
     @Override public void stop() {
-        if (manager != null && started) manager.removeUpdates(this);
+        if (manager != null && started) {
+            try {
+                manager.removeUpdates(this);
+            } catch (SecurityException ignored) {
+                // Permission may be revoked while the activity is running.
+            }
+        }
         started = false;
     }
 
@@ -47,7 +58,12 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
     @Override public void onProviderEnabled(String provider) {}
     @Override public void onProviderDisabled(String provider) { latest = invalid(); }
 
+    private boolean hasPermission() {
+        return context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void update(Location location) {
+        if (location == null) return;
         float speed = location.hasSpeed() ? location.getSpeed() * 3.6f : 0f;
         float bearing = location.hasBearing() ? location.getBearing() : 0f;
         latest = new LocationSnapshot(location.getLatitude(), location.getLongitude(), bearing, speed, location.getTime(), true);
