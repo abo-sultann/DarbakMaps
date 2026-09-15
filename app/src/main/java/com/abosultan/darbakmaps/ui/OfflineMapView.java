@@ -377,25 +377,111 @@ public final class OfflineMapView extends FrameLayout {
         mapView.getLayerManager().redrawLayers();
     }
 
+    /** Small category markers are drawn locally to avoid bitmap assets and extra memory pressure. */
     private org.mapsforge.core.graphics.Bitmap createPlaceIcon(String category) {
-        int size = DarbakUi.dp(getContext(), 34);
+        int size = DarbakUi.dp(getContext(), 38);
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        float center = size / 2f;
+        float radius = center - DarbakUi.dp(getContext(), 2);
+
         paint.setStyle(android.graphics.Paint.Style.FILL);
         paint.setColor(categoryColor(category));
-        float center = size / 2f;
-        canvas.drawCircle(center, center, center - DarbakUi.dp(getContext(), 2), paint);
+        canvas.drawCircle(center, center, radius, paint);
+
         paint.setStyle(android.graphics.Paint.Style.STROKE);
         paint.setStrokeWidth(DarbakUi.dp(getContext(), 2));
         paint.setColor(0xFFFFFFFF);
-        canvas.drawCircle(center, center, center - DarbakUi.dp(getContext(), 4), paint);
+        canvas.drawCircle(center, center, radius - DarbakUi.dp(getContext(), 2), paint);
+
         paint.setStyle(android.graphics.Paint.Style.FILL);
-        paint.setTextAlign(android.graphics.Paint.Align.CENTER);
-        paint.setTextSize(DarbakUi.dp(getContext(), 17));
-        paint.setFakeBoldText(true);
-        canvas.drawText(categoryGlyph(category), center, center - (paint.ascent() + paint.descent()) / 2f, paint);
+        paint.setColor(0xFFFFFFFF);
+        drawCategorySymbol(canvas, paint, category, center, size);
         return new AndroidBitmap(bitmap);
+    }
+
+    private void drawCategorySymbol(Canvas canvas, android.graphics.Paint paint, String category, float c, int size) {
+        float u = size / 38f;
+        String value = category == null ? "other" : category;
+        if (value.contains("bird") || value.contains("summan")) {
+            // Quail/bird silhouette: body, head, beak and raised wing.
+            canvas.drawOval(new android.graphics.RectF(c - 9f * u, c - 3f * u, c + 6f * u, c + 7f * u), paint);
+            canvas.drawCircle(c + 7f * u, c - 5f * u, 4f * u, paint);
+            Path beak = new Path();
+            beak.moveTo(c + 10f * u, c - 6f * u);
+            beak.lineTo(c + 15f * u, c - 4f * u);
+            beak.lineTo(c + 10f * u, c - 2f * u);
+            beak.close();
+            canvas.drawPath(beak, paint);
+            Path wing = new Path();
+            wing.moveTo(c - 4f * u, c - 2f * u);
+            wing.quadTo(c, c - 11f * u, c + 4f * u, c - 1f * u);
+            wing.quadTo(c, c + 2f * u, c - 4f * u, c - 2f * u);
+            wing.close();
+            canvas.drawPath(wing, paint);
+            return;
+        }
+        if (value.contains("water")) {
+            Path drop = new Path();
+            drop.moveTo(c, c - 12f * u);
+            drop.cubicTo(c - 2f * u, c - 7f * u, c - 8f * u, c - 1f * u, c - 8f * u, c + 4f * u);
+            drop.cubicTo(c - 8f * u, c + 10f * u, c - 4f * u, c + 13f * u, c, c + 13f * u);
+            drop.cubicTo(c + 4f * u, c + 13f * u, c + 8f * u, c + 10f * u, c + 8f * u, c + 4f * u);
+            drop.cubicTo(c + 8f * u, c - 1f * u, c + 2f * u, c - 7f * u, c, c - 12f * u);
+            drop.close();
+            canvas.drawPath(drop, paint);
+            return;
+        }
+        if (value.contains("camp")) {
+            Path tent = new Path();
+            tent.moveTo(c, c - 11f * u);
+            tent.lineTo(c - 13f * u, c + 11f * u);
+            tent.lineTo(c + 13f * u, c + 11f * u);
+            tent.close();
+            canvas.drawPath(tent, paint);
+            android.graphics.Paint cut = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            cut.setStyle(android.graphics.Paint.Style.FILL);
+            cut.setColor(categoryColor(category));
+            Path door = new Path();
+            door.moveTo(c, c - 1f * u);
+            door.lineTo(c - 4f * u, c + 11f * u);
+            door.lineTo(c + 4f * u, c + 11f * u);
+            door.close();
+            canvas.drawPath(door, cut);
+            return;
+        }
+        if (value.contains("fuel")) {
+            canvas.drawRoundRect(new android.graphics.RectF(c - 9f * u, c - 11f * u, c + 5f * u, c + 11f * u), 2f * u, 2f * u, paint);
+            android.graphics.Paint cut = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            cut.setStyle(android.graphics.Paint.Style.FILL);
+            cut.setColor(categoryColor(category));
+            canvas.drawRect(c - 6f * u, c - 8f * u, c + 2f * u, c - 2f * u, cut);
+            android.graphics.Paint hose = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            hose.setStyle(android.graphics.Paint.Style.STROKE);
+            hose.setStrokeWidth(2.5f * u);
+            hose.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+            hose.setColor(0xFFFFFFFF);
+            Path path = new Path();
+            path.moveTo(c + 5f * u, c - 7f * u);
+            path.cubicTo(c + 12f * u, c - 7f * u, c + 12f * u, c + 1f * u, c + 9f * u, c + 5f * u);
+            path.lineTo(c + 9f * u, c + 10f * u);
+            canvas.drawPath(path, hose);
+            return;
+        }
+
+        // Generic saved place: compact map pin.
+        canvas.drawCircle(c, c - 3f * u, 7f * u, paint);
+        Path pin = new Path();
+        pin.moveTo(c - 5f * u, c + 1f * u);
+        pin.lineTo(c, c + 12f * u);
+        pin.lineTo(c + 5f * u, c + 1f * u);
+        pin.close();
+        canvas.drawPath(pin, paint);
+        android.graphics.Paint hole = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        hole.setColor(categoryColor(category));
+        hole.setStyle(android.graphics.Paint.Style.FILL);
+        canvas.drawCircle(c, c - 3f * u, 2.5f * u, hole);
     }
 
     private static int categoryColor(String c) {
@@ -405,15 +491,6 @@ public final class OfflineMapView extends FrameLayout {
         if (c.contains("camp")) return 0xFF2E7D32;
         if (c.contains("fuel")) return 0xFFC62828;
         return 0xFF6D5B3E;
-    }
-
-    private static String categoryGlyph(String c) {
-        if (c == null) return "•";
-        if (c.contains("bird") || c.contains("summan")) return "ط";
-        if (c.contains("water")) return "م";
-        if (c.contains("camp")) return "خ";
-        if (c.contains("fuel")) return "و";
-        return "•";
     }
 
     private static String categoryLabel(String c) {
