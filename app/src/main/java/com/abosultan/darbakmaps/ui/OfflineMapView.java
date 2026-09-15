@@ -37,8 +37,10 @@ import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /** Real offline map surface. Never downloads tiles or requires Play Services. */
 public final class OfflineMapView extends FrameLayout {
@@ -55,6 +57,8 @@ public final class OfflineMapView extends FrameLayout {
     private Polyline guidanceLine;
     private Marker vehicleMarker;
     private final List<Marker> placeMarkers = new ArrayList<>();
+    private final Map<Long, Marker> placeMarkerById = new HashMap<>();
+    private final Map<String, org.mapsforge.core.graphics.Bitmap> placeIconCache = new HashMap<>();
     private File activeMap;
     private SessionStore sessionStore;
     private SqliteTrackRecorder trackStore;
@@ -152,6 +156,21 @@ public final class OfflineMapView extends FrameLayout {
         } catch (RuntimeException ignored) {
             return false;
         }
+    }
+
+    /** Removes exactly the marker tied to the persisted place ID and releases its bitmap reference. */
+    boolean removeSavedPlaceMarker(long placeId) {
+        if (mapView == null || placeId <= 0L) return false;
+        Marker marker = placeMarkerById.remove(placeId);
+        if (marker == null) return false;
+        placeMarkers.remove(marker);
+        boolean removed = mapView.getLayerManager().getLayers().remove(marker);
+        if (removed) {
+            // Layers.remove() only unassigns; Mapsforge does not call Marker.onDestroy() here.
+            marker.onDestroy();
+            mapView.getLayerManager().redrawLayers();
+        }
+        return removed;
     }
 
     boolean isBacktrackActive() { return backtrackNavigator != null; }
@@ -374,11 +393,20 @@ public final class OfflineMapView extends FrameLayout {
         marker.setBillboard(true);
         mapView.getLayerManager().getLayers().add(marker);
         placeMarkers.add(marker);
+        if (place.id > 0L) placeMarkerById.put(place.id, marker);
         mapView.getLayerManager().redrawLayers();
     }
 
-    /** Small category markers are drawn locally to avoid bitmap assets and extra memory pressure. */
+    /** Reuses one bitmap per category while keeping Mapsforge reference counts correct. */
     private org.mapsforge.core.graphics.Bitmap createPlaceIcon(String category) {
+        String key = iconCategoryKey(category);
+        org.mapsforge.core.graphics.Bitmap cached = placeIconCache.get(key);
+        if (cached != null && !cached.isDestroyed()) {
+            // First Marker owns refCount 0. Every additional live Marker needs one extra reference.
+            cached.incrementRefCount();
+            return cached;
+        }
+
         int size = DarbakUi.dp(getContext(), 38);
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
@@ -387,7 +415,7 @@ public final class OfflineMapView extends FrameLayout {
         float radius = center - DarbakUi.dp(getContext(), 2);
 
         paint.setStyle(android.graphics.Paint.Style.FILL);
-        paint.setColor(categoryColor(category));
+        paint.setColor(categoryColor(key));
         canvas.drawCircle(center, center, radius, paint);
 
         paint.setStyle(android.graphics.Paint.Style.STROKE);
@@ -397,15 +425,25 @@ public final class OfflineMapView extends FrameLayout {
 
         paint.setStyle(android.graphics.Paint.Style.FILL);
         paint.setColor(0xFFFFFFFF);
-        drawCategorySymbol(canvas, paint, category, center, size);
-        return new AndroidBitmap(bitmap);
+        drawCategorySymbol(canvas, paint, key, center, size);
+        org.mapsforge.core.graphics.Bitmap created = new AndroidBitmap(bitmap);
+        placeIconCache.put(key, created);
+        return created;
+    }
+
+    private static String iconCategoryKey(String category) {
+        if (category == null) return "other";
+        if (category.contains("bird") || category.contains("summan")) return "summan";
+        if (category.contains("water")) return "water";
+        if (category.contains("camp")) return "camp";
+        if (category.contains("fuel")) return "fuel";
+        return "other";
     }
 
     private void drawCategorySymbol(Canvas canvas, android.graphics.Paint paint, String category, float c, int size) {
         float u = size / 38f;
         String value = category == null ? "other" : category;
         if (value.contains("bird") || value.contains("summan")) {
-            // Quail/bird silhouette: body, head, beak and raised wing.
             canvas.drawOval(new android.graphics.RectF(c - 9f * u, c - 3f * u, c + 6f * u, c + 7f * u), paint);
             canvas.drawCircle(c + 7f * u, c - 5f * u, 4f * u, paint);
             Path beak = new Path();
@@ -470,7 +508,6 @@ public final class OfflineMapView extends FrameLayout {
             return;
         }
 
-        // Generic saved place: compact map pin.
         canvas.drawCircle(c, c - 3f * u, 7f * u, paint);
         Path pin = new Path();
         pin.moveTo(c - 5f * u, c + 1f * u);
@@ -605,6 +642,9 @@ public final class OfflineMapView extends FrameLayout {
             mapView.destroyAll();
             mapView = null;
         }
+        placeMarkers.clear();
+        placeMarkerById.clear();
+        placeIconCache.clear();
         if (mapDataStore != null) {
             mapDataStore.close();
             mapDataStore = null;
