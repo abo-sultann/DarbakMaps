@@ -87,7 +87,11 @@ public final class HomeScreen extends FrameLayout {
         zo.setOnClickListener(v -> map.zoomOut());
         tools.addView(zo, tp(c));
         TextView rc = tool(c, "◎");
-        rc.setOnClickListener(v -> map.recenterOnGps());
+        rc.setOnClickListener(v -> {
+            if (!map.recenterOnGps()) {
+                Toast.makeText(c, map.hasMap() ? "بانتظار إشارة GPS" : "الخريطة غير جاهزة", Toast.LENGTH_SHORT).show();
+            }
+        });
         tools.addView(rc, tp(c));
         FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(DarbakUi.dp(c, 60), LayoutParams.WRAP_CONTENT, Gravity.LEFT | Gravity.CENTER_VERTICAL);
         tlp.leftMargin = DarbakUi.dp(c, 18);
@@ -145,7 +149,10 @@ public final class HomeScreen extends FrameLayout {
                         Toast.makeText(c, "الإحداثية غير صحيحة", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    map.focusPlace(coordinate[0], coordinate[1]);
+                    if (!map.focusPlace(coordinate[0], coordinate[1])) {
+                        Toast.makeText(c, "الخريطة غير جاهزة", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
                     Toast.makeText(c, "تم إظهار الموقع على الخريطة", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("إلغاء", null)
