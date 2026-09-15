@@ -61,7 +61,8 @@ public final class SqliteTrackRecorder extends SQLiteOpenHelper implements Track
                 db.execSQL("ALTER TABLE track_points ADD COLUMN distance_from_prev REAL NOT NULL DEFAULT 0");
             }
             backfillDistancesAndRepairSegments(db);
-            trimToMaxDistance(db);
+            double stored = storedDistance(db);
+            if (stored > MAX_RETAINED_DISTANCE_METERS) trimOldestExcess(db, stored);
         }
     }
 
@@ -205,7 +206,7 @@ public final class SqliteTrackRecorder extends SQLiteOpenHelper implements Track
             lastAccepted = point;
             retainedDistanceCache += edgeDistance;
             if (retainedDistanceCache > MAX_RETAINED_DISTANCE_METERS) {
-                retainedDistanceCache = trimToMaxDistance(db);
+                retainedDistanceCache = trimOldestExcess(db, retainedDistanceCache);
             }
             return true;
         } catch (RuntimeException error) {
@@ -233,21 +234,25 @@ public final class SqliteTrackRecorder extends SQLiteOpenHelper implements Track
         }
     }
 
-    /** Keeps newest breadcrumbs whose connected distance is at most 1000 km. */
-    private static double trimToMaxDistance(SQLiteDatabase db) {
-        double kept = 0d;
+    /**
+     * Drops only enough oldest connected edges to return below 1000 km. This avoids rescanning the
+     * entire retained history whenever a new GPS point crosses the rolling limit.
+     */
+    private static double trimOldestExcess(SQLiteDatabase db, double currentDistance) {
+        double excess = currentDistance - MAX_RETAINED_DISTANCE_METERS;
+        if (excess <= 0d) return currentDistance;
+
+        double removedDistance = 0d;
         long cutoffId = -1L;
         Cursor cursor = db.query("track_points", new String[]{"id", "distance_from_prev"},
-                null, null, null, null, "id DESC");
+                null, null, null, null, "id ASC");
         try {
             while (cursor.moveToNext()) {
                 long id = cursor.getLong(0);
                 double edge = Math.max(0d, cursor.getDouble(1));
-                if (kept + edge > MAX_RETAINED_DISTANCE_METERS) {
-                    cutoffId = id;
-                    break;
-                }
-                kept += edge;
+                cutoffId = id;
+                removedDistance += edge;
+                if (removedDistance >= excess && edge > 0d) break;
             }
         } finally {
             cursor.close();
@@ -259,7 +264,7 @@ public final class SqliteTrackRecorder extends SQLiteOpenHelper implements Track
             boundary.put("distance_from_prev", 0d);
             db.update("track_points", boundary, "id=?", new String[]{Long.toString(cutoffId)});
         }
-        return kept;
+        return Math.max(0d, currentDistance - removedDistance);
     }
 
     private long nextSegmentId() {
