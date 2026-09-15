@@ -1,5 +1,6 @@
 package com.abosultan.darbakmaps.ui;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.view.Gravity;
@@ -25,8 +26,16 @@ public final class HomeScreen extends FrameLayout {
         LinearLayout tools=new LinearLayout(c);tools.setOrientation(LinearLayout.VERTICAL);tools.setGravity(Gravity.CENTER);TextView zi=tool(c,"＋");zi.setOnClickListener(v->map.zoomIn());tools.addView(zi,toolParams(c));TextView zo=tool(c,"−");zo.setOnClickListener(v->map.zoomOut());tools.addView(zo,toolParams(c));TextView rc=tool(c,"◎");rc.setContentDescription("إعادة التمركز على السيارة");rc.setOnClickListener(v->map.recenterOnGps());tools.addView(rc,toolParams(c));TextView or=tool(c,"◈");or.setContentDescription("الخريطة باتجاه الشمال");tools.addView(or,toolParams(c));FrameLayout.LayoutParams tlp=new FrameLayout.LayoutParams(DarbakUi.dp(c,60),LayoutParams.WRAP_CONTENT,Gravity.LEFT|Gravity.CENTER_VERTICAL);tlp.leftMargin=DarbakUi.dp(c,18);addView(tools,tlp);
         if(!map.hasMap()){TextView st=text(c,"ضع ملف .map في DarbakMaps أو Maps على الذاكرة/SD",15,false);st.setGravity(Gravity.CENTER);st.setBackground(DarbakUi.rounded(0xE6102040,DarbakUi.BORDER,16,c));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(DarbakUi.dp(c,470),DarbakUi.dp(c,48),Gravity.CENTER);lp.topMargin=DarbakUi.dp(c,85);addView(st,lp);}
         LinearLayout dock=new LinearLayout(c);dock.setGravity(Gravity.CENTER);dock.setPadding(DarbakUi.dp(c,8),DarbakUi.dp(c,7),DarbakUi.dp(c,8),DarbakUi.dp(c,7));dock.setBackground(DarbakUi.rounded(0xF2102040,DarbakUi.BORDER,22,c));
-        for(String action:new String[]{"المزيد","المسارات","المواقع","حفظ موقع","بحث"}){TextView a=DarbakUi.action(c,action);if("حفظ موقع".equals(action)){a.setOnClickListener(v->{boolean ok=map.saveCurrentPlace("other");Toast.makeText(c,ok?"تم حفظ الموقع":"بانتظار إشارة GPS",Toast.LENGTH_SHORT).show();});}LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,DarbakUi.dp(c,56),1f);if(dock.getChildCount()>0)p.rightMargin=DarbakUi.dp(c,8);dock.addView(a,p);}
+        for(String action:new String[]{"المزيد","المسارات","المواقع","حفظ موقع","بحث"}){TextView a=DarbakUi.action(c,action);if("حفظ موقع".equals(action)){a.setOnClickListener(v->showPlaceCategoryPicker(c,map));}LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,DarbakUi.dp(c,56),1f);if(dock.getChildCount()>0)p.rightMargin=DarbakUi.dp(c,8);dock.addView(a,p);}
         FrameLayout.LayoutParams dlp=new FrameLayout.LayoutParams(DarbakUi.dp(c,680),DarbakUi.dp(c,72),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);dlp.bottomMargin=DarbakUi.dp(c,16);addView(dock,dlp);
+    }
+    private static void showPlaceCategoryPicker(Context c, OfflineMapView map){
+        final String[] labels={"طير سمان","ماء","مخيم","وقود","أخرى"};
+        final String[] values={"summan","water","camp","fuel","other"};
+        new AlertDialog.Builder(c).setTitle("حفظ الموقع كـ").setItems(labels,(d,which)->{
+            boolean ok=map.saveCurrentPlace(values[which]);
+            Toast.makeText(c,ok?"تم حفظ الموقع — "+labels[which]:"بانتظار إشارة GPS",Toast.LENGTH_SHORT).show();
+        }).setNegativeButton("إلغاء",null).show();
     }
     private static TextView tool(Context c,String v){TextView t=DarbakUi.action(c,v);t.setTextSize(24);return t;}
     private static LinearLayout.LayoutParams toolParams(Context c){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(DarbakUi.dp(c,56),DarbakUi.dp(c,56));p.bottomMargin=DarbakUi.dp(c,10);return p;}
