@@ -48,7 +48,7 @@ public final class HomeScreen extends FrameLayout {
     }
 
     private void build(Context c) {
-        OfflineMapView map = new OfflineMapView(c);
+        final OfflineMapView map = new OfflineMapView(c);
         addView(map, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         LinearLayout top = new LinearLayout(c);
@@ -74,13 +74,19 @@ public final class HomeScreen extends FrameLayout {
         LinearLayout tools = new LinearLayout(c);
         tools.setOrientation(LinearLayout.VERTICAL);
         tools.setGravity(Gravity.CENTER);
-        for (String name : new String[]{"＋", "−", "◎", "◈"}) {
-            TextView t = DarbakUi.action(c, name);
-            t.setTextSize(24);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(DarbakUi.dp(c, 56), DarbakUi.dp(c, 56));
-            p.bottomMargin = DarbakUi.dp(c, 10);
-            tools.addView(t, p);
-        }
+        TextView zoomIn = tool(c, "＋");
+        zoomIn.setOnClickListener(v -> map.zoomIn());
+        tools.addView(zoomIn, toolParams(c));
+        TextView zoomOut = tool(c, "−");
+        zoomOut.setOnClickListener(v -> map.zoomOut());
+        tools.addView(zoomOut, toolParams(c));
+        TextView recenter = tool(c, "◎");
+        recenter.setContentDescription("إعادة التمركز على السيارة");
+        recenter.setOnClickListener(v -> map.recenterOnGps());
+        tools.addView(recenter, toolParams(c));
+        TextView orientation = tool(c, "◈");
+        orientation.setContentDescription("الخريطة باتجاه الشمال");
+        tools.addView(orientation, toolParams(c));
         FrameLayout.LayoutParams toolsLp = new FrameLayout.LayoutParams(DarbakUi.dp(c, 60), LayoutParams.WRAP_CONTENT, Gravity.LEFT | Gravity.CENTER_VERTICAL);
         toolsLp.leftMargin = DarbakUi.dp(c, 18);
         addView(tools, toolsLp);
@@ -107,6 +113,18 @@ public final class HomeScreen extends FrameLayout {
         FrameLayout.LayoutParams dockLp = new FrameLayout.LayoutParams(DarbakUi.dp(c, 680), DarbakUi.dp(c, 72), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         dockLp.bottomMargin = DarbakUi.dp(c, 16);
         addView(dock, dockLp);
+    }
+
+    private static TextView tool(Context c, String value) {
+        TextView t = DarbakUi.action(c, value);
+        t.setTextSize(24);
+        return t;
+    }
+
+    private static LinearLayout.LayoutParams toolParams(Context c) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(DarbakUi.dp(c, 56), DarbakUi.dp(c, 56));
+        p.bottomMargin = DarbakUi.dp(c, 10);
+        return p;
     }
 
     private static TextView text(Context c, String value, int sp, boolean bold) {
