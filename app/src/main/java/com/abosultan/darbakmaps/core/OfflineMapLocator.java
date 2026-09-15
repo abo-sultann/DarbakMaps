@@ -4,10 +4,14 @@ import android.content.Context;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
-/** Finds Mapsforge .map packs without network access, preferring removable storage. */
+/** Finds Mapsforge .map packs without network access, with the approved Saudi pack first. */
 public final class OfflineMapLocator {
+    public static final String APPROVED_MAP_NAME = "darbak-saudi.map";
+
     private OfflineMapLocator() {}
 
     public static List<File> find(Context context) {
@@ -26,8 +30,20 @@ public final class OfflineMapLocator {
                 }
             }
         }
-        Collections.sort(result, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+
+        Collections.sort(result, new Comparator<File>() {
+            @Override public int compare(File a, File b) {
+                boolean aApproved = isApproved(a);
+                boolean bApproved = isApproved(b);
+                if (aApproved != bApproved) return aApproved ? -1 : 1;
+                return Long.compare(b.lastModified(), a.lastModified());
+            }
+        });
         return result;
+    }
+
+    private static boolean isApproved(File file) {
+        return file != null && APPROVED_MAP_NAME.equals(file.getName().toLowerCase(Locale.US));
     }
 
     private static void collect(File dir, List<File> out) {
@@ -36,7 +52,7 @@ public final class OfflineMapLocator {
         if (files == null) return;
         for (File file : files) {
             if (file.isDirectory()) collect(file, out);
-            else if (file.getName().toLowerCase().endsWith(".map") && file.length() > 0L) out.add(file);
+            else if (file.getName().toLowerCase(Locale.US).endsWith(".map") && file.length() > 0L) out.add(file);
         }
     }
 }
