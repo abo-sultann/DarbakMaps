@@ -2,8 +2,12 @@ package com.abosultan.darbakmaps.core;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import static com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 import static com.abosultan.darbakmaps.core.CoreContracts.TrackRecorder;
@@ -71,6 +75,28 @@ public final class SqliteTrackRecorder extends SQLiteOpenHelper implements Track
         } catch (RuntimeException e) {
             state = State.ERROR;
             return false;
+        }
+    }
+
+    /** Returns the newest persisted breadcrumb window in chronological order. */
+    public synchronized List<LocationSnapshot> recentPoints(int limit) {
+        if (limit <= 0) return Collections.emptyList();
+        ArrayList<LocationSnapshot> points = new ArrayList<>();
+        Cursor c = null;
+        try {
+            c = getReadableDatabase().query("track_points",
+                    new String[]{"lat", "lon", "bearing", "speed", "time_ms"},
+                    null, null, null, null, "time_ms DESC", Integer.toString(limit));
+            while (c.moveToNext()) {
+                points.add(new LocationSnapshot(c.getDouble(0), c.getDouble(1), c.getFloat(2),
+                        c.getFloat(3), c.getLong(4), true));
+            }
+            Collections.reverse(points);
+            return points;
+        } catch (RuntimeException ignored) {
+            return Collections.emptyList();
+        } finally {
+            if (c != null) c.close();
         }
     }
 
