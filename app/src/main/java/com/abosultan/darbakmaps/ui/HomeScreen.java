@@ -94,8 +94,9 @@ public final class HomeScreen extends FrameLayout {
         LinearLayout top = new LinearLayout(c);
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setPadding(DarbakUi.dp(c, 18), DarbakUi.dp(c, 10), DarbakUi.dp(c, 18), DarbakUi.dp(c, 10));
-        top.setBackgroundColor(0xE60A1633);
+        top.setBackgroundColor(0xEE0B0F12);
         TextView title = text(c, "دربك للخرائط", 22, true);
+        title.setTextColor(DarbakUi.ACCENT);
         top.addView(title, new LinearLayout.LayoutParams(0, DarbakUi.dp(c, 52), 1f));
         gpsView = text(c, "GPS  —", 16, false);
         gpsView.setGravity(Gravity.CENTER);
@@ -130,7 +131,7 @@ public final class HomeScreen extends FrameLayout {
         LinearLayout dock = new LinearLayout(c);
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(DarbakUi.dp(c, 8), DarbakUi.dp(c, 7), DarbakUi.dp(c, 8), DarbakUi.dp(c, 7));
-        dock.setBackground(DarbakUi.rounded(0xF2102040, DarbakUi.BORDER, 22, c));
+        dock.setBackground(DarbakUi.rounded(0xF212191F, DarbakUi.BORDER, 22, c));
         for (String action : new String[]{"المزيد", "المسارات", "المواقع", "حفظ موقع", "بحث"}) {
             TextView a = DarbakUi.action(c, action);
             if ("حفظ موقع".equals(action)) a.setOnClickListener(v -> { showControls(); picker(c, map); });
@@ -197,7 +198,7 @@ public final class HomeScreen extends FrameLayout {
         }).setNegativeButton("إلغاء", null).show();
     }
 
-    private static TextView tool(Context c, String v) { TextView t = DarbakUi.action(c, v); t.setTextSize(24f); return t; }
+    private static TextView tool(Context c, String v) { TextView t = DarbakUi.action(c, v); t.setTextSize(24f); t.setTextColor(DarbakUi.ACCENT); return t; }
     private static LinearLayout.LayoutParams tp(Context c) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(DarbakUi.dp(c, 56), DarbakUi.dp(c, 56)); p.bottomMargin = DarbakUi.dp(c, 10); return p; }
     private static TextView text(Context c, String v, int sp, boolean bold) {
         TextView x = new TextView(c); x.setText(v); x.setTextColor(DarbakUi.TEXT); x.setTextSize(sp);

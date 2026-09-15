@@ -7,15 +7,16 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.TextView;
 
+/** Shared Darbak desert identity: charcoal surfaces, warm gold accents, high-contrast text. */
 public final class DarbakUi {
-    public static final int BG = Color.rgb(10, 22, 51);
-    public static final int SURFACE = Color.rgb(16, 32, 64);
-    public static final int CARD = Color.rgb(16, 43, 92);
-    public static final int ACTIVE = Color.rgb(23, 59, 108);
-    public static final int BORDER = Color.rgb(45, 85, 115);
-    public static final int ACCENT = Color.rgb(25, 181, 255);
-    public static final int TEXT = Color.rgb(243, 248, 255);
-    public static final int TEXT_SECONDARY = Color.rgb(208, 226, 241);
+    public static final int BG = Color.rgb(11, 15, 18);
+    public static final int SURFACE = Color.rgb(18, 25, 31);
+    public static final int CARD = Color.rgb(23, 32, 39);
+    public static final int ACTIVE = Color.rgb(46, 38, 24);
+    public static final int BORDER = Color.rgb(92, 75, 42);
+    public static final int ACCENT = Color.rgb(222, 174, 78);
+    public static final int TEXT = Color.rgb(247, 244, 236);
+    public static final int TEXT_SECONDARY = Color.rgb(205, 197, 179);
 
     private DarbakUi() {}
 

@@ -109,9 +109,9 @@ final class MoreDialog {
         signature.setImageResource(R.drawable.darbak_owner_signature);
         signature.setAdjustViewBounds(true);
         signature.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        signature.setBackgroundColor(Color.WHITE);
-        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, DarbakUi.dp(c, 230));
-        ip.topMargin = DarbakUi.dp(c, 12);
+        signature.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, DarbakUi.dp(c, 170));
+        ip.topMargin = DarbakUi.dp(c, 10);
         box.addView(signature, ip);
 
         new AlertDialog.Builder(c).setTitle("حول").setView(box).setPositiveButton("إغلاق", null).show();
