@@ -29,6 +29,7 @@ final class TracksDialog {
 
         int segments = 0;
         int points = 0;
+        double retainedMeters = 0d;
         TrackSegment latestUsable = null;
         SqliteTrackRecorder reader = new SqliteTrackRecorder(c);
         try {
@@ -38,6 +39,7 @@ final class TracksDialog {
                 points += segment.points.size();
                 if (segment.points.size() >= 2) latestUsable = segment;
             }
+            retainedMeters = reader.retainedDistanceMeters();
         } finally {
             reader.close();
         }
@@ -45,6 +47,7 @@ final class TracksDialog {
         String status = recording ? "يعمل" : "متوقف مؤقتًا";
         StringBuilder message = new StringBuilder();
         message.append("التسجيل: ").append(status)
+                .append("\nالمسافة المحفوظة: ").append(formatDistance(retainedMeters)).append(" / 1000 كم")
                 .append("\nالمقاطع المحفوظة: ").append(segments)
                 .append("\nالنقاط المحفوظة: ").append(points)
                 .append(points >= STATS_POINT_LIMIT ? "+" : "")
