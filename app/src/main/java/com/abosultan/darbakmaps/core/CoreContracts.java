@@ -57,14 +57,22 @@ public final class CoreContracts {
 
     public static final class Place {
         public final long id;
+        /** Stable identity across database row changes, exports and future imports. */
+        public final String uuid;
         public final double latitude;
         public final double longitude;
         public final String category;
         public final String name;
         public final String note;
 
+        /** Compatibility constructor for new/transient places; the repository assigns a UUID on save. */
         public Place(long id, double latitude, double longitude, String category, String name, String note) {
+            this(id, null, latitude, longitude, category, name, note);
+        }
+
+        public Place(long id, String uuid, double latitude, double longitude, String category, String name, String note) {
             this.id = id;
+            this.uuid = uuid;
             this.latitude = latitude;
             this.longitude = longitude;
             this.category = category;
