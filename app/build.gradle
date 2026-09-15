@@ -36,9 +36,8 @@ android {
 }
 
 dependencies {
-    // 0.25.0 is the newest Mapsforge Android runtime verified on Maven Central.
-    // Keep the engine pinned for deterministic API 25 builds; newer source tags
-    // are evaluated separately and must not break the car-screen build pipeline.
+    // Pinned together: Android renderer + built-in offline render themes.
     implementation 'org.mapsforge:mapsforge-map-android:0.25.0'
+    implementation 'org.mapsforge:mapsforge-themes:0.25.0'
     testImplementation 'junit:junit:4.13.2'
 }
