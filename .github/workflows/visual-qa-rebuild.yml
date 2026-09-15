@@ -33,11 +33,10 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           pre-emulator-launch-script: |
-            CFG="$ANDROID_AVD_HOME/darbak_qa.avd/config.ini"
-            test -f "$CFG"
-            sed -i '/^hw\.lcd\.width=/d;/^hw\.lcd\.height=/d;/^hw\.lcd\.density=/d' "$CFG"
-            printf '%s\n' 'hw.lcd.width=1024' 'hw.lcd.height=600' 'hw.lcd.density=160' >> "$CFG"
-            grep -E '^hw\.lcd\.(width|height|density)=' "$CFG"
+            test -f "$ANDROID_AVD_HOME/darbak_qa.avd/config.ini"
+            sed -i '/^hw\.lcd\.width=/d;/^hw\.lcd\.height=/d;/^hw\.lcd\.density=/d;/^hw\.initialOrientation=/d;/^skin\.name=/d;/^skin\.path=/d;/^skin\.path\.backup=/d;/^skin\.dynamic=/d;/^showDeviceFrame=/d' "$ANDROID_AVD_HOME/darbak_qa.avd/config.ini"
+            printf '%s\n' 'hw.lcd.width=1024' 'hw.lcd.height=600' 'hw.lcd.density=160' 'hw.initialOrientation=Landscape' 'skin.dynamic=yes' 'skin.name=1024x600' 'skin.path=_no_skin' 'skin.path.backup=_no_skin' 'showDeviceFrame=no' >> "$ANDROID_AVD_HOME/darbak_qa.avd/config.ini"
+            grep -E '^(hw\.lcd\.(width|height|density)|hw\.initialOrientation|skin\.(name|path|dynamic)|showDeviceFrame)=' "$ANDROID_AVD_HOME/darbak_qa.avd/config.ini"
           script: bash .github/scripts/visual_qa_rebuild.sh
       - name: Upload visual evidence
         if: always()
