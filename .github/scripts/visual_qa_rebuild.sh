@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Run this gate after dependency/build changes too; it validates the complete 1.0 identity surface.
 OUT="visual-qa"
 PKG="com.abosultan.darbakmaps.debug"
 ACT="com.abosultan.darbakmaps.MainActivity"
