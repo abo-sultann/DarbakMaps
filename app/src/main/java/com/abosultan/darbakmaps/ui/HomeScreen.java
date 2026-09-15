@@ -7,17 +7,16 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import com.abosultan.darbakmaps.core.AndroidLocationEngine;
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
+import com.abosultan.darbakmaps.core.LiveLocationStore;
 
 /** Lightweight 1024x600 shell over a real offline map surface. */
 public final class HomeScreen extends FrameLayout {
-    private final AndroidLocationEngine location;
     private TextView gpsView;
     private TextView speedView;
     private final Runnable statusPump = new Runnable() {
         @Override public void run() {
-            LocationSnapshot s = location.latest();
+            LocationSnapshot s = LiveLocationStore.latest();
             if (s.valid) {
                 gpsView.setText("GPS  ●");
                 speedView.setText(Math.round(s.speedKmh) + " كم/س");
@@ -31,7 +30,6 @@ public final class HomeScreen extends FrameLayout {
 
     public HomeScreen(Context context) {
         super(context);
-        location = new AndroidLocationEngine(context);
         setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         setBackgroundColor(DarbakUi.BG);
         setContentDescription("Darbak Maps Offline Home");
@@ -40,14 +38,12 @@ public final class HomeScreen extends FrameLayout {
 
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        location.start();
         removeCallbacks(statusPump);
         post(statusPump);
     }
 
     @Override protected void onDetachedFromWindow() {
         removeCallbacks(statusPump);
-        location.stop();
         super.onDetachedFromWindow();
     }
 
