@@ -36,8 +36,9 @@ android {
 }
 
 dependencies {
-    // Mapsforge 0.30.0 source is approved for the offline engine, but its runtime
-    // artifacts are not yet available from our configured repositories. Keep CI
-    // green until we vendor/pin a verified binary instead of shipping a broken build.
+    // 0.25.0 is the newest Mapsforge Android runtime verified on Maven Central.
+    // Keep the engine pinned for deterministic API 25 builds; newer source tags
+    // are evaluated separately and must not break the car-screen build pipeline.
+    implementation 'org.mapsforge:mapsforge-map-android:0.25.0'
     testImplementation 'junit:junit:4.13.2'
 }
