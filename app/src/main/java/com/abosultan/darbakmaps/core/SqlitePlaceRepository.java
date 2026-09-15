@@ -42,6 +42,12 @@ public final class SqlitePlaceRepository extends SQLiteOpenHelper implements Pla
         return getWritableDatabase().insertOrThrow("places", null, v);
     }
 
+    /** Deletes exactly one saved place by its stable database id. */
+    public boolean delete(long id) {
+        if (id <= 0L) return false;
+        return getWritableDatabase().delete("places", "id=?", new String[]{Long.toString(id)}) == 1;
+    }
+
     public List<Place> all(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 500));
         ArrayList<Place> result = new ArrayList<>();
