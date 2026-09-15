@@ -21,15 +21,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
-      - name: Render Android 7.1 / 1024x600
+      - name: Render real Android 7.1 / 1024x600 / 1GB
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 25
           target: default
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          avd-name: darbak_qa
+          ram-size: 1024M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
+          pre-emulator-launch-script: |
+            CFG="$ANDROID_AVD_HOME/darbak_qa.avd/config.ini"
+            test -f "$CFG"
+            sed -i '/^hw\.lcd\.width=/d;/^hw\.lcd\.height=/d;/^hw\.lcd\.density=/d' "$CFG"
+            printf '%s\n' 'hw.lcd.width=1024' 'hw.lcd.height=600' 'hw.lcd.density=160' >> "$CFG"
+            grep -E '^hw\.lcd\.(width|height|density)=' "$CFG"
           script: bash .github/scripts/visual_qa_rebuild.sh
       - name: Upload visual evidence
         if: always()
