@@ -16,6 +16,7 @@ import com.abosultan.darbakmaps.core.PlaceMath;
 import com.abosultan.darbakmaps.core.SessionStore;
 import com.abosultan.darbakmaps.core.SqlitePlaceRepository;
 import com.abosultan.darbakmaps.core.SqliteTrackRecorder;
+import com.abosultan.darbakmaps.core.SqliteTrackRecorder.TrackSegment;
 
 import org.mapsforge.core.graphics.Paint;
 import org.mapsforge.core.graphics.Style;
@@ -42,6 +43,7 @@ import java.util.Locale;
 public final class OfflineMapView extends FrameLayout {
     private static final int RESTORE_TRACK_POINTS = 4000;
     private static final int MAX_PLACE_MARKERS = 500;
+    private static final long LIVE_SEGMENT_GAP_MS = 10000L;
 
     private MapView mapView;
     private TileCache tileCache;
@@ -59,6 +61,7 @@ public final class OfflineMapView extends FrameLayout {
     private long lastFixTime;
     private boolean followedFirstFix;
     private LatLong lastTrackPoint;
+    private long lastTrackPointTime;
     private float lastVehicleBearing = Float.NaN;
     private Place guidanceTarget;
 
@@ -72,7 +75,7 @@ public final class OfflineMapView extends FrameLayout {
                     centerOn(position, (byte) 15);
                     followedFirstFix = true;
                 }
-                appendLiveTrack(position);
+                appendLiveTrack(fix, position);
                 updateVehicleMarker(position, fix.bearing);
                 updateGuidance(position);
             }
@@ -210,8 +213,8 @@ public final class OfflineMapView extends FrameLayout {
             renderer = new TileRendererLayer(tileCache, mapDataStore, mapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
             renderer.setXmlRenderTheme(MapsforgeThemes.MOTORIDER);
             mapView.getLayerManager().getLayers().add(renderer);
+            restoreTrack(c);
             createTrackLayers(c);
-            restoreTrack();
             restorePlaceMarkers();
             SessionStore.Viewport s = sessionStore.restoreViewport();
             if (s != null && s.latitude >= -90d && s.latitude <= 90d && s.longitude >= -180d && s.longitude <= 180d) {
@@ -232,19 +235,18 @@ public final class OfflineMapView extends FrameLayout {
         }
     }
 
-    private void createTrackLayers(Context c) {
-        Paint outlinePaint = AndroidGraphicFactory.INSTANCE.createPaint();
-        outlinePaint.setColor(TrackStyle.ACTIVE_TRACK_OUTLINE);
-        outlinePaint.setStyle(Style.STROKE);
-        outlinePaint.setStrokeWidth(DarbakUi.dp(c, (int) TrackStyle.ACTIVE_TRACK_OUTLINE_WIDTH_DP));
-        trackOutline = new Polyline(outlinePaint, AndroidGraphicFactory.INSTANCE);
-        mapView.getLayerManager().getLayers().add(trackOutline);
+    private Polyline newTrackLine(Context c, boolean outline) {
+        Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
+        paint.setColor(outline ? TrackStyle.ACTIVE_TRACK_OUTLINE : TrackStyle.ACTIVE_TRACK);
+        paint.setStyle(Style.STROKE);
+        paint.setStrokeWidth(DarbakUi.dp(c, (int) (outline ? TrackStyle.ACTIVE_TRACK_OUTLINE_WIDTH_DP : TrackStyle.ACTIVE_TRACK_WIDTH_DP)));
+        return new Polyline(paint, AndroidGraphicFactory.INSTANCE);
+    }
 
-        Paint activePaint = AndroidGraphicFactory.INSTANCE.createPaint();
-        activePaint.setColor(TrackStyle.ACTIVE_TRACK);
-        activePaint.setStyle(Style.STROKE);
-        activePaint.setStrokeWidth(DarbakUi.dp(c, (int) TrackStyle.ACTIVE_TRACK_WIDTH_DP));
-        activeTrack = new Polyline(activePaint, AndroidGraphicFactory.INSTANCE);
+    private void createTrackLayers(Context c) {
+        trackOutline = newTrackLine(c, true);
+        activeTrack = newTrackLine(c, false);
+        mapView.getLayerManager().getLayers().add(trackOutline);
         mapView.getLayerManager().getLayers().add(activeTrack);
 
         Paint guidancePaint = AndroidGraphicFactory.INSTANCE.createPaint();
@@ -255,14 +257,32 @@ public final class OfflineMapView extends FrameLayout {
         mapView.getLayerManager().getLayers().add(guidanceLine);
     }
 
-    private void restoreTrack() {
-        if (trackStore == null || activeTrack == null || trackOutline == null) return;
-        for (LocationSnapshot p : trackStore.recentPoints(RESTORE_TRACK_POINTS)) {
-            LatLong x = new LatLong(p.latitude, p.longitude);
-            trackOutline.addPoint(x);
-            activeTrack.addPoint(x);
-            lastTrackPoint = x;
+    private void restoreTrack(Context c) {
+        if (trackStore == null || mapView == null) return;
+        for (TrackSegment segment : trackStore.recentSegments(RESTORE_TRACK_POINTS)) {
+            if (segment.points.isEmpty()) continue;
+            Polyline outline = newTrackLine(c, true);
+            Polyline line = newTrackLine(c, false);
+            for (LocationSnapshot p : segment.points) {
+                LatLong x = new LatLong(p.latitude, p.longitude);
+                outline.addPoint(x);
+                line.addPoint(x);
+            }
+            mapView.getLayerManager().getLayers().add(outline);
+            mapView.getLayerManager().getLayers().add(line);
         }
+    }
+
+    private void startNewLiveTrackSegment() {
+        if (mapView == null) return;
+        if (guidanceLine != null) mapView.getLayerManager().getLayers().remove(guidanceLine);
+        trackOutline = newTrackLine(getContext(), true);
+        activeTrack = newTrackLine(getContext(), false);
+        mapView.getLayerManager().getLayers().add(trackOutline);
+        mapView.getLayerManager().getLayers().add(activeTrack);
+        if (guidanceLine != null) mapView.getLayerManager().getLayers().add(guidanceLine);
+        lastTrackPoint = null;
+        lastTrackPointTime = 0L;
     }
 
     private void restorePlaceMarkers() {
@@ -334,12 +354,19 @@ public final class OfflineMapView extends FrameLayout {
         return "موقع محفوظ";
     }
 
-    private void appendLiveTrack(LatLong p) {
+    private void appendLiveTrack(LocationSnapshot fix, LatLong p) {
         if (activeTrack == null || trackOutline == null) return;
-        if (lastTrackPoint != null && lastTrackPoint.sphericalDistance(p) < 2d) return;
+        if (lastTrackPointTime > 0L && fix.timestampMs - lastTrackPointTime > LIVE_SEGMENT_GAP_MS) {
+            startNewLiveTrackSegment();
+        }
+        if (lastTrackPoint != null && lastTrackPoint.sphericalDistance(p) < 2d) {
+            lastTrackPointTime = fix.timestampMs;
+            return;
+        }
         trackOutline.addPoint(p);
         activeTrack.addPoint(p);
         lastTrackPoint = p;
+        lastTrackPointTime = fix.timestampMs;
         if (mapView != null) mapView.getLayerManager().redrawLayers();
     }
 
