@@ -16,7 +16,7 @@ import java.util.List;
 final class TracksDialog {
     private static final int STATS_POINT_LIMIT = 10000;
 
-    static void show(Context c) {
+    static void show(Context c, OfflineMapView map) {
         SessionStore session = new SessionStore(c);
         boolean recording = session.shouldResumeTrackRecording();
 
@@ -35,13 +35,16 @@ final class TracksDialog {
         String message = "التسجيل: " + status
                 + "\nالمقاطع المحفوظة: " + segments
                 + "\nالنقاط المحفوظة: " + points
-                + (points >= STATS_POINT_LIMIT ? "+" : "");
+                + (points >= STATS_POINT_LIMIT ? "+" : "")
+                + "\nالرجوع على المسار: " + (map.isBacktrackActive() ? "مفعّل" : "متوقف");
 
         String control = recording ? "إيقاف مؤقت" : "استئناف التسجيل";
+        String backtrack = map.isBacktrackActive() ? "إلغاء الرجوع" : "رجوع على آخر مسار";
         new AlertDialog.Builder(c)
                 .setTitle("المسارات")
                 .setMessage(message)
                 .setPositiveButton(control, (d, w) -> setRecording(c, !recording))
+                .setNeutralButton(backtrack, (d, w) -> toggleBacktrack(c, map))
                 .setNegativeButton("إغلاق", null)
                 .show();
     }
@@ -55,6 +58,17 @@ final class TracksDialog {
         c.startService(service);
 
         Toast.makeText(c, enabled ? "تم استئناف تسجيل المسار" : "تم إيقاف تسجيل المسار مؤقتًا", Toast.LENGTH_SHORT).show();
+    }
+
+    private static void toggleBacktrack(Context c, OfflineMapView map) {
+        if (map.isBacktrackActive()) {
+            map.stopBacktrack();
+            Toast.makeText(c, "تم إلغاء الرجوع على المسار", Toast.LENGTH_SHORT).show();
+        } else if (!map.startBacktrack()) {
+            Toast.makeText(c, "لا يوجد مسار محفوظ كافٍ للرجوع", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(c, "بدأ الرجوع على آخر مسار", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private TracksDialog() {}
