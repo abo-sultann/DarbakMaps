@@ -14,6 +14,7 @@ public final class HomeScreen extends FrameLayout {
         super(context);
         setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         setBackgroundColor(DarbakUi.BG);
+        setContentDescription("Darbak Maps Home Visual Gate 1");
         build(context);
     }
 
