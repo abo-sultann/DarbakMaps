@@ -12,8 +12,12 @@ import static com.abosultan.darbakmaps.core.CoreContracts.TrackRecorder;
 public final class SqliteTrackRecorder extends SQLiteOpenHelper implements TrackRecorder {
     private static final String DB = "darbak_tracks.db";
     private static final int VERSION = 1;
+    private static final long MIN_INTERVAL_MS = 1500L;
+    private static final double MIN_DISTANCE_METERS = 2.0d;
+    private static final double MAX_REASONABLE_SPEED_KMH = 220.0d;
     private final SessionStore session;
     private volatile State state = State.STOPPED;
+    private LocationSnapshot lastAccepted;
 
     public SqliteTrackRecorder(Context context) {
         super(context.getApplicationContext(), DB, null, VERSION);
@@ -41,8 +45,19 @@ public final class SqliteTrackRecorder extends SQLiteOpenHelper implements Track
         session.setTrackRecording(false);
     }
 
-    public boolean append(LocationSnapshot point) {
+    public synchronized boolean append(LocationSnapshot point) {
         if (state != State.RECORDING || point == null || !point.valid) return false;
+        if (point.latitude < -90d || point.latitude > 90d || point.longitude < -180d || point.longitude > 180d) return false;
+        if (point.speedKmh < 0f || point.speedKmh > MAX_REASONABLE_SPEED_KMH) return false;
+
+        if (lastAccepted != null) {
+            long elapsed = point.timestampMs - lastAccepted.timestampMs;
+            if (elapsed <= 0L || elapsed < MIN_INTERVAL_MS) return false;
+            double distance = PlaceMath.distanceMeters(lastAccepted.latitude, lastAccepted.longitude,
+                    point.latitude, point.longitude);
+            if (distance < MIN_DISTANCE_METERS) return false;
+        }
+
         ContentValues v = new ContentValues();
         v.put("lat", point.latitude);
         v.put("lon", point.longitude);
@@ -50,7 +65,9 @@ public final class SqliteTrackRecorder extends SQLiteOpenHelper implements Track
         v.put("speed", point.speedKmh);
         v.put("time_ms", point.timestampMs);
         try {
-            return getWritableDatabase().insertOrThrow("track_points", null, v) != -1L;
+            boolean inserted = getWritableDatabase().insertOrThrow("track_points", null, v) != -1L;
+            if (inserted) lastAccepted = point;
+            return inserted;
         } catch (RuntimeException e) {
             state = State.ERROR;
             return false;
