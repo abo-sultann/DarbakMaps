@@ -24,6 +24,7 @@ import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 import com.abosultan.darbakmaps.core.LiveLocationStore;
 import com.abosultan.darbakmaps.core.OfflineMapLocator;
+import com.abosultan.darbakmaps.core.SessionStore;
 
 /** Real offline map surface. Never downloads tiles or requires Play Services. */
 public final class OfflineMapView extends FrameLayout {
@@ -35,6 +36,7 @@ public final class OfflineMapView extends FrameLayout {
     private Polyline activeTrack;
     private Marker vehicleMarker;
     private File activeMap;
+    private SessionStore sessionStore;
     private long lastFixTime;
     private boolean followedFirstFix;
     private LatLong lastTrackPoint;
@@ -59,6 +61,7 @@ public final class OfflineMapView extends FrameLayout {
 
     public OfflineMapView(Context context) {
         super(context);
+        sessionStore = new SessionStore(context);
         setBackgroundColor(0xFFE8E1CF);
         tryOpen(context);
     }
@@ -119,9 +122,16 @@ public final class OfflineMapView extends FrameLayout {
             mapView.getLayerManager().getLayers().add(renderer);
             createTrackLayers(context);
 
-            LatLong start = mapDataStore.boundingBox().getCenterPoint();
-            mapView.setCenter(start);
-            mapView.setZoomLevel((byte) 10);
+            SessionStore.Viewport saved = sessionStore.restoreViewport();
+            if (saved != null && saved.latitude >= -90d && saved.latitude <= 90d && saved.longitude >= -180d && saved.longitude <= 180d) {
+                mapView.setCenter(new LatLong(saved.latitude, saved.longitude));
+                mapView.setZoomLevel((byte) Math.max(3, Math.min(20, saved.zoom)));
+                followedFirstFix = true;
+            } else {
+                LatLong start = mapDataStore.boundingBox().getCenterPoint();
+                mapView.setCenter(start);
+                mapView.setZoomLevel((byte) 10);
+            }
         } catch (Exception failed) {
             activeMap = null;
             if (mapView != null) {
@@ -211,8 +221,16 @@ public final class OfflineMapView extends FrameLayout {
         return (to - from + 540f) % 360f - 180f;
     }
 
+    private void saveViewport() {
+        if (mapView == null || sessionStore == null) return;
+        LatLong center = mapView.getModel().mapViewPosition.getCenter();
+        if (center != null) sessionStore.saveViewport(center.latitude, center.longitude,
+                mapView.getModel().mapViewPosition.getZoomLevel());
+    }
+
     @Override protected void onDetachedFromWindow() {
         removeCallbacks(gpsPump);
+        saveViewport();
         if (mapView != null) {
             mapView.destroyAll();
             mapView = null;
