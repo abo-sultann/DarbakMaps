@@ -34,13 +34,13 @@ final class SavedPlacesDialog {
         if (fix.valid) title += headingReliable ? " — السهم حسب السيارة" : " — الأقرب أولاً";
         LinearLayout box = DarbakDialog.panel(c, title);
         LinearLayout filters = new LinearLayout(c); filters.setOrientation(LinearLayout.HORIZONTAL);
-        addFilter(c, filters, "الكل", null, filter, map); addFilter(c, filters, "سمان", "summan", filter, map); addFilter(c, filters, "ماء", "water", filter, map); addFilter(c, filters, "مخيم", "camp", filter, map); addFilter(c, filters, "وقود", "fuel", filter, map);
+        final AlertDialog[] holder = new AlertDialog[1];
+        addFilter(c, filters, "الكل", null, filter, map, holder); addFilter(c, filters, "سمان", "summan", filter, map, holder); addFilter(c, filters, "ماء", "water", filter, map, holder); addFilter(c, filters, "مخيم", "camp", filter, map, holder); addFilter(c, filters, "وقود", "fuel", filter, map, holder);
         box.addView(filters, DarbakDialog.row(c, 4));
         LinearLayout list = new LinearLayout(c); list.setOrientation(LinearLayout.VERTICAL);
         ScrollView scroll = new ScrollView(c); scroll.setFillViewport(false); scroll.addView(list, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         LinearLayout.LayoutParams sp = DarbakDialog.row(c, 4); sp.height = DarbakUi.dp(c, 270); box.addView(scroll, sp);
 
-        final AlertDialog[] holder = new AlertDialog[1];
         for (Place place : places) {
             String row;
             if (fix.valid) {
@@ -58,12 +58,11 @@ final class SavedPlacesDialog {
         LinearLayout.LayoutParams cp = DarbakDialog.row(c, 8); cp.height = DarbakUi.dp(c, 46); box.addView(close, cp); holder[0] = DarbakDialog.show(c, box);
     }
 
-    private static void addFilter(Context c, LinearLayout row, String label, String value, String selected, OfflineMapView map) {
+    private static void addFilter(Context c, LinearLayout row, String label, String value, String selected, OfflineMapView map, AlertDialog[] holder) {
         TextView v = DarbakUi.action(c, label); if ((selected == null && value == null) || (selected != null && selected.equals(value))) v.setTextColor(DarbakUi.ACCENT);
-        v.setOnClickListener(x -> { AlertDialog d = findDialog(row); if (d != null) d.dismiss(); show(c, map, value); });
+        v.setOnClickListener(x -> { if (holder[0] != null) holder[0].dismiss(); show(c, map, value); });
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, DarbakUi.dp(c, 42), 1f); if (row.getChildCount() > 0) p.rightMargin = DarbakUi.dp(c, 5); row.addView(v, p);
     }
-    private static AlertDialog findDialog(android.view.View v) { return null; }
     private static List<Place> filtered(List<Place> all, String filter) { if (filter == null) return all; java.util.ArrayList<Place> out = new java.util.ArrayList<>(); for (Place p : all) if (filter.equals(p.category)) out.add(p); return out; }
 
     private static void confirmDelete(Context c, OfflineMapView map, AlertDialog parent, Place place, String filter) {
