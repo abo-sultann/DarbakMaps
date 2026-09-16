@@ -2,6 +2,7 @@ package com.abosultan.darbakmaps.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -17,6 +18,7 @@ import android.widget.Toast;
 import com.abosultan.darbakmaps.MainActivity;
 import com.abosultan.darbakmaps.core.MapImportManager;
 import com.abosultan.darbakmaps.core.SessionStore;
+import com.abosultan.darbakmaps.core.TrackRecordingService;
 import java.io.File;
 
 final class SettingsDialog {
@@ -39,7 +41,7 @@ final class SettingsDialog {
  }
  private static void addSection(Context c,LinearLayout b,String name){TextView t=label(c,name,17,true);t.setTextColor(DarbakUi.ACCENT);b.addView(t,rowParams(c,10));}
  private static void addToggle(Context c,LinearLayout b,MapUiSettings s,String key,String name){TextView row=DarbakUi.action(c,(s.get(key)?"●  ":"○  ")+name);row.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);row.setOnClickListener(v->{boolean n=!s.get(key);s.set(key,n);row.setText((n?"●  ":"○  ")+name);Toast.makeText(c,n?"تم التشغيل":"تم الإيقاف",Toast.LENGTH_SHORT).show();});b.addView(row,rowParams(c,6));}
- private static void addSessionToggle(Context c,LinearLayout b,SessionStore s,boolean recording,String name){boolean current=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch();TextView row=DarbakUi.action(c,(current?"●  ":"○  ")+name);row.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);row.setOnClickListener(v->{boolean now=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch();boolean next=!now;if(recording)s.setTrackRecording(next);else s.setAutoLaunch(next);row.setText((next?"●  ":"○  ")+name);Toast.makeText(c,next?"تم التشغيل":"تم الإيقاف",Toast.LENGTH_SHORT).show();});b.addView(row,rowParams(c,6));}
+ private static void addSessionToggle(Context c,LinearLayout b,SessionStore s,boolean recording,String name){boolean current=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch();TextView row=DarbakUi.action(c,(current?"●  ":"○  ")+name);row.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);row.setOnClickListener(v->{boolean now=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch();boolean next=!now;if(recording){s.setTrackRecording(next);Intent i=new Intent(c,TrackRecordingService.class);i.setAction(next?TrackRecordingService.ACTION_RESUME:TrackRecordingService.ACTION_PAUSE);c.startService(i);}else s.setAutoLaunch(next);row.setText((next?"●  ":"○  ")+name);Toast.makeText(c,next?"تم التشغيل":"تم الإيقاف",Toast.LENGTH_SHORT).show();});b.addView(row,rowParams(c,6));}
  private static String formatSize(long n){if(n>=1024L*1024L*1024L)return String.format(java.util.Locale.US,"%.1f GB",n/(1024d*1024d*1024d));if(n>=1024L*1024L)return Math.round(n/(1024d*1024d))+" MB";return Math.round(n/1024d)+" KB";}
  private static TextView label(Context c,String v,int sp,boolean bold){TextView t=new TextView(c);t.setText(v);t.setTextColor(DarbakUi.TEXT);t.setTextSize(sp);t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
  private static LinearLayout.LayoutParams rowParams(Context c,int top){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,DarbakUi.dp(c,50));p.topMargin=DarbakUi.dp(c,top);return p;}
