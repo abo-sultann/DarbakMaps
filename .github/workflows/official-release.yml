@@ -34,7 +34,7 @@ jobs:
           CERT="$RUNNER_TEMP/darbak-maps-signing.der"
           keytool -exportcert -keystore "$KEY" -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" -file "$CERT" >/dev/null
           ACTUAL="$(sha256sum "$CERT" | cut -d ' ' -f 1)"
-          test "$ACTUAL" = "cebaccb7712e30ec2053d5e8932b921c93e51ef9dedad2c7d111709f28e14eb7" || { echo '::error::Signing certificate mismatch'; exit 1; }
+          test "$ACTUAL" = "90a8b1253cad110a0ced5e7958d9292201f56e237966d982bfd47f721593b50d" || { echo '::error::Signing certificate mismatch'; exit 1; }
           echo "DARBAK_KEYSTORE_PATH=$KEY" >> "$GITHUB_ENV"
           echo "DARBAK_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "DARBAK_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
