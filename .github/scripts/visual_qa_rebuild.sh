@@ -29,7 +29,12 @@ PY
 }
 tap_text(){ local p; p="$(point_for_text "$1")"||return 1; adb shell input tap $p; sleep 2; }
 
-adb shell wm size reset||true; adb shell wm density reset||true; adb install -r "$APK"; adb shell pm grant "$PKG" android.permission.ACCESS_FINE_LOCATION||true; adb shell pm grant "$PKG" android.permission.READ_EXTERNAL_STORAGE||true; adb shell settings put secure immersive_mode_confirmations confirmed||true; adb shell am force-stop "$PKG"; adb logcat -c||true; adb shell am start -W -n "$PKG/$ACT"; sleep 3
+adb shell wm size reset||true; adb shell wm density reset||true; adb install -r "$APK"; adb shell pm grant "$PKG" android.permission.ACCESS_FINE_LOCATION||true; adb shell pm grant "$PKG" android.permission.READ_EXTERNAL_STORAGE||true; adb shell settings put secure immersive_mode_confirmations confirmed||true
+# UIAutomator on the unaccelerated API25 runner can take >10s per dump. Disable only
+# auto-hide in this test process so accessibility capture does not race the 6.5s UX timer.
+adb shell "run-as $PKG mkdir -p shared_prefs" || true
+adb shell "run-as $PKG sh -c 'printf \"%s\\n\" \"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?>\" \"<map><boolean name=\\\"auto_hide\\\" value=\\\"false\\\" /></map>\" > shared_prefs/darbak_map_ui.xml'" || true
+adb shell am force-stop "$PKG"; adb logcat -c||true; adb shell am start -W -n "$PKG/$ACT"; sleep 3
 dump_ui
 if grep -Eq 'immersive_cling|Viewing full screen|android:id/ok' "$OUT/window.xml"; then echo 'ERROR: Android overlay covers Darbak Maps.' >&2; exit 31; fi
 # New home intentionally has no title/top bar. Validate stable semantic controls instead.
