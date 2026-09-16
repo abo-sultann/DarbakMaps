@@ -3,6 +3,7 @@ package com.abosultan.darbakmaps.ui;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,16 +21,19 @@ final class SavedPlacesDialog {
         LocationSnapshot fix = LiveLocationStore.latest();
         SqlitePlaceRepository repo = new SqlitePlaceRepository(c);
         final List<Place> places;
-        try {
-            places = fix.valid ? repo.nearest(fix.latitude, fix.longitude, null, 100) : repo.all(100);
-        } finally { repo.close(); }
-        if (places.isEmpty()) {
-            Toast.makeText(c, "لا توجد مواقع محفوظة", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        try { places = fix.valid ? repo.nearest(fix.latitude, fix.longitude, null, 100) : repo.all(100); }
+        finally { repo.close(); }
+        if (places.isEmpty()) { Toast.makeText(c, "لا توجد مواقع محفوظة", Toast.LENGTH_SHORT).show(); return; }
 
         String title = fix.valid ? "المواقع المحفوظة — الأقرب أولاً" : "المواقع المحفوظة";
         LinearLayout box = DarbakDialog.panel(c, title);
+        LinearLayout list = new LinearLayout(c);
+        list.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(c);
+        scroll.setFillViewport(false);
+        scroll.addView(list, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams sp = DarbakDialog.row(c, 0); sp.height = DarbakUi.dp(c, 320); box.addView(scroll, sp);
+
         final AlertDialog[] holder = new AlertDialog[1];
         for (Place place : places) {
             String row;
@@ -39,17 +43,9 @@ final class SavedPlacesDialog {
                 row = category(place.category) + "   " + distance(meters) + "   " + arrow(bearing);
             } else row = category(place.category) + "   —   GPS غير متاح";
             TextView action = DarbakUi.action(c, row);
-            action.setOnClickListener(v -> {
-                if (holder[0] != null) holder[0].dismiss();
-                map.showPlaceActions(place);
-            });
-            action.setOnLongClickListener(v -> {
-                confirmDelete(c, map, holder[0], place);
-                return true;
-            });
-            LinearLayout.LayoutParams p = DarbakDialog.row(c, 8);
-            p.height = DarbakUi.dp(c, 50);
-            box.addView(action, p);
+            action.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); map.showPlaceActions(place); });
+            action.setOnLongClickListener(v -> { confirmDelete(c, map, holder[0], place); return true; });
+            LinearLayout.LayoutParams p = DarbakDialog.row(c, 8); p.height = DarbakUi.dp(c, 50); list.addView(action, p);
         }
         TextView close = DarbakUi.action(c, "إغلاق");
         close.setTextColor(DarbakUi.TEXT_SECONDARY);
@@ -63,10 +59,7 @@ final class SavedPlacesDialog {
             boolean deleted;
             SqlitePlaceRepository repo = new SqlitePlaceRepository(c);
             try { deleted = repo.delete(place.id); } finally { repo.close(); }
-            if (!deleted) {
-                Toast.makeText(c, "تعذر حذف الموقع", Toast.LENGTH_SHORT).show();
-                return;
-            }
+            if (!deleted) { Toast.makeText(c, "تعذر حذف الموقع", Toast.LENGTH_SHORT).show(); return; }
             map.removeSavedPlaceMarker(place.id);
             if (parent != null) parent.dismiss();
             Toast.makeText(c, "تم حذف الموقع", Toast.LENGTH_SHORT).show();
@@ -75,11 +68,7 @@ final class SavedPlacesDialog {
     }
 
     private static String category(String c) {
-        if ("summan".equals(c)) return "طير سمان";
-        if ("water".equals(c)) return "ماء";
-        if ("camp".equals(c)) return "مخيم";
-        if ("fuel".equals(c)) return "وقود";
-        return "موقع";
+        if ("summan".equals(c)) return "طير سمان"; if ("water".equals(c)) return "ماء"; if ("camp".equals(c)) return "مخيم"; if ("fuel".equals(c)) return "وقود"; return "موقع";
     }
     private static String distance(double m) { return m < 1000 ? Math.round(m) + " م" : String.format(java.util.Locale.US, "%.1f كم", m / 1000d); }
     private static double bearing(double a, double o, double b, double p) {
@@ -88,8 +77,7 @@ final class SavedPlacesDialog {
         return (Math.toDegrees(Math.atan2(y, x)) + 360d) % 360d;
     }
     private static String arrow(double b) {
-        if (b < 22.5 || b >= 337.5) return "↑"; if (b < 67.5) return "↗"; if (b < 112.5) return "→"; if (b < 157.5) return "↘";
-        if (b < 202.5) return "↓"; if (b < 247.5) return "↙"; if (b < 292.5) return "←"; return "↖";
+        if (b < 22.5 || b >= 337.5) return "↑"; if (b < 67.5) return "↗"; if (b < 112.5) return "→"; if (b < 157.5) return "↘"; if (b < 202.5) return "↓"; if (b < 247.5) return "↙"; if (b < 292.5) return "←"; return "↖";
     }
     private SavedPlacesDialog() {}
 }
