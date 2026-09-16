@@ -28,6 +28,20 @@ raise SystemExit(1)
 PY
 }
 tap_text(){ local p; p="$(point_for_text "$1")"||return 1; adb shell input tap $p; sleep 2; }
+# Software-only API25 emulation can make Launcher3 ANR while Darbak itself is healthy.
+# Remove only that unrelated system overlay, then relaunch Darbak before assertions.
+dismiss_launcher_anr(){
+ for _ in 1 2 3; do
+  dump_ui || true
+  if grep -q "Launcher3 isn't responding" "$OUT/window.xml"; then
+   local p; p="$(point_for_text "Close app")" || true
+   if [ -n "${p:-}" ]; then adb shell input tap $p; sleep 2; fi
+   adb shell am start -W -n "$PKG/$ACT" >/dev/null || true; sleep 2
+  else return 0; fi
+ done
+ dump_ui
+ if grep -q "Launcher3 isn't responding" "$OUT/window.xml"; then echo 'ERROR: emulator Launcher3 ANR still covers Darbak Maps.' >&2; exit 30; fi
+}
 
 adb shell wm size reset||true; adb shell wm density reset||true; adb install -r "$APK"; adb shell pm grant "$PKG" android.permission.ACCESS_FINE_LOCATION||true; adb shell pm grant "$PKG" android.permission.READ_EXTERNAL_STORAGE||true; adb shell settings put secure immersive_mode_confirmations confirmed||true
 # UIAutomator on the unaccelerated API25 runner can take >10s per dump. Disable only
@@ -35,6 +49,7 @@ adb shell wm size reset||true; adb shell wm density reset||true; adb install -r 
 adb shell "run-as $PKG mkdir -p shared_prefs" || true
 adb shell "run-as $PKG sh -c 'printf \"%s\\n\" \"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?>\" \"<map><boolean name=\\\"auto_hide\\\" value=\\\"false\\\" /></map>\" > shared_prefs/darbak_map_ui.xml'" || true
 adb shell am force-stop "$PKG"; adb logcat -c||true; adb shell am start -W -n "$PKG/$ACT"; sleep 3
+dismiss_launcher_anr
 dump_ui
 if grep -Eq 'immersive_cling|Viewing full screen|android:id/ok' "$OUT/window.xml"; then echo 'ERROR: Android overlay covers Darbak Maps.' >&2; exit 31; fi
 # New home intentionally has no title/top bar. Validate stable semantic controls instead.
