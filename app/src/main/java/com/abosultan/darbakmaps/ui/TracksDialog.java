@@ -1,6 +1,5 @@
 package com.abosultan.darbakmaps.ui;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.widget.Toast;
@@ -32,31 +31,30 @@ final class TracksDialog {
             retainedMeters = reader.retainedDistanceMeters();
         } finally { reader.close(); }
         StringBuilder message = new StringBuilder();
-        message.append("التسجيل: ").append(recording ? "يعمل" : "متوقف مؤقتًا")
-                .append("\nالمسافة الدائرية: ").append(formatDistance(retainedMeters)).append(" / 1000 كم")
-                .append("\nالمقاطع: ").append(segments).append("\nالنقاط: ").append(points).append(points >= STATS_POINT_LIMIT ? "+" : "")
-                .append("\nالمسارات المحفوظة: ").append(GpxTrackExporter.savedTracks(c).length)
-                .append("\nالرجوع على المسار: ").append(map.isBacktrackActive() ? "مفعّل" : "متوقف");
+        message.append("التسجيل  ").append(recording ? "يعمل" : "متوقف مؤقتًا")
+                .append("\nالمسافة الدائرية  ").append(formatDistance(retainedMeters)).append(" / 1000 كم")
+                .append("\nالمقاطع  ").append(segments).append("\nالنقاط  ").append(points).append(points >= STATS_POINT_LIMIT ? "+" : "")
+                .append("\nالمسارات المحفوظة  ").append(GpxTrackExporter.savedTracks(c).length)
+                .append("\nالرجوع على المسار  ").append(map.isBacktrackActive() ? "مفعّل" : "متوقف");
         if (map.isBacktrackActive() && latestUsable != null) {
             LocationSnapshot fix = LiveLocationStore.latest();
             if (fix.valid) {
                 double offTrack = new BacktrackNavigator(latestUsable.points).offTrackMeters(fix.latitude, fix.longitude);
-                message.append("\nالبعد عن المسار: ").append(formatDistance(offTrack)); if (offTrack > OFF_TRACK_WARNING_METERS) message.append(" ⚠");
-            } else message.append("\nالبعد عن المسار: بانتظار GPS");
+                message.append("\nالبعد عن المسار  ").append(formatDistance(offTrack)); if (offTrack > OFF_TRACK_WARNING_METERS) message.append(" ⚠");
+            } else message.append("\nالبعد عن المسار  بانتظار GPS");
         }
         String control = recording ? "إيقاف مؤقت" : "استئناف التسجيل";
-        new AlertDialog.Builder(c).setTitle("المسارات").setMessage(message.toString())
-                .setPositiveButton(control, (d, w) -> setRecording(c, !recording))
-                .setNeutralButton("إجراءات المسار", (d, w) -> showTrackActions(c, map))
-                .setNegativeButton("إغلاق", null).show();
+        DarbakDialog.infoActions(c, "المسارات", message.toString(), new String[]{control, "إجراءات المسار"}, which -> {
+            if (which == 0) setRecording(c, !recording); else showTrackActions(c, map);
+        });
     }
 
     private static void showTrackActions(Context c, OfflineMapView map) {
         String backtrack = map.isBacktrackActive() ? "إلغاء الرجوع على المسار" : "رجوع على آخر مسار";
         String[] actions = {backtrack, "حفظ المسار الحالي GPX", "المسارات المحفوظة"};
-        new AlertDialog.Builder(c).setTitle("إجراءات المسار").setItems(actions, (d, which) -> {
+        DarbakDialog.menu(c, "إجراءات المسار", actions, which -> {
             if (which == 0) toggleBacktrack(c, map); else if (which == 1) exportGpx(c); else showSavedTracks(c);
-        }).setNegativeButton("إغلاق", null).show();
+        });
     }
 
     private static void showSavedTracks(Context c) {
@@ -64,7 +62,7 @@ final class TracksDialog {
         if (files.length == 0) { Toast.makeText(c, "لا توجد مسارات محفوظة", Toast.LENGTH_SHORT).show(); return; }
         String[] rows = new String[files.length];
         for (int i = 0; i < files.length; i++) rows[i] = files[i].getName() + "   •   " + Math.max(1, files[i].length() / 1024) + " KB";
-        new AlertDialog.Builder(c).setTitle("المسارات المحفوظة — " + files.length).setItems(rows, null).setPositiveButton("إغلاق", null).show();
+        DarbakDialog.menu(c, "المسارات المحفوظة — " + files.length, rows, which -> { });
     }
 
     private static void setRecording(Context c, boolean enabled) {
