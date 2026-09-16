@@ -39,8 +39,9 @@ final class SavedPlacesDialog {
             String row;
             if (fix.valid) {
                 double meters = PlaceMath.distanceMeters(fix.latitude, fix.longitude, place.latitude, place.longitude);
-                double bearing = bearing(fix.latitude, fix.longitude, place.latitude, place.longitude);
-                row = category(place.category) + "   " + distance(meters) + "   " + arrow(bearing);
+                double targetBearing = bearing(fix.latitude, fix.longitude, place.latitude, place.longitude);
+                double relativeBearing = relativeBearing(targetBearing, fix.bearing);
+                row = category(place.category) + "   " + distance(meters) + "   " + arrow(relativeBearing);
             } else row = category(place.category) + "   —   GPS غير متاح";
             TextView action = DarbakUi.action(c, row);
             action.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); map.showPlaceActions(place); });
@@ -75,6 +76,11 @@ final class SavedPlacesDialog {
         double y = Math.sin(Math.toRadians(p - o)) * Math.cos(Math.toRadians(b));
         double x = Math.cos(Math.toRadians(a)) * Math.sin(Math.toRadians(b)) - Math.sin(Math.toRadians(a)) * Math.cos(Math.toRadians(b)) * Math.cos(Math.toRadians(p - o));
         return (Math.toDegrees(Math.atan2(y, x)) + 360d) % 360d;
+    }
+    /** Arrow is relative to the car heading, not fixed geographic north. */
+    private static double relativeBearing(double targetBearing, float vehicleBearing) {
+        if (Float.isNaN(vehicleBearing) || vehicleBearing < 0f || vehicleBearing >= 360f) return targetBearing;
+        return (targetBearing - vehicleBearing + 360d) % 360d;
     }
     private static String arrow(double b) {
         if (b < 22.5 || b >= 337.5) return "↑"; if (b < 67.5) return "↗"; if (b < 112.5) return "→"; if (b < 157.5) return "↘"; if (b < 202.5) return "↓"; if (b < 247.5) return "↙"; if (b < 292.5) return "←"; return "↖";
