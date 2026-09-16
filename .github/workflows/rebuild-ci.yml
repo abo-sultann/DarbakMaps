@@ -16,10 +16,17 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Verify clean rebuild
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease
       - name: Upload debug candidate for emulator only
         uses: actions/upload-artifact@v4
         with:
           name: DarbakMaps-rebuild-emulator-only
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 1
+      - name: Upload unsigned release handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarbakMaps-1.0.0-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 1
+          if-no-files-found: error
