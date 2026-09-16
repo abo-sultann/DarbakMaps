@@ -1,0 +1,42 @@
+name: Fix live breadcrumb GPS jumps
+on:
+  push:
+    branches: [ "darbakmaps-rebuild-1.0" ]
+    paths: [ ".github/workflows/fix-live-track-jumps.yml" ]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: darbakmaps-rebuild-1.0
+          fetch-depth: 0
+      - name: Keep live drawing consistent with persisted track segmentation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/abosultan/darbakmaps/ui/OfflineMapView.java')
+          s=p.read_text()
+          old='private void appendLiveTrack(LocationSnapshot fix,LatLong p){if(activeTrack==null||trackOutline==null)return;long prev=lastLiveTrackFixTime;if(prev>0&&fix.timestampMs-prev>LIVE_SEGMENT_GAP_MS)startNewLiveTrackSegment();lastLiveTrackFixTime=fix.timestampMs;if(lastTrackPoint!=null){double dist=lastTrackPoint.sphericalDistance(p);long since=fix.timestampMs-lastTrackPointTime;if(dist<LIVE_DRAW_MIN_DISTANCE_METERS&&since<LIVE_DRAW_MAX_INTERVAL_MS)return;}trackOutline.addPoint(p);activeTrack.addPoint(p);lastTrackPoint=p;lastTrackPointTime=fix.timestampMs;if(mapView!=null)mapView.getLayerManager().redrawLayers();}'
+          new='private void appendLiveTrack(LocationSnapshot fix,LatLong p){if(activeTrack==null||trackOutline==null)return;long prev=lastLiveTrackFixTime;if(prev>0&&fix.timestampMs-prev>LIVE_SEGMENT_GAP_MS)startNewLiveTrackSegment();lastLiveTrackFixTime=fix.timestampMs;if(lastTrackPoint!=null){double dist=lastTrackPoint.sphericalDistance(p);long since=fix.timestampMs-lastTrackPointTime;if(since<=0L)return;double impliedKmh=dist/(since/1000d)*3.6d;if(impliedKmh>260d){startNewLiveTrackSegment();}else if(dist<LIVE_DRAW_MIN_DISTANCE_METERS&&since<LIVE_DRAW_MAX_INTERVAL_MS)return;}trackOutline.addPoint(p);activeTrack.addPoint(p);lastTrackPoint=p;lastTrackPointTime=fix.timestampMs;if(mapView!=null)mapView.getLayerManager().redrawLayers();}'
+          if old not in s:
+              raise SystemExit('appendLiveTrack target not found; refusing unsafe patch')
+          p.write_text(s.replace(old,new,1))
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile patch
+        run: ./gradlew --no-daemon :app:compileDebugJavaWithJavac
+      - name: Commit verified patch
+        run: |
+          git config user.name 'Darbak CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java/com/abosultan/darbakmaps/ui/OfflineMapView.java
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: split live track on impossible GPS jumps'
+          git push origin HEAD:darbakmaps-rebuild-1.0
