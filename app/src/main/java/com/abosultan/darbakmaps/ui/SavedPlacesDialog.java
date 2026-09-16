@@ -17,6 +17,8 @@ import java.util.List;
 
 /** Lightweight nearest-first saved-place browser for the 1024x600 head unit. */
 final class SavedPlacesDialog {
+    private static final float MIN_HEADING_SPEED_KMH = 4f;
+
     static void show(Context c, OfflineMapView map) {
         LocationSnapshot fix = LiveLocationStore.latest();
         SqlitePlaceRepository repo = new SqlitePlaceRepository(c);
@@ -25,7 +27,8 @@ final class SavedPlacesDialog {
         finally { repo.close(); }
         if (places.isEmpty()) { Toast.makeText(c, "لا توجد مواقع محفوظة", Toast.LENGTH_SHORT).show(); return; }
 
-        String title = fix.valid ? "المواقع المحفوظة — الأقرب أولاً" : "المواقع المحفوظة";
+        boolean headingReliable = fix.valid && fix.speedKmh >= MIN_HEADING_SPEED_KMH && validBearing(fix.bearing);
+        String title = fix.valid ? (headingReliable ? "المواقع المحفوظة — السهم حسب اتجاه السيارة" : "المواقع المحفوظة — الأقرب أولاً") : "المواقع المحفوظة";
         LinearLayout box = DarbakDialog.panel(c, title);
         LinearLayout list = new LinearLayout(c);
         list.setOrientation(LinearLayout.VERTICAL);
@@ -40,8 +43,8 @@ final class SavedPlacesDialog {
             if (fix.valid) {
                 double meters = PlaceMath.distanceMeters(fix.latitude, fix.longitude, place.latitude, place.longitude);
                 double targetBearing = bearing(fix.latitude, fix.longitude, place.latitude, place.longitude);
-                double relativeBearing = relativeBearing(targetBearing, fix.bearing);
-                row = category(place.category) + "   " + distance(meters) + "   " + arrow(relativeBearing);
+                String direction = headingReliable ? arrow(relativeBearing(targetBearing, fix.bearing)) : cardinal(targetBearing);
+                row = category(place.category) + "   " + distance(meters) + "   " + direction;
             } else row = category(place.category) + "   —   GPS غير متاح";
             TextView action = DarbakUi.action(c, row);
             action.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); map.showPlaceActions(place); });
@@ -77,10 +80,10 @@ final class SavedPlacesDialog {
         double x = Math.cos(Math.toRadians(a)) * Math.sin(Math.toRadians(b)) - Math.sin(Math.toRadians(a)) * Math.cos(Math.toRadians(b)) * Math.cos(Math.toRadians(p - o));
         return (Math.toDegrees(Math.atan2(y, x)) + 360d) % 360d;
     }
-    /** Arrow is relative to the car heading, not fixed geographic north. */
-    private static double relativeBearing(double targetBearing, float vehicleBearing) {
-        if (Float.isNaN(vehicleBearing) || vehicleBearing < 0f || vehicleBearing >= 360f) return targetBearing;
-        return (targetBearing - vehicleBearing + 360d) % 360d;
+    private static boolean validBearing(float bearing) { return !Float.isNaN(bearing) && bearing >= 0f && bearing < 360f; }
+    private static double relativeBearing(double targetBearing, float vehicleBearing) { return (targetBearing - vehicleBearing + 360d) % 360d; }
+    private static String cardinal(double b) {
+        if (b < 22.5 || b >= 337.5) return "شمال"; if (b < 67.5) return "شمال شرق"; if (b < 112.5) return "شرق"; if (b < 157.5) return "جنوب شرق"; if (b < 202.5) return "جنوب"; if (b < 247.5) return "جنوب غرب"; if (b < 292.5) return "غرب"; return "شمال غرب";
     }
     private static String arrow(double b) {
         if (b < 22.5 || b >= 337.5) return "↑"; if (b < 67.5) return "↗"; if (b < 112.5) return "→"; if (b < 157.5) return "↘"; if (b < 202.5) return "↓"; if (b < 247.5) return "↙"; if (b < 292.5) return "←"; return "↖";
