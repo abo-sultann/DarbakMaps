@@ -50,11 +50,10 @@ tap_text() {
   sleep 1
 }
 
-# The API-25 software emulator makes uiautomator dumps slow enough for the 6.5s
-# auto-hide timer to race the tap. These coordinates are deliberately fixed because
-# this gate itself requires an exact 1024x600 framebuffer.
+# API-25 reports app content only to y=552 because of the system navigation area.
+# Keep all dock/reveal taps safely inside the actual clickable bounds, not at its edge.
 reveal_home_controls() {
-  adb shell input tap 44 556
+  adb shell input tap 44 536
   sleep 1
 }
 
@@ -69,8 +68,8 @@ home_control() {
     "بحث") x=244 ;;
     *) echo "ERROR: unknown home control: $text" >&2; return 1 ;;
   esac
-  adb shell input tap "$x" 548
-  sleep 1
+  adb shell input tap "$x" 536
+  sleep 2
 }
 
 longpress_home_control() {
@@ -84,8 +83,8 @@ longpress_home_control() {
     "بحث") x=244 ;;
     *) echo "ERROR: unknown home control for long press: $text" >&2; return 1 ;;
   esac
-  adb shell input swipe "$x" 548 "$x" 548 900
-  sleep 1
+  adb shell input swipe "$x" 536 "$x" 536 900
+  sleep 2
 }
 
 adb shell wm size reset || true
@@ -110,8 +109,10 @@ reveal_home_controls
 snapshot "01-home"
 
 # Identity-critical internal surfaces.
-home_control "المزيد"; snapshot "02-more"
-tap_text "حول دربك للخرائط" || { echo 'ERROR: About action did not open.' >&2; exit 34; }
+home_control "المزيد"
+dump_ui; grep -q 'فحص التحديث' "$OUT/window.xml" || { echo 'ERROR: More dialog did not open.' >&2; exit 34; }
+snapshot "02-more"
+tap_text "حول دربك للخرائط" || { echo 'ERROR: About action did not open.' >&2; exit 35; }
 snapshot "03-about"; adb shell input keyevent 4; sleep 1
 home_control "المسارات"; snapshot "04-tracks"; adb shell input keyevent 4; sleep 1
 home_control "حفظ موقع"; snapshot "05-save-place"; adb shell input keyevent 4; sleep 1
