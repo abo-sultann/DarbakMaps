@@ -163,11 +163,11 @@ public final class HomeScreen extends FrameLayout {
 
     private static void showSearchMenu(Context c, OfflineMapView map) {
         final String[] options = {"القريب مني", "بحث قريب بالاسم", "بحث بإحداثيات"};
-        new AlertDialog.Builder(c).setTitle("البحث").setItems(options, (d, which) -> {
+        DarbakDialog.menu(c, "البحث", options, which -> {
             if (which == 0) NearbyPoiDialog.show(c, map);
             else if (which == 1) NearbyPoiDialog.showNameSearch(c, map);
             else showCoordinateSearch(c, map);
-        }).setNegativeButton("إلغاء", null).show();
+        });
     }
 
     private static void showCoordinateSearch(Context c, OfflineMapView map) {
@@ -192,10 +192,10 @@ public final class HomeScreen extends FrameLayout {
     private static void picker(Context c, OfflineMapView map) {
         final String[] labels = {"طير سمان", "ماء", "مخيم", "وقود", "أخرى"};
         final String[] values = {"summan", "water", "camp", "fuel", "other"};
-        new AlertDialog.Builder(c).setTitle("حفظ الموقع كـ").setItems(labels, (d, w) -> {
+        DarbakDialog.menu(c, "حفظ الموقع كـ", labels, w -> {
             boolean ok = map.saveCurrentPlace(values[w]);
             Toast.makeText(c, ok ? "تم حفظ الموقع — " + labels[w] : "بانتظار إشارة GPS", Toast.LENGTH_SHORT).show();
-        }).setNegativeButton("إلغاء", null).show();
+        });
     }
 
     private static TextView tool(Context c, String v) { TextView t = DarbakUi.action(c, v); t.setTextSize(24f); t.setTextColor(DarbakUi.ACCENT); return t; }
