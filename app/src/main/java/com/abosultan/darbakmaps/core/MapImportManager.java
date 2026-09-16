@@ -56,9 +56,9 @@ public final class MapImportManager {
         boolean hadOld = dst.isFile();
         if (hadOld && !dst.renameTo(bak)) { tmp.delete(); return false; }
         if (!tmp.renameTo(dst)) {
-            boolean restored = !hadOld || restoreBackup(bak, dst);
+            if (hadOld) restoreBackup(bak, dst);
             tmp.delete();
-            return false && restored;
+            return false;
         }
         if (!valid(dst)) {
             if (!dst.delete()) return false;
