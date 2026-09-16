@@ -18,21 +18,25 @@ import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 import com.abosultan.darbakmaps.core.LiveLocationStore;
 
 public final class HomeScreen extends FrameLayout {
-    private static final long AUTO_HIDE_MS=6500L;
+    private static final long AUTO_HIDE_MS=6500L, LONG_PRESS_MS=700L;
     private final MapUiSettings settings;
-    private TextView speedView; private View tools,dock; private boolean controlsVisible=true,moved; private float downX,downY;
+    private TextView speedView; private View tools,dock; private boolean controlsVisible=true,moved,longPressed; private float downX,downY;
     private final Runnable statusPump=new Runnable(){@Override public void run(){LocationSnapshot s=LiveLocationStore.latest();speedView.setText(s.valid?Math.round(s.speedKmh)+" كم/س":"— كم/س");speedView.setVisibility(settings.get(MapUiSettings.SPEED)?VISIBLE:GONE);postDelayed(this,1000L);}};
     private final Runnable hideControls=()->setControlsVisible(false);
+    private Runnable openSettings;
 
     public HomeScreen(Context c){super(c);settings=new MapUiSettings(c);setLayoutDirection(View.LAYOUT_DIRECTION_RTL);setBackgroundColor(DarbakUi.BG);build(c);}
     @Override protected void onAttachedToWindow(){super.onAttachedToWindow();removeCallbacks(statusPump);post(statusPump);showControls();}
-    @Override protected void onDetachedFromWindow(){removeCallbacks(statusPump);removeCallbacks(hideControls);super.onDetachedFromWindow();}
+    @Override protected void onDetachedFromWindow(){removeCallbacks(statusPump);removeCallbacks(hideControls);if(openSettings!=null)removeCallbacks(openSettings);super.onDetachedFromWindow();}
 
     private void setControlsVisible(boolean visible){controlsVisible=visible;if(tools!=null)tools.setVisibility(visible&&settings.get(MapUiSettings.MAP_TOOLS)?VISIBLE:GONE);if(dock!=null)dock.setVisibility(visible&&settings.get(MapUiSettings.BOTTOM_DOCK)?VISIBLE:GONE);removeCallbacks(hideControls);if(visible&&settings.get(MapUiSettings.AUTO_HIDE))postDelayed(hideControls,AUTO_HIDE_MS);}
     private void showControls(){setControlsVisible(true);} private void toggleControls(){if(settings.get(MapUiSettings.TAP_HIDE))setControlsVisible(!controlsVisible);}
 
     private void build(Context c){
-        final OfflineMapView map=new OfflineMapView(c); map.setOnTouchListener((v,e)->{if(e.getActionMasked()==MotionEvent.ACTION_DOWN){downX=e.getX();downY=e.getY();moved=false;}else if(e.getActionMasked()==MotionEvent.ACTION_MOVE){if(Math.abs(e.getX()-downX)>18||Math.abs(e.getY()-downY)>18)moved=true;}else if(e.getActionMasked()==MotionEvent.ACTION_UP&&!moved)toggleControls();return false;}); addView(map,new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
+        final OfflineMapView map=new OfflineMapView(c);
+        openSettings=()->{if(!moved){longPressed=true;SettingsDialog.show(c);}};
+        map.setOnTouchListener((v,e)->{int a=e.getActionMasked();if(a==MotionEvent.ACTION_DOWN){downX=e.getX();downY=e.getY();moved=false;longPressed=false;removeCallbacks(openSettings);postDelayed(openSettings,LONG_PRESS_MS);}else if(a==MotionEvent.ACTION_MOVE){if(Math.abs(e.getX()-downX)>18||Math.abs(e.getY()-downY)>18){moved=true;removeCallbacks(openSettings);}}else if(a==MotionEvent.ACTION_UP){removeCallbacks(openSettings);if(!moved&&!longPressed)toggleControls();}else if(a==MotionEvent.ACTION_CANCEL)removeCallbacks(openSettings);return false;});
+        addView(map,new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
         speedView=text(c,"— كم/س",22,true);speedView.setGravity(Gravity.CENTER);speedView.setBackground(DarbakUi.rounded(0xB80B0F12,DarbakUi.BORDER,18,c));FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(DarbakUi.dp(c,122),DarbakUi.dp(c,52),Gravity.TOP|Gravity.LEFT);sp.leftMargin=DarbakUi.dp(c,18);sp.topMargin=DarbakUi.dp(c,14);addView(speedView,sp);
         LinearLayout toolBox=new LinearLayout(c);tools=toolBox;toolBox.setOrientation(LinearLayout.VERTICAL);toolBox.setGravity(Gravity.CENTER);TextView zi=tool(c,"＋");zi.setContentDescription("تكبير");zi.setOnClickListener(v->{showControls();map.zoomIn();});toolBox.addView(zi,tp(c));TextView zo=tool(c,"−");zo.setContentDescription("تصغير");zo.setOnClickListener(v->{showControls();map.zoomOut();});toolBox.addView(zo,tp(c));TextView rc=tool(c,"◎");rc.setContentDescription("موقعي");rc.setOnClickListener(v->{showControls();if(!map.recenterOnGps())Toast.makeText(c,map.hasMap()?"بانتظار إشارة GPS":"الخريطة غير جاهزة",Toast.LENGTH_SHORT).show();});toolBox.addView(rc,tp(c));FrameLayout.LayoutParams tlp=new FrameLayout.LayoutParams(DarbakUi.dp(c,60),LayoutParams.WRAP_CONTENT,Gravity.LEFT|Gravity.CENTER_VERTICAL);tlp.leftMargin=DarbakUi.dp(c,18);addView(toolBox,tlp);
         LinearLayout dockBox=new LinearLayout(c);dock=dockBox;dockBox.setGravity(Gravity.CENTER);dockBox.setPadding(DarbakUi.dp(c,8),DarbakUi.dp(c,6),DarbakUi.dp(c,8),DarbakUi.dp(c,6));dockBox.setBackground(DarbakUi.rounded(0xD912191F,DarbakUi.BORDER,24,c));addDock(c,dockBox,"⌕","بحث",v->{showControls();showSearchMenu(c,map);});addDock(c,dockBox,"⌖","حفظ موقع",v->{showControls();picker(c,map);});addDock(c,dockBox,"★","المواقع",v->{showControls();SavedPlacesDialog.show(c,map);});addDock(c,dockBox,"〽","المسارات",v->{showControls();TracksDialog.show(c,map);});TextView more=addDock(c,dockBox,"•••","المزيد",v->{showControls();MoreDialog.show(c,map);});more.setOnLongClickListener(v->{showControls();MoreDialog.showDiagnostics(c,map);return true;});FrameLayout.LayoutParams dlp=new FrameLayout.LayoutParams(DarbakUi.dp(c,470),DarbakUi.dp(c,68),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);dlp.bottomMargin=DarbakUi.dp(c,16);addView(dockBox,dlp);showControls();
