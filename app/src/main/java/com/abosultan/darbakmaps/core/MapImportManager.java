@@ -18,7 +18,9 @@ public final class MapImportManager {
         if (root == null) root = c.getFilesDir();
         File maps = new File(root, "maps");
         if (!maps.exists()) maps.mkdirs();
-        return new File(maps, ACTIVE_NAME);
+        File dst = new File(maps, ACTIVE_NAME);
+        recoverIfNeeded(dst);
+        return dst;
     }
 
     public static boolean importUri(Context c, Uri uri) {
@@ -54,20 +56,42 @@ public final class MapImportManager {
         boolean hadOld = dst.isFile();
         if (hadOld && !dst.renameTo(bak)) { tmp.delete(); return false; }
         if (!tmp.renameTo(dst)) {
-            if (hadOld) bak.renameTo(dst);
+            boolean restored = !hadOld || restoreBackup(bak, dst);
             tmp.delete();
-            return false;
+            return false && restored;
         }
         if (!valid(dst)) {
-            dst.delete();
-            if (hadOld) bak.renameTo(dst);
+            if (!dst.delete()) return false;
+            if (hadOld && !restoreBackup(bak, dst)) return false;
             return false;
         }
-        if (hadOld) bak.delete();
+        if (hadOld && bak.exists() && !bak.delete()) {
+            // The new map is already valid. Keeping a stale backup is safer than touching it again.
+        }
+        return true;
+    }
+
+    private static void recoverIfNeeded(File dst) {
+        if (dst == null) return;
+        File dir = dst.getParentFile();
+        if (dir == null) return;
+        File bak = new File(dir, ACTIVE_NAME + ".bak");
+        if (!dst.isFile() && bak.isFile() && valid(bak)) restoreBackup(bak, dst);
+    }
+
+    private static boolean restoreBackup(File bak, File dst) {
+        if (bak == null || dst == null || !bak.isFile()) return false;
+        if (dst.exists() && !dst.delete()) return false;
+        if (!bak.renameTo(dst)) return false;
+        if (!valid(dst)) {
+            dst.renameTo(bak);
+            return false;
+        }
         return true;
     }
 
     private static boolean valid(File f) {
+        if (f == null || !f.isFile() || f.length() < 1024L) return false;
         MapFile map = null;
         try { map = new MapFile(f); return map.boundingBox() != null; }
         catch (Exception e) { return false; }
