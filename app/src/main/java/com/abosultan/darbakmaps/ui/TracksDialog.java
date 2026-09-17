@@ -2,7 +2,10 @@ package com.abosultan.darbakmaps.ui;
 
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.widget.Toast;
+
+import androidx.core.content.FileProvider;
 
 import com.abosultan.darbakmaps.core.BacktrackNavigator;
 import com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
@@ -62,7 +65,35 @@ final class TracksDialog {
         if (files.length == 0) { Toast.makeText(c, "لا توجد مسارات محفوظة", Toast.LENGTH_SHORT).show(); return; }
         String[] rows = new String[files.length];
         for (int i = 0; i < files.length; i++) rows[i] = files[i].getName() + "   •   " + Math.max(1, files[i].length() / 1024) + " KB";
-        DarbakDialog.menu(c, "المسارات المحفوظة — " + files.length, rows, which -> { });
+        DarbakDialog.menu(c, "المسارات المحفوظة — " + files.length, rows, which -> savedTrackActions(c, files[which]));
+    }
+
+    private static void savedTrackActions(Context c, File file) {
+        if (file == null || !file.isFile()) { Toast.makeText(c, "ملف المسار غير متاح", Toast.LENGTH_SHORT).show(); return; }
+        DarbakDialog.menu(c, file.getName(), new String[]{"مشاركة GPX", "حذف المسار"}, which -> {
+            if (which == 0) shareTrack(c, file); else confirmDeleteTrack(c, file);
+        });
+    }
+
+    private static void shareTrack(Context c, File file) {
+        try {
+            Uri uri = FileProvider.getUriForFile(c, c.getPackageName() + ".files", file);
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType("application/gpx+xml");
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            c.startActivity(Intent.createChooser(share, "مشاركة المسار"));
+        } catch (RuntimeException error) {
+            Toast.makeText(c, "لا يوجد تطبيق متاح لمشاركة المسار", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private static void confirmDeleteTrack(Context c, File file) {
+        DarbakDialog.infoActions(c, "حذف المسار؟", file.getName() + "\nلن يمكن التراجع عن الحذف.", new String[]{"حذف المسار"}, which -> {
+            boolean deleted = file.isFile() && file.delete();
+            Toast.makeText(c, deleted ? "تم حذف المسار" : "تعذر حذف المسار", Toast.LENGTH_SHORT).show();
+            if (deleted) showSavedTracks(c);
+        });
     }
 
     private static void setRecording(Context c, boolean enabled) {
