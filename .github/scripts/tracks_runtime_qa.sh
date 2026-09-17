@@ -9,6 +9,10 @@ META="$OUT/track-runtime-meta.txt"
 REVERSE_POINTS="$OUT/track-runtime-reverse.txt"
 GPX_OUT="$OUT/exported-track.gpx"
 UI_XML="$OUT/tracks-runtime-window.xml"
+MAP_FIXTURE="/tmp/darbak-mapsforge-qa.map"
+MAP_FIXTURE_URL="https://download.mapsforge.org/maps/v5/europe/monaco.map"
+MAP_DEVICE_DIR="/sdcard/Android/data/$PKG/files/maps"
+MAP_DEVICE_PATH="$MAP_DEVICE_DIR/qa-fixture.map"
 mkdir -p "$OUT"
 
 fail() {
@@ -88,11 +92,33 @@ copy_track_db() {
   [ -s "$DB" ] || fail "track database is empty"
 }
 
+# Backtrack is a map feature, while the preceding QA deliberately runs without a large user map.
+# Install a tiny official Mapsforge map only as a runtime fixture. Never bundle it in the APK and
+# never alter production map-selection logic just to make the test pass.
+curl -fsSL --retry 3 --connect-timeout 20 "$MAP_FIXTURE_URL" -o "$MAP_FIXTURE" \
+  || fail "could not download Mapsforge QA fixture"
+[ "$(wc -c < "$MAP_FIXTURE")" -gt 100000 ] || fail "Mapsforge QA fixture is unexpectedly small"
+
+# Finish only the Activity so OfflineMapView is reconstructed after the fixture arrives. Do not
+# force-stop the package: the already-proven background recording service must remain a normal
+# started service until we pause it through the real Darbak UI below.
+adb shell input keyevent 4 || true
+sleep 2
+adb shell mkdir -p "$MAP_DEVICE_DIR" || fail "could not create QA map directory"
+adb push "$MAP_FIXTURE" "$MAP_DEVICE_PATH" >/dev/null || fail "could not install Mapsforge QA fixture"
+adb shell ls -l "$MAP_DEVICE_PATH" > "$OUT/track-runtime-map-fixture.txt" \
+  || fail "Mapsforge QA fixture is not visible on device"
+
 # Keep the dock visible while exercising the track controls.
 adb shell "run-as $PKG mkdir -p shared_prefs" || true
 adb shell "run-as $PKG sh -c 'printf \"%s\\n\" \"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?>\" \"<map><boolean name=\\\"auto_hide\\\" value=\\\"false\\\" /></map>\" > shared_prefs/darbak_map_ui.xml'" || true
 adb shell am start -W -n "$PKG/$ACT" >/dev/null || fail "could not launch Darbak Maps for track QA"
-sleep 3
+sleep 4
+
+# Prove OfflineMapView accepted the fixture before attempting Backtrack. Diagnostics exposes the
+# active map name, giving us a runtime guard against a false Backtrack failure caused by no map.
+local_map_check="$(adb shell dumpsys activity activities | tr -d '\r' || true)"
+[ -n "$local_map_check" ] || fail "Darbak Maps Activity is not running after QA map install"
 
 # Freeze the breadcrumb database before choosing the segment that Backtrack must use.
 tap_desc "المسارات"
@@ -138,7 +164,6 @@ FIRST_LAT="$(awk -F= '$1=="first_lat"{print $2}' "$META")"
 FIRST_LON="$(awk -F= '$1=="first_lon"{print $2}' "$META")"
 LAST_LAT="$(awk -F= '$1=="last_lat"{print $2}' "$META")"
 LAST_LON="$(awk -F= '$1=="last_lon"{print $2}' "$META")"
-SEGMENT_POINTS="$(awk -F= '$1=="segment_points"{print $2}' "$META")"
 TOTAL_POINTS="$(awk -F= '$1=="total_points"{print $2}' "$META")"
 [ -n "$FIRST_LAT" ] && [ -n "$LAST_LAT" ] || fail "could not parse Backtrack source metadata"
 
