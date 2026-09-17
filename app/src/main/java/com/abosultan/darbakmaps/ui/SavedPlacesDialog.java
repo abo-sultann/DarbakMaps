@@ -2,6 +2,7 @@ package com.abosultan.darbakmaps.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -15,7 +16,7 @@ import com.abosultan.darbakmaps.core.SqlitePlaceRepository;
 
 import java.util.List;
 
-/** Lightweight nearest-first saved-place browser for the 1024x600 head unit. */
+/** Card-based nearest-first saved-place manager for the 1024x600 Darbak head unit. */
 final class SavedPlacesDialog {
     private static final float MIN_HEADING_SPEED_KMH = 4f;
 
@@ -27,49 +28,133 @@ final class SavedPlacesDialog {
         final List<Place> places;
         try { places = fix.valid ? repo.nearest(fix.latitude, fix.longitude, filter, 100) : filtered(repo.all(100), filter); }
         finally { repo.close(); }
-        if (places.isEmpty()) { Toast.makeText(c, filter == null ? "لا توجد مواقع محفوظة" : "لا توجد مواقع من هذا النوع", Toast.LENGTH_SHORT).show(); if (filter != null) show(c, map, null); return; }
+        if (places.isEmpty()) {
+            Toast.makeText(c, filter == null ? "لا توجد مواقع محفوظة" : "لا توجد مواقع من هذا النوع", Toast.LENGTH_SHORT).show();
+            if (filter != null) show(c, map, null);
+            return;
+        }
 
         boolean headingReliable = fix.valid && fix.speedKmh >= MIN_HEADING_SPEED_KMH && validBearing(fix.bearing);
         String title = filter == null ? "المواقع المحفوظة" : "المواقع — " + category(filter);
         if (fix.valid) title += headingReliable ? " — السهم حسب السيارة" : " — الأقرب أولاً";
-        LinearLayout box = DarbakDialog.panel(c, title);
-        LinearLayout filters = new LinearLayout(c); filters.setOrientation(LinearLayout.HORIZONTAL);
-        final AlertDialog[] holder = new AlertDialog[1];
-        addFilter(c, filters, "الكل", null, filter, map, holder); addFilter(c, filters, "سمان", "summan", filter, map, holder); addFilter(c, filters, "ماء", "water", filter, map, holder); addFilter(c, filters, "مخيم", "camp", filter, map, holder); addFilter(c, filters, "وقود", "fuel", filter, map, holder);
-        box.addView(filters, DarbakDialog.row(c, 4));
-        LinearLayout list = new LinearLayout(c); list.setOrientation(LinearLayout.VERTICAL);
-        ScrollView scroll = new ScrollView(c); scroll.setFillViewport(false); scroll.addView(list, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams sp = DarbakDialog.row(c, 4); sp.height = DarbakUi.dp(c, 270); box.addView(scroll, sp);
 
-        for (Place place : places) {
-            String row;
-            if (fix.valid) {
-                double meters = PlaceMath.distanceMeters(fix.latitude, fix.longitude, place.latitude, place.longitude);
-                double targetBearing = bearing(fix.latitude, fix.longitude, place.latitude, place.longitude);
-                String direction = headingReliable ? arrow(relativeBearing(targetBearing, fix.bearing)) : cardinal(targetBearing);
-                row = category(place.category) + "   " + distance(meters) + "   " + direction;
-            } else row = category(place.category) + "   —   GPS غير متاح";
-            TextView action = DarbakUi.action(c, row);
-            action.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); map.showPlaceActions(place); });
-            action.setOnLongClickListener(v -> { confirmDelete(c, map, holder[0], place, filter); return true; });
-            LinearLayout.LayoutParams p = DarbakDialog.row(c, 8); p.height = DarbakUi.dp(c, 50); list.addView(action, p);
-        }
-        TextView close = DarbakUi.action(c, "إغلاق"); close.setTextColor(DarbakUi.TEXT_SECONDARY); close.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); });
-        LinearLayout.LayoutParams cp = DarbakDialog.row(c, 8); cp.height = DarbakUi.dp(c, 46); box.addView(close, cp); holder[0] = DarbakDialog.show(c, box);
+        LinearLayout box = DarbakDialog.panel(c, title);
+        final AlertDialog[] holder = new AlertDialog[1];
+
+        LinearLayout filters = new LinearLayout(c);
+        filters.setOrientation(LinearLayout.HORIZONTAL);
+        addFilter(c, filters, "الكل", null, filter, map, holder);
+        addFilter(c, filters, "سمان", "summan", filter, map, holder);
+        addFilter(c, filters, "ماء", "water", filter, map, holder);
+        addFilter(c, filters, "مخيم", "camp", filter, map, holder);
+        addFilter(c, filters, "وقود", "fuel", filter, map, holder);
+        box.addView(filters, DarbakDialog.row(c, 5));
+
+        LinearLayout list = new LinearLayout(c);
+        list.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(c);
+        scroll.setFillViewport(false);
+        scroll.addView(list, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams sp = DarbakDialog.row(c, 5);
+        sp.height = DarbakUi.dp(c, 286);
+        box.addView(scroll, sp);
+
+        for (Place place : places) addPlaceCard(c, list, map, holder, place, filter, fix, headingReliable);
+
+        TextView close = DarbakUi.action(c, "إغلاق");
+        close.setTextColor(DarbakUi.TEXT_SECONDARY);
+        close.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); });
+        LinearLayout.LayoutParams cp = DarbakDialog.row(c, 7);
+        cp.height = DarbakUi.dp(c, 44);
+        box.addView(close, cp);
+        holder[0] = DarbakDialog.show(c, box);
+    }
+
+    private static void addPlaceCard(Context c, LinearLayout list, OfflineMapView map, AlertDialog[] holder,
+                                     Place place, String filter, LocationSnapshot fix, boolean headingReliable) {
+        LinearLayout card = new LinearLayout(c);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(DarbakUi.dp(c, 12), DarbakUi.dp(c, 8), DarbakUi.dp(c, 12), DarbakUi.dp(c, 8));
+        card.setBackground(DarbakUi.rounded(DarbakUi.CARD, DarbakUi.BORDER, 17, c));
+
+        LinearLayout info = new LinearLayout(c);
+        info.setOrientation(LinearLayout.VERTICAL);
+        TextView name = new TextView(c);
+        String visibleName = place.name == null || place.name.trim().isEmpty() ? category(place.category) : place.name.trim();
+        name.setText(visibleName);
+        name.setTextColor(DarbakUi.TEXT);
+        name.setTextSize(18);
+        name.setGravity(Gravity.RIGHT);
+        info.addView(name, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, DarbakUi.dp(c, 29)));
+
+        TextView meta = new TextView(c);
+        meta.setText(placeMeta(place, fix, headingReliable));
+        meta.setTextColor(DarbakUi.TEXT_SECONDARY);
+        meta.setTextSize(14);
+        meta.setGravity(Gravity.RIGHT);
+        info.addView(meta, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, DarbakUi.dp(c, 25)));
+        card.addView(info, new LinearLayout.LayoutParams(0, DarbakUi.dp(c, 58), 1f));
+
+        TextView open = smallAction(c, "فتح");
+        open.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); map.showPlaceActions(place); });
+        LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(DarbakUi.dp(c, 92), DarbakUi.dp(c, 46));
+        op.leftMargin = DarbakUi.dp(c, 8);
+        card.addView(open, op);
+
+        TextView delete = smallAction(c, "حذف");
+        delete.setTextColor(DarbakUi.ACCENT);
+        delete.setOnClickListener(v -> confirmDelete(c, map, holder[0], place, filter));
+        LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(DarbakUi.dp(c, 92), DarbakUi.dp(c, 46));
+        dp.leftMargin = DarbakUi.dp(c, 8);
+        card.addView(delete, dp);
+
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, DarbakUi.dp(c, 76));
+        p.bottomMargin = DarbakUi.dp(c, 8);
+        list.addView(card, p);
+    }
+
+    private static TextView smallAction(Context c, String label) {
+        TextView v = DarbakUi.action(c, label);
+        v.setTextSize(15);
+        v.setPadding(DarbakUi.dp(c, 8), 0, DarbakUi.dp(c, 8), 0);
+        return v;
+    }
+
+    private static String placeMeta(Place place, LocationSnapshot fix, boolean headingReliable) {
+        if (!fix.valid) return category(place.category) + "  •  GPS غير متاح";
+        double meters = PlaceMath.distanceMeters(fix.latitude, fix.longitude, place.latitude, place.longitude);
+        double targetBearing = bearing(fix.latitude, fix.longitude, place.latitude, place.longitude);
+        String direction = headingReliable ? arrow(relativeBearing(targetBearing, fix.bearing)) : cardinal(targetBearing);
+        return "المسافة: " + distance(meters) + "  •  الاتجاه: " + direction;
     }
 
     private static void addFilter(Context c, LinearLayout row, String label, String value, String selected, OfflineMapView map, AlertDialog[] holder) {
-        TextView v = DarbakUi.action(c, label); if ((selected == null && value == null) || (selected != null && selected.equals(value))) v.setTextColor(DarbakUi.ACCENT);
+        TextView v = DarbakUi.action(c, label);
+        if ((selected == null && value == null) || (selected != null && selected.equals(value))) DarbakUi.setSelected(v, true, c);
         v.setOnClickListener(x -> { if (holder[0] != null) holder[0].dismiss(); show(c, map, value); });
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, DarbakUi.dp(c, 42), 1f); if (row.getChildCount() > 0) p.rightMargin = DarbakUi.dp(c, 5); row.addView(v, p);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, DarbakUi.dp(c, 42), 1f);
+        if (row.getChildCount() > 0) p.rightMargin = DarbakUi.dp(c, 5);
+        row.addView(v, p);
     }
-    private static List<Place> filtered(List<Place> all, String filter) { if (filter == null) return all; java.util.ArrayList<Place> out = new java.util.ArrayList<>(); for (Place p : all) if (filter.equals(p.category)) out.add(p); return out; }
+
+    private static List<Place> filtered(List<Place> all, String filter) {
+        if (filter == null) return all;
+        java.util.ArrayList<Place> out = new java.util.ArrayList<>();
+        for (Place p : all) if (filter.equals(p.category)) out.add(p);
+        return out;
+    }
 
     private static void confirmDelete(Context c, OfflineMapView map, AlertDialog parent, Place place, String filter) {
         DarbakDialog.infoActions(c, "حذف الموقع؟", category(place.category) + "\nلن يمكن التراجع عن الحذف.", new String[]{"حذف الموقع"}, which -> {
-            boolean deleted; SqlitePlaceRepository repo = new SqlitePlaceRepository(c); try { deleted = repo.delete(place.id); } finally { repo.close(); }
+            boolean deleted;
+            SqlitePlaceRepository repo = new SqlitePlaceRepository(c);
+            try { deleted = repo.delete(place.id); } finally { repo.close(); }
             if (!deleted) { Toast.makeText(c, "تعذر حذف الموقع", Toast.LENGTH_SHORT).show(); return; }
-            map.removeSavedPlaceMarker(place.id); if (parent != null) parent.dismiss(); Toast.makeText(c, "تم حذف الموقع", Toast.LENGTH_SHORT).show(); show(c, map, filter);
+            map.removeSavedPlaceMarker(place.id);
+            if (parent != null) parent.dismiss();
+            Toast.makeText(c, "تم حذف الموقع", Toast.LENGTH_SHORT).show();
+            show(c, map, filter);
         });
     }
 
