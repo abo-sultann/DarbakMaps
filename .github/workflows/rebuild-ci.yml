@@ -5,6 +5,10 @@ on:
     branches: [ "darbakmaps-rebuild-1.0" ]
   workflow_dispatch:
 
+concurrency:
+  group: darbakmaps-rebuild-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
