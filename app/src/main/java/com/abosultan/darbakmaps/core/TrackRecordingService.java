@@ -6,8 +6,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.Looper;
+import android.os.Process;
 
 import com.abosultan.darbakmaps.MainActivity;
 
@@ -26,7 +27,8 @@ public final class TrackRecordingService extends Service {
 
     private AndroidLocationEngine location;
     private SqliteTrackRecorder recorder;
-    private Handler handler;
+    private Handler worker;
+    private HandlerThread workerThread;
     private BroadcastReceiver screenReceiver;
     private boolean uiActive;
 
@@ -36,14 +38,16 @@ public final class TrackRecordingService extends Service {
             if (session.shouldResumeTrackRecording() && location != null && recorder != null) {
                 LocationSnapshot point = location.latest();
                 recorder.append(point);
-                if (handler != null) handler.postDelayed(this, 2000L);
+                if (worker != null) worker.postDelayed(this, 2000L);
             }
         }
     };
 
     @Override public void onCreate() {
         super.onCreate();
-        handler = new Handler(Looper.getMainLooper());
+        workerThread = new HandlerThread("darbak-track-writer", Process.THREAD_PRIORITY_BACKGROUND);
+        workerThread.start();
+        worker = new Handler(workerThread.getLooper());
         location = new AndroidLocationEngine(this);
         recorder = new SqliteTrackRecorder(this);
         recorder.restoreAutomaticState();
@@ -77,12 +81,12 @@ public final class TrackRecordingService extends Service {
     }
 
     private void refreshWorkState() {
-        if (handler == null || location == null) return;
-        handler.removeCallbacks(pump);
+        if (worker == null || location == null) return;
+        worker.removeCallbacks(pump);
         boolean recording = new SessionStore(this).shouldResumeTrackRecording();
         if (uiActive || recording) {
             location.start();
-            if (recording) handler.post(pump);
+            if (recording) worker.post(pump);
         } else {
             location.stop();
             LiveLocationStore.invalidate();
@@ -114,7 +118,7 @@ public final class TrackRecordingService extends Service {
     }
 
     @Override public void onDestroy() {
-        if (handler != null) handler.removeCallbacks(pump);
+        if (worker != null) worker.removeCallbacks(pump);
         if (screenReceiver != null) {
             try {
                 unregisterReceiver(screenReceiver);
@@ -125,7 +129,16 @@ public final class TrackRecordingService extends Service {
         }
         if (location != null) location.stop();
         LiveLocationStore.invalidate();
-        if (recorder != null) recorder.close();
+        if (recorder != null) {
+            synchronized (recorder) {
+                recorder.close();
+            }
+        }
+        if (workerThread != null) {
+            workerThread.quitSafely();
+            workerThread = null;
+            worker = null;
+        }
         super.onDestroy();
     }
 
