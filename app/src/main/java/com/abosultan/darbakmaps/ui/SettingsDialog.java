@@ -1,48 +1,20 @@
 package com.abosultan.darbakmaps.ui;
 
-import android.app.AlertDialog;
-import android.content.Context;
-import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
-import android.view.Gravity;
-import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import android.widget.Toast;
-
-import com.abosultan.darbakmaps.MainActivity;
-import com.abosultan.darbakmaps.core.MapImportManager;
-import com.abosultan.darbakmaps.core.SessionStore;
-import com.abosultan.darbakmaps.core.TrackRecordingService;
-import java.io.File;
+import android.app.AlertDialog;import android.content.Context;import android.content.Intent;import android.graphics.Color;import android.graphics.Typeface;import android.graphics.drawable.ColorDrawable;import android.view.Gravity;import android.view.View;import android.view.Window;import android.view.WindowManager;import android.widget.LinearLayout;import android.widget.ScrollView;import android.widget.TextView;import android.widget.Toast;
+import com.abosultan.darbakmaps.MainActivity;import com.abosultan.darbakmaps.core.MapImportManager;import com.abosultan.darbakmaps.core.SessionStore;import com.abosultan.darbakmaps.core.TrackRecordingService;import java.io.File;
 
 final class SettingsDialog {
- static void show(Context c){
-  MapUiSettings s=new MapUiSettings(c);SessionStore session=new SessionStore(c);
-  LinearLayout box=new LinearLayout(c);box.setOrientation(LinearLayout.VERTICAL);box.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);int pad=DarbakUi.dp(c,18);box.setPadding(pad,pad,pad,pad);box.setBackground(DarbakUi.rounded(DarbakUi.BG,DarbakUi.ACCENT,20,c));
-  TextView title=label(c,"إعدادات دربك",22,true);title.setTextColor(DarbakUi.ACCENT);box.addView(title,rowParams(c,8));
-  TextView hint=label(c,"مركز التحكم بخصائص دربك. جميع الخيارات تحفظ تلقائيًا.",14,false);hint.setTextColor(DarbakUi.TEXT_SECONDARY);box.addView(hint,rowParams(c,12));
-  final AlertDialog[] holder=new AlertDialog[1];
-  addSection(c,box,"الخريطة");File map=MapImportManager.destination(c);TextView mapInfo=label(c,map.isFile()?"الخريطة الحالية: "+map.getName()+"  •  "+formatSize(map.length()):"لا توجد خريطة معتمدة داخل التطبيق",14,false);mapInfo.setTextColor(DarbakUi.TEXT_SECONDARY);box.addView(mapInfo,rowParams(c,4));
-  TextView importMap=DarbakUi.action(c,map.isFile()?"استبدال الخريطة":"إضافة خريطة");importMap.setOnClickListener(v->{if(holder[0]!=null)holder[0].dismiss();if(c instanceof MainActivity)((MainActivity)c).pickOfflineMap();else Toast.makeText(c,"تعذر فتح اختيار الخريطة",Toast.LENGTH_SHORT).show();});box.addView(importMap,rowParams(c,6));
-  addSection(c,box,"العرض");addToggle(c,box,s,MapUiSettings.SPEED,"إظهار السرعة");addToggle(c,box,s,MapUiSettings.MAP_TOOLS,"أدوات التكبير والتمركز");addToggle(c,box,s,MapUiSettings.BOTTOM_DOCK,"الشريط السفلي");addToggle(c,box,s,MapUiSettings.TAP_HIDE,"إخفاء الأدوات بالضغط على الخريطة");addToggle(c,box,s,MapUiSettings.AUTO_HIDE,"الإخفاء التلقائي للأدوات");
-  addSection(c,box,"GPS والمعلومات");addToggle(c,box,s,MapUiSettings.GPS_INFO,"معلومات ودقة GPS");addToggle(c,box,s,MapUiSettings.ALTITUDE,"إظهار الارتفاع");addToggle(c,box,s,MapUiSettings.COORDINATES,"إظهار الإحداثيات");
-  addSection(c,box,"المسارات");addSessionToggle(c,box,session,true,"تسجيل المسار تلقائيًا");
-  addSection(c,box,"بدء التشغيل");addSessionToggle(c,box,session,false,"تشغيل دربك تلقائيًا مع الشاشة");
-  TextView close=DarbakUi.action(c,"إغلاق");close.setTextColor(DarbakUi.TEXT_SECONDARY);close.setOnClickListener(v->{if(holder[0]!=null)holder[0].dismiss();});box.addView(close,rowParams(c,12));
-  ScrollView scroll=new ScrollView(c);scroll.setFillViewport(true);scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);scroll.addView(box,new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT,ScrollView.LayoutParams.WRAP_CONTENT));
-  AlertDialog d=new AlertDialog.Builder(c).setView(scroll).create();holder[0]=d;d.setOnShowListener(x->{Window w=d.getWindow();if(w!=null){w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));w.setDimAmount(.55f);WindowManager.LayoutParams lp=w.getAttributes();lp.width=DarbakUi.dp(c,760);lp.height=DarbakUi.dp(c,520);w.setAttributes(lp);}});DarbakUi.showImmersive(d);
- }
- private static void addSection(Context c,LinearLayout b,String name){TextView t=label(c,name,17,true);t.setTextColor(DarbakUi.ACCENT);b.addView(t,rowParams(c,10));}
- private static void addToggle(Context c,LinearLayout b,MapUiSettings s,String key,String name){TextView row=DarbakUi.action(c,(s.get(key)?"●  ":"○  ")+name);row.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);row.setOnClickListener(v->{boolean n=!s.get(key);s.set(key,n);row.setText((n?"●  ":"○  ")+name);Toast.makeText(c,n?"تم التشغيل":"تم الإيقاف",Toast.LENGTH_SHORT).show();});b.addView(row,rowParams(c,6));}
- private static void addSessionToggle(Context c,LinearLayout b,SessionStore s,boolean recording,String name){boolean current=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch();TextView row=DarbakUi.action(c,(current?"●  ":"○  ")+name);row.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);row.setOnClickListener(v->{boolean now=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch();boolean next=!now;Intent i=new Intent(c,TrackRecordingService.class);if(recording){s.setTrackRecording(next);i.setAction(next?TrackRecordingService.ACTION_RESUME:TrackRecordingService.ACTION_PAUSE);}else{s.setAutoLaunch(next);i.setAction(TrackRecordingService.ACTION_REFRESH);}c.startService(i);row.setText((next?"●  ":"○  ")+name);Toast.makeText(c,next?"تم التشغيل":"تم الإيقاف",Toast.LENGTH_SHORT).show();});b.addView(row,rowParams(c,6));}
- private static String formatSize(long n){if(n>=1024L*1024L*1024L)return String.format(java.util.Locale.US,"%.1f GB",n/(1024d*1024d*1024d));if(n>=1024L*1024L)return Math.round(n/(1024d*1024d))+" MB";return Math.round(n/1024d)+" KB";}
- private static TextView label(Context c,String v,int sp,boolean bold){TextView t=new TextView(c);t.setText(v);t.setTextColor(DarbakUi.TEXT);t.setTextSize(sp);t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
- private static LinearLayout.LayoutParams rowParams(Context c,int top){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,DarbakUi.dp(c,50));p.topMargin=DarbakUi.dp(c,top);return p;}
- private SettingsDialog(){}
+ static void show(Context c){MapUiSettings s=new MapUiSettings(c);SessionStore session=new SessionStore(c);LinearLayout root=new LinearLayout(c);root.setOrientation(LinearLayout.VERTICAL);root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);int p=DarbakUi.dp(c,16);root.setPadding(p,p,p,p);root.setBackground(DarbakUi.rounded(DarbakUi.BG,DarbakUi.ACCENT,20,c));TextView title=text(c,"إعدادات دربك",22,true);title.setTextColor(DarbakUi.ACCENT);root.addView(title,wrap(c,0));TextView hint=text(c,"كل الإعدادات في صفحة واحدة — وتحفظ تلقائيًا",13,false);hint.setTextColor(DarbakUi.TEXT_SECONDARY);root.addView(hint,wrap(c,3));final AlertDialog[] h=new AlertDialog[1];
+  LinearLayout cards=new LinearLayout(c);cards.setOrientation(LinearLayout.HORIZONTAL);cards.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);cards.setGravity(Gravity.TOP);root.addView(cards,new LinearLayout.LayoutParams(-1,-2));
+  LinearLayout right=new LinearLayout(c);right.setOrientation(LinearLayout.VERTICAL);LinearLayout left=new LinearLayout(c);left.setOrientation(LinearLayout.VERTICAL);LinearLayout.LayoutParams col=new LinearLayout.LayoutParams(0,-2,1f);col.setMargins(DarbakUi.dp(c,5),DarbakUi.dp(c,8),DarbakUi.dp(c,5),0);cards.addView(right,col);cards.addView(left,col);
+  File map=MapImportManager.destination(c);LinearLayout mapCard=card(c,"الخريطة",map.isFile()?map.getName()+"  •  "+formatSize(map.length()):"لا توجد خريطة معتمدة");TextView importMap=smallAction(c,map.isFile()?"استبدال الخريطة":"إضافة خريطة");importMap.setOnClickListener(v->{if(h[0]!=null)h[0].dismiss();if(c instanceof MainActivity)((MainActivity)c).pickOfflineMap();});mapCard.addView(importMap,wrap(c,5));right.addView(mapCard,wrap(c,0));
+  LinearLayout display=card(c,"العرض","ما يظهر فوق الخريطة");addToggle(c,display,s,MapUiSettings.SPEED,"السرعة");addToggle(c,display,s,MapUiSettings.MAP_TOOLS,"التكبير والتمركز");addToggle(c,display,s,MapUiSettings.BOTTOM_DOCK,"الشريط السفلي");addToggle(c,display,s,MapUiSettings.AUTO_HIDE,"إخفاء الأدوات تلقائيًا");right.addView(display,wrap(c,8));
+  LinearLayout gps=card(c,"GPS والموقع","معلومات القيادة والموقع");addToggle(c,gps,s,MapUiSettings.GPS_INFO,"حالة ودقة GPS");addToggle(c,gps,s,MapUiSettings.ALTITUDE,"الارتفاع");addToggle(c,gps,s,MapUiSettings.COORDINATES,"الإحداثيات");left.addView(gps,wrap(c,0));
+  LinearLayout behavior=card(c,"التحكم","سلوك الخريطة والأدوات");addToggle(c,behavior,s,MapUiSettings.TAP_HIDE,"إخفاء الأدوات بلمسة الخريطة");addSessionToggle(c,behavior,session,true,"تسجيل المسار تلقائيًا");addSessionToggle(c,behavior,session,false,"التشغيل التلقائي مع الشاشة");left.addView(behavior,wrap(c,8));
+  TextView close=smallAction(c,"إغلاق");close.setTextColor(DarbakUi.TEXT_SECONDARY);close.setOnClickListener(v->{if(h[0]!=null)h[0].dismiss();});root.addView(close,wrap(c,8));ScrollView sv=new ScrollView(c);sv.setFillViewport(true);sv.addView(root);AlertDialog d=new AlertDialog.Builder(c).setView(sv).create();h[0]=d;d.setOnShowListener(x->{Window w=d.getWindow();if(w!=null){w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));w.setDimAmount(.55f);WindowManager.LayoutParams lp=w.getAttributes();lp.width=DarbakUi.dp(c,820);lp.height=DarbakUi.dp(c,530);w.setAttributes(lp);}});DarbakUi.showImmersive(d);}
+ private static LinearLayout card(Context c,String title,String subtitle){LinearLayout b=new LinearLayout(c);b.setOrientation(LinearLayout.VERTICAL);b.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);int p=DarbakUi.dp(c,12);b.setPadding(p,p,p,p);b.setBackground(DarbakUi.rounded(DarbakUi.CARD,DarbakUi.BORDER,16,c));TextView t=text(c,title,17,true);t.setTextColor(DarbakUi.ACCENT);b.addView(t);TextView s=text(c,subtitle,12,false);s.setTextColor(DarbakUi.TEXT_SECONDARY);b.addView(s);return b;}
+ private static void addToggle(Context c,LinearLayout b,MapUiSettings s,String key,String name){TextView r=toggle(c,name,s.get(key));r.setOnClickListener(v->{boolean n=!s.get(key);s.set(key,n);setToggle(r,name,n);});b.addView(r,wrap(c,5));}
+ private static void addSessionToggle(Context c,LinearLayout b,SessionStore s,boolean recording,String name){boolean cur=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch();TextView r=toggle(c,name,cur);r.setOnClickListener(v->{boolean now=recording?s.shouldResumeTrackRecording():s.shouldAutoLaunch(),next=!now;Intent i=new Intent(c,TrackRecordingService.class);if(recording){s.setTrackRecording(next);i.setAction(next?TrackRecordingService.ACTION_RESUME:TrackRecordingService.ACTION_PAUSE);}else{s.setAutoLaunch(next);i.setAction(TrackRecordingService.ACTION_REFRESH);}try{c.startService(i);}catch(RuntimeException ignored){}setToggle(r,name,next);});b.addView(r,wrap(c,5));}
+ private static TextView toggle(Context c,String name,boolean on){TextView t=text(c,"",14,true);t.setPadding(DarbakUi.dp(c,10),0,DarbakUi.dp(c,10),0);t.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);t.setBackground(DarbakUi.rounded(DarbakUi.BG,DarbakUi.BORDER,11,c));setToggle(t,name,on);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,DarbakUi.dp(c,38));t.setLayoutParams(p);return t;}private static void setToggle(TextView t,String name,boolean on){t.setText((on?"●   ":"○   ")+name);t.setTextColor(on?DarbakUi.ACCENT:DarbakUi.TEXT);}
+ private static TextView smallAction(Context c,String s){TextView t=DarbakUi.action(c,s);t.setMinHeight(DarbakUi.dp(c,40));return t;}private static TextView text(Context c,String s,int sp,boolean bold){TextView t=new TextView(c);t.setText(s);t.setTextColor(DarbakUi.TEXT);t.setTextSize(sp);t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}private static LinearLayout.LayoutParams wrap(Context c,int top){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=DarbakUi.dp(c,top);return p;}private static String formatSize(long n){if(n>=1024L*1024L)return Math.round(n/(1024d*1024d))+" MB";return Math.round(n/1024d)+" KB";}private SettingsDialog(){}
 }
