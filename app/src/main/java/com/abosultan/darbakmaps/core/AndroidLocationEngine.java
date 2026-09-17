@@ -116,7 +116,11 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
 
         if (lastFix != null) {
             long elapsed = location.getTime() - lastFix.getTime();
-            if (elapsed > 0L && elapsed <= MAX_DERIVED_COURSE_GAP_MS) {
+            if (elapsed > MAX_DERIVED_COURSE_GAP_MS) {
+                lastCourse = UNKNOWN_BEARING;
+                return UNKNOWN_BEARING;
+            }
+            if (elapsed > 0L) {
                 float distance = lastFix.distanceTo(location);
                 if (distance >= MIN_DERIVED_COURSE_DISTANCE_METERS) {
                     float derived = normalizeBearing(lastFix.bearingTo(location));
