@@ -47,14 +47,16 @@ raise SystemExit(1)
 PY
 }
 
-point_for_prefix() {
+point_for_place_row() {
   local target="$1"
   dump_ui
   python3 - "$OUT/saved-places-window.xml" "$target" <<'PY'
 import re,sys,xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot(); target=sys.argv[2]
 for n in root.iter('node'):
-    if n.attrib.get('text','').strip().startswith(target):
+    text=n.attrib.get('text','').strip()
+    # Filter chips use the bare category name; a real saved-place row also contains distance/direction.
+    if text.startswith(target) and text != target:
         m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', n.attrib.get('bounds',''))
         if m:
             a,b,c,d=map(int,m.groups()); print((a+c)//2,(b+d)//2); raise SystemExit(0)
@@ -64,7 +66,7 @@ PY
 
 tap_desc() { local p; p="$(point_for_desc "$1")" || fail "control missing: $1"; adb shell input tap $p; sleep 2; }
 tap_text() { local p; p="$(point_for_text "$1")" || fail "text action missing: $1"; adb shell input tap $p; sleep 2; }
-tap_prefix() { local p; p="$(point_for_prefix "$1")" || fail "row missing: $1"; adb shell input tap $p; sleep 2; }
+tap_place_row() { local p; p="$(point_for_place_row "$1")" || fail "saved-place row missing: $1"; adb shell input tap $p; sleep 2; }
 inject_fix() { adb emu geo fix "$1" "$2" >/dev/null; sleep 3; }
 
 # UIAutomator is slow on the unaccelerated API25 runner; keep controls visible during this gate.
@@ -94,7 +96,10 @@ root=ET.parse(sys.argv[1]).getroot()
 rows=[]
 for n in root.iter('node'):
     text=n.attrib.get('text','').strip()
-    if text.startswith('ماء') or text.startswith('طير سمان'):
+    # Exclude category filter chips. Saved-place rows include category + distance + direction.
+    is_water_row=text.startswith('ماء') and text!='ماء'
+    is_summan_row=text.startswith('طير سمان') and text!='طير سمان'
+    if is_water_row or is_summan_row:
         m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.attrib.get('bounds',''))
         if m:
             x1,y1,x2,y2=map(int,m.groups()); rows.append((text,y1))
@@ -108,7 +113,7 @@ print('Nearest-first UI order verified:', water[0][0], 'before', summan[0][0])
 PY
 
 # Open the nearest row and prove the action surface contains live distance + direction.
-tap_prefix "ماء"
+tap_place_row "ماء"
 dump_ui
 grep -q 'الموقع المحفوظ' "$OUT/saved-places-window.xml" || fail "saved-place action dialog did not open"
 grep -q 'المسافة:' "$OUT/saved-places-window.xml" || fail "saved-place distance missing"
