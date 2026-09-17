@@ -90,7 +90,7 @@ final class DarbakDialog {
                 window.setDimAmount(0.55f);
             }
         });
-        dialog.show();
+        DarbakUi.showImmersive(dialog);
         return dialog;
     }
 
