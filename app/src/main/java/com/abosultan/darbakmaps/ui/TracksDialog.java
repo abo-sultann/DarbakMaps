@@ -3,6 +3,8 @@ package com.abosultan.darbakmaps.ui;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
@@ -106,7 +108,21 @@ final class TracksDialog {
         else if (!map.startBacktrack()) Toast.makeText(c, "لا يوجد مسار محفوظ كافٍ للرجوع", Toast.LENGTH_SHORT).show();
         else Toast.makeText(c, "بدأ الرجوع على آخر مسار", Toast.LENGTH_SHORT).show();
     }
-    private static void exportGpx(Context c) { try { File f = GpxTrackExporter.exportAll(c); Toast.makeText(c, "تم حفظ المسار: " + f.getName(), Toast.LENGTH_LONG).show(); } catch (Exception e) { Toast.makeText(c, "تعذر حفظ GPX", Toast.LENGTH_LONG).show(); } }
+    private static void exportGpx(Context c) {
+        final Context app = c.getApplicationContext();
+        Toast.makeText(c, "جارٍ حفظ المسار…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String message;
+            try {
+                File f = GpxTrackExporter.exportAll(app);
+                message = "تم حفظ المسار: " + f.getName();
+            } catch (Exception error) {
+                message = "تعذر حفظ GPX";
+            }
+            final String result = message;
+            new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(app, result, Toast.LENGTH_LONG).show());
+        }, "darbak-gpx-export").start();
+    }
     private static String formatDistance(double meters) { if (Double.isInfinite(meters) || Double.isNaN(meters) || meters == Double.MAX_VALUE) return "غير متاح"; return meters < 1000d ? Math.round(meters) + " م" : String.format(Locale.US, "%.1f كم", meters / 1000d); }
     private TracksDialog() {}
 }
