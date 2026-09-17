@@ -74,12 +74,14 @@ public final class OfflineMapView extends FrameLayout {
     private float lastVehicleBearing = Float.NaN;
     private Place guidanceTarget;
     private boolean liveRecordingEnabled;
+    private boolean gpsLostVisualsCleared;
     private BacktrackNavigator backtrackNavigator;
 
     private final Runnable gpsPump = new Runnable() {
         @Override public void run() {
             LocationSnapshot fix = LiveLocationStore.latest();
             if (mapView != null && fix.valid && fix.timestampMs != lastFixTime) {
+                gpsLostVisualsCleared = false;
                 lastFixTime = fix.timestampMs;
                 LatLong position = new LatLong(fix.latitude, fix.longitude);
                 if (!followedFirstFix) { centerOn(position, (byte) 15); followedFirstFix = true; }
@@ -89,6 +91,9 @@ public final class OfflineMapView extends FrameLayout {
                 liveRecordingEnabled = recording;
                 updateVehicleMarker(position, fix.bearing);
                 if (backtrackNavigator != null) updateBacktrack(position); else updateGuidance(position);
+            } else if (mapView != null && !fix.valid && !gpsLostVisualsCleared) {
+                clearLiveGpsVisuals();
+                gpsLostVisualsCleared = true;
             }
             postDelayed(this, 750L);
         }
@@ -133,6 +138,7 @@ public final class OfflineMapView extends FrameLayout {
     private static String categoryLabel(String c){if("summan".equals(c))return"طير سمان";if("water".equals(c))return"ماء";if("camp".equals(c))return"مخيم";if("fuel".equals(c))return"وقود";return"موقع محفوظ";}
     private void appendLiveTrack(LocationSnapshot fix,LatLong p){if(activeTrack==null||trackOutline==null)return;long prev=lastLiveTrackFixTime;if(prev>0&&fix.timestampMs-prev>LIVE_SEGMENT_GAP_MS)startNewLiveTrackSegment();if(lastTrackPoint!=null){double dist=lastTrackPoint.sphericalDistance(p);long since=fix.timestampMs-lastTrackPointTime;if(since<=0L)return;double impliedKmh=dist/(since/1000d)*3.6d;if(impliedKmh>260d){startNewLiveTrackSegment();}else if(dist<LIVE_DRAW_MIN_DISTANCE_METERS&&since<LIVE_DRAW_MAX_INTERVAL_MS){lastLiveTrackFixTime=fix.timestampMs;return;}}lastLiveTrackFixTime=fix.timestampMs;trackOutline.addPoint(p);activeTrack.addPoint(p);lastTrackPoint=p;lastTrackPointTime=fix.timestampMs;if(mapView!=null)mapView.getLayerManager().redrawLayers();}
     private void updateVehicleMarker(LatLong p,float bearing){if(mapView==null)return;if(vehicleMarker==null){vehicleMarker=new Marker(p,createVehicleArrow(bearing),0,0);vehicleMarker.setBillboard(true);mapView.getLayerManager().getLayers().add(vehicleMarker);lastVehicleBearing=bearing;}else{vehicleMarker.setLatLong(p);if(Float.isNaN(lastVehicleBearing)||Math.abs(angleDelta(lastVehicleBearing,bearing))>=5f){vehicleMarker.setBitmap(createVehicleArrow(bearing));lastVehicleBearing=bearing;}}mapView.getLayerManager().redrawLayers();}
+    private void clearLiveGpsVisuals(){if(mapView==null)return;boolean changed=false;if(vehicleMarker!=null){mapView.getLayerManager().getLayers().remove(vehicleMarker);vehicleMarker.onDestroy();vehicleMarker=null;lastVehicleBearing=Float.NaN;changed=true;}if(guidanceLine!=null){guidanceLine.clear();changed=true;}if(changed)mapView.getLayerManager().redrawLayers();}
     private org.mapsforge.core.graphics.Bitmap createVehicleArrow(float bearing){int size=DarbakUi.dp(getContext(),44);Bitmap base=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(base);android.graphics.Paint shadow=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);shadow.setColor(0xDD111111);android.graphics.Paint fill=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);fill.setColor(0xFFFFFFFF);android.graphics.Paint edge=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);edge.setStyle(android.graphics.Paint.Style.STROKE);edge.setStrokeWidth(DarbakUi.dp(getContext(),2));edge.setColor(0xFF111111);float center=size/2f;Path arrow=new Path();arrow.moveTo(center,DarbakUi.dp(getContext(),3));arrow.lineTo(size-DarbakUi.dp(getContext(),8),size-DarbakUi.dp(getContext(),7));arrow.lineTo(center,size-DarbakUi.dp(getContext(),14));arrow.lineTo(DarbakUi.dp(getContext(),8),size-DarbakUi.dp(getContext(),7));arrow.close();canvas.save();canvas.rotate(bearing,center,center);canvas.translate(DarbakUi.dp(getContext(),1),DarbakUi.dp(getContext(),2));canvas.drawPath(arrow,shadow);canvas.translate(-DarbakUi.dp(getContext(),1),-DarbakUi.dp(getContext(),2));canvas.drawPath(arrow,fill);canvas.drawPath(arrow,edge);canvas.restore();return new AndroidBitmap(base);}
     private static float angleDelta(float from,float to){return(to-from+540f)%360f-180f;}
     private static double bearingDegrees(double lat1,double lon1,double lat2,double lon2){double y=Math.sin(Math.toRadians(lon2-lon1))*Math.cos(Math.toRadians(lat2));double x=Math.cos(Math.toRadians(lat1))*Math.sin(Math.toRadians(lat2))-Math.sin(Math.toRadians(lat1))*Math.cos(Math.toRadians(lat2))*Math.cos(Math.toRadians(lon2-lon1));return(Math.toDegrees(Math.atan2(y,x))+360d)%360d;}
