@@ -48,26 +48,30 @@ raise SystemExit(1)
 PY
 }
 
-point_for_place_row() {
+point_for_place_card() {
   local target="$1"
   dump_ui
   python3 - "$OUT/saved-places-window.xml" "$target" <<'PY'
 import re,sys,xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot(); target=sys.argv[2]
-for n in root.iter('node'):
-    text=n.attrib.get('text','').strip()
-    # Filter chips use the bare category name; a real saved-place row also contains distance/direction.
-    if text.startswith(target) and text != target:
-        m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', n.attrib.get('bounds',''))
-        if m:
-            a,b,c,d=map(int,m.groups()); print((a+c)//2,(b+d)//2); raise SystemExit(0)
+# Card UI separates category/name from its metadata. Locate the category text and
+# use its center; the sibling metadata proves this is a saved card, not a filter chip.
+nodes=list(root.iter('node'))
+for n in nodes:
+    if n.attrib.get('text','').strip()!=target: continue
+    m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.attrib.get('bounds',''))
+    if not m: continue
+    a,b,c,d=map(int,m.groups())
+    # Filter chips are ~42dp tall; card title is the narrower text node inside a 76dp card.
+    if d-b <= 35:
+        print((a+c)//2,(b+d)//2); raise SystemExit(0)
 raise SystemExit(1)
 PY
 }
 
 tap_desc() { local p; p="$(point_for_desc "$1")" || fail "control missing: $1"; adb shell input tap $p; sleep 2; }
 tap_text() { local p; p="$(point_for_text "$1")" || fail "text action missing: $1"; adb shell input tap $p; sleep 2; }
-tap_place_row() { local p; p="$(point_for_place_row "$1")" || fail "saved-place row missing: $1"; adb shell input tap $p; sleep 2; }
+tap_place_card() { local p; p="$(point_for_place_card "$1")" || fail "saved-place card missing: $1"; adb shell input tap $p; sleep 2; }
 
 # UIAutomator can consume most of the 15-second live-fix freshness window on this
 # unaccelerated API25 runner. Resolve the control first, then inject a fresh fix
@@ -90,12 +94,34 @@ tap_text_with_fix() {
   sleep 2
 }
 
-long_press_place_row() {
-  local target="$1" p x y
-  p="$(point_for_place_row "$target")" || fail "saved-place row missing for long press: $target"
-  read -r x y <<<"$p"
-  adb shell input swipe "$x" "$y" "$x" "$y" 900
-  sleep 2
+tap_card_action() {
+  local category="$1" action="$2"
+  dump_ui
+  local p
+  p="$(python3 - "$OUT/saved-places-window.xml" "$category" "$action" <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot(); category=sys.argv[2]; action=sys.argv[3]
+nodes=list(root.iter('node'))
+cat=None
+for n in nodes:
+    if n.attrib.get('text','').strip()==category:
+        m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.attrib.get('bounds',''))
+        if m and int(m.group(4))-int(m.group(2))<=35:
+            cat=tuple(map(int,m.groups())); break
+if not cat: raise SystemExit(1)
+cy=(cat[1]+cat[3])//2
+best=None
+for n in nodes:
+    if n.attrib.get('text','').strip()!=action: continue
+    m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.attrib.get('bounds',''))
+    if not m: continue
+    b=tuple(map(int,m.groups())); ay=(b[1]+b[3])//2
+    if abs(ay-cy)<45: best=b; break
+if not best: raise SystemExit(1)
+print((best[0]+best[2])//2,(best[1]+best[3])//2)
+PY
+)" || fail "$action action missing for saved-place card: $category"
+  adb shell input tap $p; sleep 2
 }
 
 copy_places_db() {
@@ -151,37 +177,34 @@ grep -q 'المواقع المحفوظة' "$OUT/saved-places-window.xml" || fail
 
 python3 - "$OUT/saved-places-window.xml" <<'PY'
 import re,sys,xml.etree.ElementTree as ET
-root=ET.parse(sys.argv[1]).getroot()
-rows=[]
-for n in root.iter('node'):
-    text=n.attrib.get('text','').strip()
-    # Exclude category filter chips. Saved-place rows include category + distance/direction.
-    is_water_row=text.startswith('ماء') and text!='ماء'
-    is_summan_row=text.startswith('طير سمان') and text!='طير سمان'
-    if is_water_row or is_summan_row:
+root=ET.parse(sys.argv[1]).getroot(); nodes=list(root.iter('node'))
+def title_y(target):
+    ys=[]
+    for n in nodes:
+        if n.attrib.get('text','').strip()!=target: continue
         m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.attrib.get('bounds',''))
-        if m:
-            x1,y1,x2,y2=map(int,m.groups()); rows.append((text,y1))
-water=[r for r in rows if r[0].startswith('ماء')]
-summan=[r for r in rows if r[0].startswith('طير سمان')]
-if not water or not summan:
-    raise SystemExit('ERROR: saved-place rows missing from list: '+repr(rows))
-if water[0][1] >= summan[0][1]:
-    raise SystemExit(f'ERROR: nearest-first order wrong: water_y={water[0][1]} summan_y={summan[0][1]}')
-print('Nearest-first UI order verified:', water[0][0], 'before', summan[0][0])
+        if m and int(m.group(4))-int(m.group(2))<=35: ys.append(int(m.group(2)))
+    return ys
+water=title_y('ماء'); summan=title_y('طير سمان')
+texts=[n.attrib.get('text','') for n in nodes]
+if not water or not summan: raise SystemExit('ERROR: saved-place cards missing')
+if not any('المسافة:' in t and 'الاتجاه:' in t for t in texts): raise SystemExit('ERROR: card metadata missing')
+if water[0] >= summan[0]: raise SystemExit(f'ERROR: nearest-first order wrong: water_y={water[0]} summan_y={summan[0]}')
+if texts.count('فتح') < 2 or texts.count('حذف') < 2: raise SystemExit('ERROR: visible card management actions missing')
+print('Nearest-first card order and visible management actions verified.')
 PY
 
 # Open the nearest row and prove the action surface contains live distance + direction.
-tap_place_row "ماء"
+tap_card_action "ماء" "فتح"
 dump_ui
 grep -q 'الموقع المحفوظ' "$OUT/saved-places-window.xml" || fail "saved-place action dialog did not open"
 grep -q 'المسافة:' "$OUT/saved-places-window.xml" || fail "saved-place distance missing"
 grep -q 'الاتجاه:' "$OUT/saved-places-window.xml" || fail "saved-place direction missing"
 tap_text "إغلاق"
 
-# Re-open the browser and exercise the real long-press delete flow end to end.
+# Re-open the browser and exercise the visible card delete flow end to end.
 tap_desc_with_fix "المواقع" 46.67625 24.71410
-long_press_place_row "ماء"
+tap_card_action "ماء" "حذف"
 dump_ui
 grep -q 'حذف الموقع؟' "$OUT/saved-places-window.xml" || fail "delete confirmation did not open on long press"
 tap_text "حذف الموقع"
@@ -197,7 +220,7 @@ if water:
     raise SystemExit('ERROR: deleted water place still visible in saved-place list: '+repr(water))
 if not summan:
     raise SystemExit('ERROR: remaining Summan place disappeared after deleting water')
-print('Long-press delete removed only the selected place from the UI.')
+print('Visible card delete removed only the selected place from the UI.')
 PY
 
 copy_places_db "$DB_AFTER_DELETE"
@@ -218,10 +241,10 @@ with open(report,'w',encoding='utf-8') as f:
     f.write('optional_names=empty\n')
     f.write('nearest_ui=water_before_summan\n')
     f.write('action_dialog=distance_and_direction_present\n')
-    f.write('long_press_delete=water_removed\n')
+    f.write('visible_delete=water_removed\n')
     f.write('saved_count_after_delete=1\n')
     f.write('remaining_category=summan\n')
-print('Saved places persistence, nearest/action UI, and long-press delete verified.')
+print('Saved places persistence, nearest/action card UI, and visible delete verified.')
 PY
 
 adb shell input keyevent 4 || true
