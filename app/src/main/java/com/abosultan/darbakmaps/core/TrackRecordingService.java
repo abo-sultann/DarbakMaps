@@ -21,20 +21,22 @@ public final class TrackRecordingService extends Service {
     public static final String ACTION_PAUSE = "com.abosultan.darbakmaps.action.PAUSE_TRACK";
     public static final String ACTION_RESUME = "com.abosultan.darbakmaps.action.RESUME_TRACK";
     public static final String ACTION_REFRESH = "com.abosultan.darbakmaps.action.REFRESH_SERVICE";
+    public static final String ACTION_UI_ACTIVE = "com.abosultan.darbakmaps.action.UI_ACTIVE";
+    public static final String ACTION_UI_INACTIVE = "com.abosultan.darbakmaps.action.UI_INACTIVE";
 
     private AndroidLocationEngine location;
     private SqliteTrackRecorder recorder;
     private Handler handler;
     private BroadcastReceiver screenReceiver;
+    private boolean uiActive;
 
     private final Runnable pump = new Runnable() {
         @Override public void run() {
-            if (location != null && recorder != null) {
+            SessionStore session = new SessionStore(TrackRecordingService.this);
+            if (session.shouldResumeTrackRecording() && location != null && recorder != null) {
                 LocationSnapshot point = location.latest();
                 recorder.append(point);
-            }
-            if (handler != null && new SessionStore(TrackRecordingService.this).shouldResumeTrackRecording()) {
-                handler.postDelayed(this, 2000L);
+                if (handler != null) handler.postDelayed(this, 2000L);
             }
         }
     };
@@ -51,31 +53,36 @@ public final class TrackRecordingService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
+        if (ACTION_UI_ACTIVE.equals(action)) uiActive = true;
+        else if (ACTION_UI_INACTIVE.equals(action)) uiActive = false;
+
         if (recorder != null) {
             if (ACTION_PAUSE.equals(action)) {
                 recorder.pause();
             } else if (ACTION_RESUME.equals(action)) {
                 recorder.ensureAutomaticRecording();
             }
-            // ACTION_REFRESH and normal starts keep the persisted choices unchanged.
+            // Refresh/UI actions and normal starts keep persisted recording choice unchanged.
         }
 
         refreshWorkState();
         SessionStore session = new SessionStore(this);
-        if (!session.shouldResumeTrackRecording() && !session.shouldAutoLaunch()) {
+        boolean recording = session.shouldResumeTrackRecording();
+        boolean autoLaunch = session.shouldAutoLaunch();
+        if (!uiActive && !recording && !autoLaunch) {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
-        return START_STICKY;
+        return recording || autoLaunch ? START_STICKY : START_NOT_STICKY;
     }
 
     private void refreshWorkState() {
         if (handler == null || location == null) return;
         handler.removeCallbacks(pump);
         boolean recording = new SessionStore(this).shouldResumeTrackRecording();
-        if (recording) {
+        if (uiActive || recording) {
             location.start();
-            handler.post(pump);
+            if (recording) handler.post(pump);
         } else {
             location.stop();
             LiveLocationStore.invalidate();
@@ -117,6 +124,7 @@ public final class TrackRecordingService extends Service {
             screenReceiver = null;
         }
         if (location != null) location.stop();
+        LiveLocationStore.invalidate();
         if (recorder != null) recorder.close();
         super.onDestroy();
     }
