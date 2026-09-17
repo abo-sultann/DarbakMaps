@@ -73,8 +73,10 @@ public final class HomeScreen extends FrameLayout {
 
     @Override public boolean dispatchTouchEvent(MotionEvent e) {
         int action = e.getActionMasked();
+        boolean consumeMapGesture = mapGestureActive;
         if (action == MotionEvent.ACTION_DOWN) {
             mapGestureActive = isMapSurfaceTouch(e.getX(), e.getY());
+            consumeMapGesture = mapGestureActive;
             if (mapGestureActive) {
                 downX = e.getX();
                 downY = e.getY();
@@ -98,7 +100,8 @@ public final class HomeScreen extends FrameLayout {
         } else if (action == MotionEvent.ACTION_CANCEL) {
             mapGestureActive = false;
         }
-        return super.dispatchTouchEvent(e);
+        boolean handled = super.dispatchTouchEvent(e);
+        return handled || consumeMapGesture;
     }
 
     private boolean isMapSurfaceTouch(float x, float y) {
