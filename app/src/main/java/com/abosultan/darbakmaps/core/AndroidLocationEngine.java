@@ -31,7 +31,9 @@ public final class AndroidLocationEngine implements LocationEngine, LocationList
     }
 
     @Override public LocationSnapshot latest() {
-        return latest;
+        // Use the same freshness gate as the UI so the recording service and every future
+        // consumer can never treat an old GPS fix as live after signal loss.
+        return LiveLocationStore.latest();
     }
 
     @Override public void start() {
