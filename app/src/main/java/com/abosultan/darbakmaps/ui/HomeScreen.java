@@ -278,7 +278,7 @@ public final class HomeScreen extends FrameLayout {
                 })
                 .setNegativeButton("إلغاء", null)
                 .create();
-        DarbakDialog.showImmersive(dialog);
+        DarbakUi.showImmersive(dialog);
     }
 
     private static void picker(Context c, OfflineMapView map) {
