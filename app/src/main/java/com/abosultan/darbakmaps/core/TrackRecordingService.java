@@ -1,10 +1,15 @@
 package com.abosultan.darbakmaps.core;
 
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+
+import com.abosultan.darbakmaps.MainActivity;
 
 import static com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 
@@ -19,6 +24,7 @@ public final class TrackRecordingService extends Service {
     private AndroidLocationEngine location;
     private SqliteTrackRecorder recorder;
     private Handler handler;
+    private BroadcastReceiver screenReceiver;
 
     private final Runnable pump = new Runnable() {
         @Override public void run() {
@@ -37,6 +43,7 @@ public final class TrackRecordingService extends Service {
         recorder = new SqliteTrackRecorder(this);
         recorder.restoreAutomaticState();
         location.start();
+        registerScreenWakeReceiver();
         handler.post(pump);
     }
 
@@ -56,8 +63,40 @@ public final class TrackRecordingService extends Service {
         return START_STICKY;
     }
 
+    private void registerScreenWakeReceiver() {
+        if (screenReceiver != null) return;
+        screenReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (intent == null || !Intent.ACTION_SCREEN_ON.equals(intent.getAction())) return;
+                if (!new SessionStore(context).shouldAutoLaunch()) return;
+                try {
+                    Intent launch = new Intent(context, MainActivity.class);
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    context.startActivity(launch);
+                } catch (RuntimeException ignored) {
+                    // Vendor launchers may briefly reject foreground launches during wake-up.
+                }
+            }
+        };
+        try {
+            registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_ON));
+        } catch (RuntimeException error) {
+            screenReceiver = null;
+        }
+    }
+
     @Override public void onDestroy() {
         handler.removeCallbacks(pump);
+        if (screenReceiver != null) {
+            try {
+                unregisterReceiver(screenReceiver);
+            } catch (RuntimeException ignored) {
+                // Receiver may already have been detached by the system.
+            }
+            screenReceiver = null;
+        }
         if (location != null) location.stop();
         if (recorder != null) recorder.close();
         super.onDestroy();
