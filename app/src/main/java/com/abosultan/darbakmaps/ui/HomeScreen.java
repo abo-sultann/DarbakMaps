@@ -32,9 +32,9 @@ public final class HomeScreen extends FrameLayout {
     private boolean controlsVisible = true;
     private boolean mapGestureActive;
     private boolean moved;
-    private boolean longPressed;
     private float downX;
     private float downY;
+    private long downEventTime;
 
     private final Runnable statusPump = new Runnable() {
         @Override public void run() {
@@ -67,7 +67,6 @@ public final class HomeScreen extends FrameLayout {
     @Override protected void onDetachedFromWindow() {
         removeCallbacks(statusPump);
         removeCallbacks(hideControls);
-        if (longPressSave != null) removeCallbacks(longPressSave);
         mapGestureActive = false;
         super.onDetachedFromWindow();
     }
@@ -79,28 +78,24 @@ public final class HomeScreen extends FrameLayout {
             if (mapGestureActive) {
                 downX = e.getX();
                 downY = e.getY();
+                downEventTime = e.getEventTime();
                 moved = false;
-                longPressed = false;
-                removeCallbacks(longPressSave);
-                postDelayed(longPressSave, LONG_PRESS_MS);
             }
         } else if (mapGestureActive && action == MotionEvent.ACTION_MOVE) {
             if (Math.abs(e.getX() - downX) > MAP_TOUCH_SLOP_PX
                     || Math.abs(e.getY() - downY) > MAP_TOUCH_SLOP_PX) {
                 moved = true;
-                removeCallbacks(longPressSave);
             }
         } else if (mapGestureActive && action == MotionEvent.ACTION_POINTER_DOWN) {
             moved = true;
-            removeCallbacks(longPressSave);
         } else if (action == MotionEvent.ACTION_UP) {
-            if (mapGestureActive) {
-                removeCallbacks(longPressSave);
-                if (!moved && !longPressed) toggleControls();
+            if (mapGestureActive && !moved) {
+                long heldMs = Math.max(0L, e.getEventTime() - downEventTime);
+                if (heldMs >= LONG_PRESS_MS) longPressSave.run();
+                else toggleControls();
             }
             mapGestureActive = false;
         } else if (action == MotionEvent.ACTION_CANCEL) {
-            removeCallbacks(longPressSave);
             mapGestureActive = false;
         }
         return super.dispatchTouchEvent(e);
@@ -173,10 +168,7 @@ public final class HomeScreen extends FrameLayout {
     private void build(Context c) {
         final OfflineMapView map = new OfflineMapView(c);
         longPressSave = () -> {
-            if (mapGestureActive && !moved) {
-                longPressed = true;
-                pickerAt(c, map, downX, downY);
-            }
+            if (mapGestureActive && !moved) pickerAt(c, map, downX, downY);
         };
         addView(map, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
@@ -273,7 +265,7 @@ public final class HomeScreen extends FrameLayout {
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         int p = DarbakUi.dp(c, 18);
         input.setPadding(p, p, p, p);
-        new AlertDialog.Builder(c)
+        AlertDialog dialog = new AlertDialog.Builder(c)
                 .setTitle("بحث بالإحداثيات")
                 .setView(input)
                 .setPositiveButton("اذهب", (d, w) -> {
@@ -285,7 +277,8 @@ public final class HomeScreen extends FrameLayout {
                     if (!map.focusPlace(x[0], x[1])) Toast.makeText(c, "الخريطة غير جاهزة", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("إلغاء", null)
-                .show();
+                .create();
+        DarbakDialog.showImmersive(dialog);
     }
 
     private static void picker(Context c, OfflineMapView map) {
