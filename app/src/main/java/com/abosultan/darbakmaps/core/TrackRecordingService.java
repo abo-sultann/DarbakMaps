@@ -20,6 +20,7 @@ import static com.abosultan.darbakmaps.core.CoreContracts.LocationSnapshot;
 public final class TrackRecordingService extends Service {
     public static final String ACTION_PAUSE = "com.abosultan.darbakmaps.action.PAUSE_TRACK";
     public static final String ACTION_RESUME = "com.abosultan.darbakmaps.action.RESUME_TRACK";
+    public static final String ACTION_REFRESH = "com.abosultan.darbakmaps.action.REFRESH_SERVICE";
 
     private AndroidLocationEngine location;
     private SqliteTrackRecorder recorder;
@@ -31,6 +32,8 @@ public final class TrackRecordingService extends Service {
             if (location != null && recorder != null) {
                 LocationSnapshot point = location.latest();
                 recorder.append(point);
+            }
+            if (handler != null && new SessionStore(TrackRecordingService.this).shouldResumeTrackRecording()) {
                 handler.postDelayed(this, 2000L);
             }
         }
@@ -42,14 +45,11 @@ public final class TrackRecordingService extends Service {
         location = new AndroidLocationEngine(this);
         recorder = new SqliteTrackRecorder(this);
         recorder.restoreAutomaticState();
-        location.start();
         registerScreenWakeReceiver();
-        handler.post(pump);
+        refreshWorkState();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (location != null) location.start();
-
         String action = intent == null ? null : intent.getAction();
         if (recorder != null) {
             if (ACTION_PAUSE.equals(action)) {
@@ -57,10 +57,29 @@ public final class TrackRecordingService extends Service {
             } else if (ACTION_RESUME.equals(action)) {
                 recorder.ensureAutomaticRecording();
             }
-            // For a normal start, keep the persisted choice restored in onCreate.
-            // This prevents simply reopening the app from silently cancelling a user pause.
+            // ACTION_REFRESH and normal starts keep the persisted choices unchanged.
+        }
+
+        refreshWorkState();
+        SessionStore session = new SessionStore(this);
+        if (!session.shouldResumeTrackRecording() && !session.shouldAutoLaunch()) {
+            stopSelf(startId);
+            return START_NOT_STICKY;
         }
         return START_STICKY;
+    }
+
+    private void refreshWorkState() {
+        if (handler == null || location == null) return;
+        handler.removeCallbacks(pump);
+        boolean recording = new SessionStore(this).shouldResumeTrackRecording();
+        if (recording) {
+            location.start();
+            handler.post(pump);
+        } else {
+            location.stop();
+            LiveLocationStore.invalidate();
+        }
     }
 
     private void registerScreenWakeReceiver() {
@@ -88,7 +107,7 @@ public final class TrackRecordingService extends Service {
     }
 
     @Override public void onDestroy() {
-        handler.removeCallbacks(pump);
+        if (handler != null) handler.removeCallbacks(pump);
         if (screenReceiver != null) {
             try {
                 unregisterReceiver(screenReceiver);
