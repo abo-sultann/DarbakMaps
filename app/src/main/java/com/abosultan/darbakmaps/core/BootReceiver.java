@@ -13,7 +13,12 @@ public final class BootReceiver extends BroadcastReceiver {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
 
         SessionStore session = new SessionStore(context);
-        if (session.shouldResumeTrackRecording()) {
+        boolean recording = session.shouldResumeTrackRecording();
+        boolean autoLaunch = session.shouldAutoLaunch();
+
+        // The same lightweight service owns GPS recording and the SCREEN_ON receiver. Keep it
+        // alive when either feature needs it; pausing track recording must not disable auto-launch.
+        if (recording || autoLaunch) {
             try {
                 context.startService(new Intent(context, TrackRecordingService.class));
             } catch (RuntimeException ignored) {
@@ -21,7 +26,7 @@ public final class BootReceiver extends BroadcastReceiver {
             }
         }
 
-        if (session.shouldAutoLaunch()) {
+        if (autoLaunch) {
             try {
                 Intent launch = new Intent(context, MainActivity.class);
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
