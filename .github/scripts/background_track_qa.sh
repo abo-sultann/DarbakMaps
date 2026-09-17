@@ -39,14 +39,19 @@ sleep 1
 inject_fix 46.67530 24.71360
 inject_fix 46.67555 24.71385
 
-# Send only the UI to background. Do NOT force-stop the package: the service must stay alive.
-adb shell input keyevent 3
+# Finish the Activity with Back. Do NOT force-stop the package: the recording service must survive
+# after the visible Darbak Maps UI is genuinely closed.
+adb shell input keyevent 4
 sleep 2
+adb shell dumpsys activity activities > "$OUT/background-activity.txt" || true
+if grep -E "mResumedActivity.*$PKG|ResumedActivity.*$PKG" "$OUT/background-activity.txt" >/dev/null; then
+  fail "Darbak Maps Activity is still resumed after Back"
+fi
 adb shell dumpsys activity services "$PKG" > "$OUT/background-service.txt" || true
 grep -q "TrackRecordingService" "$OUT/background-service.txt" \
-  || fail "recording service did not remain alive after UI went to background"
+  || fail "recording service did not remain alive after Activity was closed"
 
-# These fixes are unique to the background phase and must be persisted by the service.
+# These fixes are unique to the closed-UI phase and must be persisted by the service.
 inject_fix 46.67580 24.71410
 inject_fix 46.67605 24.71435
 inject_fix 46.67630 24.71460
@@ -77,7 +82,7 @@ con.close()
 if len(rows) < 4:
     raise SystemExit(f"ERROR: expected at least 4 persisted breadcrumbs, got {len(rows)}")
 
-# Final two coordinates only occur after HOME was pressed. A near match proves background writes.
+# Final two coordinates only occur after the Activity was finished. A near match proves service-only writes.
 targets = [(24.71435, 46.67605), (24.71460, 46.67630)]
 
 def meters(a_lat, a_lon, b_lat, b_lon):
@@ -95,18 +100,18 @@ for tlat, tlon in targets:
 
 if max(matched) > 18.0:
     raise SystemExit(
-        "ERROR: background GPS fixes were not persisted; nearest distances="
+        "ERROR: closed-UI GPS fixes were not persisted; nearest distances="
         + ",".join(f"{x:.1f}m" for x in matched)
     )
 
 segments = len({r[1] for r in rows})
 retained = sum(float(r[5] or 0.0) for r in rows)
 with open(report, "w", encoding="utf-8") as f:
-    f.write("Darbak Maps background tracking gate: PASS\n")
+    f.write("Darbak Maps closed-UI background tracking gate: PASS\n")
     f.write(f"persisted_points={len(rows)}\n")
     f.write(f"segments={segments}\n")
     f.write(f"retained_distance_m={retained:.1f}\n")
-    f.write("background_target_nearest_m=" + ",".join(f"{x:.1f}" for x in matched) + "\n")
+    f.write("closed_ui_target_nearest_m=" + ",".join(f"{x:.1f}" for x in matched) + "\n")
 
-print(f"Background tracking persisted {len(rows)} points; background fixes verified.")
+print(f"Closed-UI tracking persisted {len(rows)} points; service-only fixes verified.")
 PY
