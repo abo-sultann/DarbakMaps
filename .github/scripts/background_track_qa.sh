@@ -36,7 +36,32 @@ wait_for_boot() {
     sleep 2
   done
   [ "$booted" = "1" ] || fail "Android did not finish rebooting"
-  sleep 5
+
+  # The emulator runner unlocks API25 with KEYCODE_MENU after the initial boot. Do the same after
+  # our in-test reboot; normal BOOT_COMPLETED for credential-encrypted apps may wait for user unlock.
+  adb shell input keyevent 224 >/dev/null 2>&1 || true
+  sleep 1
+  adb shell input keyevent 82 >/dev/null 2>&1 || true
+  sleep 3
+}
+
+wait_for_recording_service_after_boot() {
+  local service_file="$OUT/background-service-after-reboot.txt"
+  for _ in $(seq 1 20); do
+    adb shell dumpsys activity services "$PKG" > "$service_file" || true
+    if grep -q "TrackRecordingService" "$service_file"; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  # Preserve enough evidence to distinguish delayed BOOT_COMPLETED, stopped-package state, and
+  # session-state problems without another blind rerun.
+  adb shell dumpsys package "$PKG" > "$OUT/background-package-after-reboot.txt" || true
+  adb exec-out run-as "$PKG" cat shared_prefs/darbak_map_session.xml \
+    > "$OUT/background-session-after-reboot.xml" 2>/dev/null || true
+  adb logcat -d > "$OUT/background-reboot-logcat.txt" 2>/dev/null || true
+  fail "recording service was not restored by BootReceiver after reboot"
 }
 
 # Start from a clean app state so this gate proves fresh persistence, not old breadcrumbs.
@@ -78,9 +103,7 @@ copy_db "$DB_BEFORE_REBOOT"
 # BootReceiver must restore recording because track_recording remains persisted as true.
 adb reboot
 wait_for_boot
-adb shell dumpsys activity services "$PKG" > "$OUT/background-service-after-reboot.txt" || true
-grep -q "TrackRecordingService" "$OUT/background-service-after-reboot.txt" \
-  || fail "recording service was not restored by BootReceiver after reboot"
+wait_for_recording_service_after_boot
 
 # New fixes after reboot prove that the restored service owns GPS and resumes persistence with no UI.
 inject_fix 46.67655 24.71485
