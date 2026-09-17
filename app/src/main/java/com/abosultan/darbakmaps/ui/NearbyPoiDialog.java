@@ -36,11 +36,12 @@ final class NearbyPoiDialog {
                 NearbyPoiSearch.WATER,
                 NearbyPoiSearch.SERVICES
         };
-        new AlertDialog.Builder(c)
+        AlertDialog dialog = new AlertDialog.Builder(c)
                 .setTitle("القريب مني — حتى 20 كم")
                 .setItems(labels, (d, which) -> runSearch(c, map, fix, labels[which], "", SEARCH_RADIUS_METERS))
                 .setNegativeButton("إلغاء", null)
-                .show();
+                .create();
+        DarbakUi.showImmersive(dialog);
     }
 
     static void showNameSearch(Context c, OfflineMapView map) {
@@ -57,7 +58,7 @@ final class NearbyPoiDialog {
         int pad = DarbakUi.dp(c, 18);
         input.setPadding(pad, pad, pad, pad);
 
-        new AlertDialog.Builder(c)
+        AlertDialog dialog = new AlertDialog.Builder(c)
                 .setTitle("بحث قريب بالاسم")
                 .setMessage("يبحث داخل الخريطة الأوفلاين حول موقعك حتى 30 كم، ويقبل الاسم العربي أو الاسم البديل إذا كان موجودًا في الخريطة.")
                 .setView(input)
@@ -70,7 +71,8 @@ final class NearbyPoiDialog {
                     runSearch(c, map, fix, NearbyPoiSearch.ALL, query, NAME_SEARCH_RADIUS_METERS);
                 })
                 .setNegativeButton("إلغاء", null)
-                .show();
+                .create();
+        DarbakUi.showImmersive(dialog);
     }
 
     private static void runSearch(Context c, OfflineMapView map, LocationSnapshot fix,
@@ -86,7 +88,7 @@ final class NearbyPoiDialog {
                 .setMessage("جارٍ قراءة المعالم من الخريطة الأوفلاين…")
                 .setCancelable(false)
                 .create();
-        progress.show();
+        DarbakUi.showImmersive(progress);
 
         new Thread(() -> {
             List<NearbyPoiSearch.Result> results = NearbyPoiSearch.search(
@@ -115,7 +117,7 @@ final class NearbyPoiDialog {
             rows[i] = r.name + " • " + r.source + " • " + distance(r.distanceMeters) + " " + arrow(bearing);
         }
         String title = query.isEmpty() ? "القريب — " + category : "نتائج: " + query;
-        new AlertDialog.Builder(c)
+        AlertDialog dialog = new AlertDialog.Builder(c)
                 .setTitle(title)
                 .setItems(rows, (d, which) -> {
                     NearbyPoiSearch.Result result = results.get(which);
@@ -123,7 +125,8 @@ final class NearbyPoiDialog {
                     Toast.makeText(c, result.name + " — " + distance(result.distanceMeters), Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("إغلاق", null)
-                .show();
+                .create();
+        DarbakUi.showImmersive(dialog);
     }
 
     private static String distance(double meters) {
