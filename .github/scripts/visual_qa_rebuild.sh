@@ -65,11 +65,27 @@ tap_desc "المسارات"; snapshot 05-tracks; adb shell input keyevent 4; sle
 tap_desc "حفظ موقع"; snapshot 06-save-place; adb shell input keyevent 4; sleep 1
 tap_desc "بحث"; snapshot 07-search; adb shell input keyevent 4; sleep 1
 long_desc "المزيد"; snapshot 08-diagnostics; adb shell input keyevent 4; sleep 1
-# Tap empty map: all transient controls must disappear while speed remains.
+
+# Confirm diagnostics really returned to home before testing map gestures.
+dump_ui
+grep -q 'content-desc="بحث"' "$OUT/window.xml" || { echo 'ERROR: home did not return after diagnostics.' >&2; exit 35; }
+
+# Short tap on empty map: transient controls must disappear, no delayed long-press dialog may open.
 adb shell input tap 700 250; sleep 1; dump_ui
 if grep -q 'content-desc="بحث"' "$OUT/window.xml"; then echo 'ERROR: map tap did not hide controls.' >&2; exit 36; fi
+if grep -q 'حفظ هذه النقطة' "$OUT/window.xml"; then echo 'ERROR: short map tap incorrectly triggered long-press save.' >&2; exit 37; fi
+grep -q 'كم/س' "$OUT/window.xml" || { echo 'ERROR: speed readout disappeared with transient controls.' >&2; exit 38; }
 snapshot 09-clean-map
-adb shell input tap 700 250; sleep 1
+
+# Second short tap restores the controls.
+adb shell input tap 700 250; sleep 1; dump_ui
+grep -q 'content-desc="بحث"' "$OUT/window.xml" || { echo 'ERROR: second map tap did not restore controls.' >&2; exit 39; }
+
+# Deliberate long press on empty map must open the typed place picker.
+adb shell input swipe 700 250 700 250 900; sleep 1; dump_ui
+grep -q 'حفظ هذه النقطة' "$OUT/window.xml" || { echo 'ERROR: map long press did not open place picker.' >&2; exit 40; }
+snapshot 10-long-press-save
+adb shell input keyevent 4; sleep 1
 
 python3 - "$OUT" <<'PY'
 import glob,os,struct,sys
@@ -83,5 +99,5 @@ for p in glob.glob(os.path.join(sys.argv[1],'*.png')):
 print('All visual evidence is 1024x600')
 PY
 if adb logcat -d|grep -A12 'FATAL EXCEPTION'|grep -q "$PKG"; then echo 'ERROR: fatal exception.' >&2; exit 33; fi
-printf '%s\n' 'Darbak Maps visual gate: API25 / 1024x600 / 1GB; icon-only home; Darbak settings; clean-map tap behavior.' > "$OUT/acceptance.txt"
+printf '%s\n' 'Darbak Maps visual gate: API25 / 1024x600 / 1GB; icon-only home; Darbak settings; short-tap hide/restore; map long-press save picker.' > "$OUT/acceptance.txt"
 adb shell wm size > "$OUT/display.txt"; adb shell wm density >> "$OUT/display.txt"; adb logcat -d > "$OUT/logcat.txt"
