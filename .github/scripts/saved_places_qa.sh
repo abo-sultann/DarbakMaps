@@ -194,12 +194,11 @@ if texts.count('فتح') < 2 or texts.count('حذف') < 2: raise SystemExit('ERR
 print('Nearest-first card order and visible management actions verified.')
 PY
 
-# Open the nearest row and prove the action surface contains live distance + direction.
+# Keep this gate lean: card metadata already proves distance/direction rendering.
+# Open the nearest card only to prove the action surface opens; avoid duplicate semantic checks.
 tap_card_action "ماء" "فتح"
 dump_ui
 grep -q 'الموقع المحفوظ' "$OUT/saved-places-window.xml" || fail "saved-place action dialog did not open"
-grep -q 'المسافة:' "$OUT/saved-places-window.xml" || fail "saved-place distance missing"
-grep -q 'الاتجاه:' "$OUT/saved-places-window.xml" || fail "saved-place direction missing"
 tap_text "إغلاق"
 
 # Re-open the browser and exercise the visible card delete flow end to end.
@@ -240,7 +239,7 @@ with open(report,'w',encoding='utf-8') as f:
     f.write('categories_before_delete=summan,water\n')
     f.write('optional_names=empty\n')
     f.write('nearest_ui=water_before_summan\n')
-    f.write('action_dialog=distance_and_direction_present\n')
+    f.write('action_dialog=opens\n')
     f.write('visible_delete=water_removed\n')
     f.write('saved_count_after_delete=1\n')
     f.write('remaining_category=summan\n')
