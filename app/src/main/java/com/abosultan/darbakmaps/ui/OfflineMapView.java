@@ -72,6 +72,7 @@ public final class OfflineMapView extends FrameLayout {
     private long lastTrackPointTime;
     private long lastLiveTrackFixTime;
     private float lastVehicleBearing = Float.NaN;
+    private float lastMapBearing = Float.NaN;
     private Place guidanceTarget;
     private boolean liveRecordingEnabled;
     private boolean gpsLostVisualsCleared;
@@ -90,6 +91,7 @@ public final class OfflineMapView extends FrameLayout {
                 else if (liveRecordingEnabled) { lastTrackPoint = null; lastTrackPointTime = 0L; lastLiveTrackFixTime = 0L; }
                 liveRecordingEnabled = recording;
                 updateVehicleMarker(position, fix.bearing);
+                updateDrivingHeading(position, fix);
                 if (backtrackNavigator != null) updateBacktrack(position); else updateGuidance(position);
             } else if (mapView != null && !fix.valid && !gpsLostVisualsCleared) {
                 clearLiveGpsVisuals();
@@ -103,7 +105,7 @@ public final class OfflineMapView extends FrameLayout {
     public boolean hasMap(){return activeMap!=null;} public String activeMapName(){return activeMap==null?null:activeMap.getName();}
     public void zoomIn(){if(mapView!=null){byte z=mapView.getModel().mapViewPosition.getZoomLevel();if(z<20)mapView.setZoomLevel((byte)(z+1));}}
     public void zoomOut(){if(mapView!=null){byte z=mapView.getModel().mapViewPosition.getZoomLevel();if(z>3)mapView.setZoomLevel((byte)(z-1));}}
-    public boolean recenterOnGps(){LocationSnapshot f=LiveLocationStore.latest();if(mapView==null||!f.valid)return false;centerOn(new LatLong(f.latitude,f.longitude),(byte)15);followedFirstFix=true;return true;}
+    public boolean recenterOnGps(){LocationSnapshot f=LiveLocationStore.latest();if(mapView==null||!f.valid)return false;LatLong p=new LatLong(f.latitude,f.longitude);centerOn(p,(byte)15);updateDrivingHeading(p,f);followedFirstFix=true;return true;}
     public boolean focusPlace(double lat,double lon){if(mapView==null)return false;centerOn(new LatLong(lat,lon),(byte)16);followedFirstFix=true;return true;}
 
     public LatLong mapPoint(float x,float y){if(mapView==null)return null;try{return mapView.getMapViewProjection().fromPixels(x,y);}catch(RuntimeException e){return null;}}
@@ -137,6 +139,7 @@ public final class OfflineMapView extends FrameLayout {
     private static int categoryColor(String c){if(c==null)return 0xFF6D5B3E;if(c.contains("bird")||c.contains("summan"))return 0xFFB8860B;if(c.contains("water"))return 0xFF1976D2;if(c.contains("camp"))return 0xFF2E7D32;if(c.contains("fuel"))return 0xFFC62828;return 0xFF6D5B3E;}
     private static String categoryLabel(String c){if("summan".equals(c))return"طير سمان";if("water".equals(c))return"ماء";if("camp".equals(c))return"مخيم";if("fuel".equals(c))return"وقود";return"موقع محفوظ";}
     private void appendLiveTrack(LocationSnapshot fix,LatLong p){if(activeTrack==null||trackOutline==null)return;long prev=lastLiveTrackFixTime;if(prev>0&&fix.timestampMs-prev>LIVE_SEGMENT_GAP_MS)startNewLiveTrackSegment();if(lastTrackPoint!=null){double dist=lastTrackPoint.sphericalDistance(p);long since=fix.timestampMs-lastTrackPointTime;if(since<=0L)return;double impliedKmh=dist/(since/1000d)*3.6d;if(impliedKmh>260d){startNewLiveTrackSegment();}else if(dist<LIVE_DRAW_MIN_DISTANCE_METERS&&since<LIVE_DRAW_MAX_INTERVAL_MS){lastLiveTrackFixTime=fix.timestampMs;return;}}lastLiveTrackFixTime=fix.timestampMs;trackOutline.addPoint(p);activeTrack.addPoint(p);lastTrackPoint=p;lastTrackPointTime=fix.timestampMs;if(mapView!=null)mapView.getLayerManager().redrawLayers();}
+    private void updateDrivingHeading(LatLong p,LocationSnapshot fix){if(mapView==null||p==null||fix==null)return;mapView.setCenter(p);if(fix.speedKmh>=MIN_HEADING_SPEED_KMH&&validBearing(fix.bearing)){float target=-fix.bearing;if(Float.isNaN(lastMapBearing)||Math.abs(angleDelta(lastMapBearing,target))>=3f){mapView.setRotation(target);lastMapBearing=target;}}}
     private void updateVehicleMarker(LatLong p,float bearing){if(mapView==null)return;boolean known=validBearing(bearing);if(vehicleMarker==null){vehicleMarker=new Marker(p,known?createVehicleArrow(bearing):createVehicleDot(),0,0);vehicleMarker.setBillboard(true);mapView.getLayerManager().getLayers().add(vehicleMarker);lastVehicleBearing=known?bearing:Float.NaN;}else{vehicleMarker.setLatLong(p);if(known){if(Float.isNaN(lastVehicleBearing)||Math.abs(angleDelta(lastVehicleBearing,bearing))>=5f){vehicleMarker.setBitmap(createVehicleArrow(bearing));lastVehicleBearing=bearing;}}else if(!Float.isNaN(lastVehicleBearing)){vehicleMarker.setBitmap(createVehicleDot());lastVehicleBearing=Float.NaN;}}mapView.getLayerManager().redrawLayers();}
     private void clearLiveGpsVisuals(){if(mapView==null)return;boolean changed=false;if(vehicleMarker!=null){mapView.getLayerManager().getLayers().remove(vehicleMarker);vehicleMarker.onDestroy();vehicleMarker=null;lastVehicleBearing=Float.NaN;changed=true;}if(guidanceLine!=null){guidanceLine.clear();changed=true;}if(changed)mapView.getLayerManager().redrawLayers();}
     private org.mapsforge.core.graphics.Bitmap createVehicleDot(){int size=DarbakUi.dp(getContext(),44);Bitmap base=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(base);android.graphics.Paint shadow=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);shadow.setColor(0x99000000);android.graphics.Paint fill=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);fill.setColor(0xFFFFFFFF);android.graphics.Paint edge=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);edge.setStyle(android.graphics.Paint.Style.STROKE);edge.setStrokeWidth(DarbakUi.dp(getContext(),2));edge.setColor(0xFF111111);float center=size/2f;float r=DarbakUi.dp(getContext(),8);canvas.drawCircle(center+DarbakUi.dp(getContext(),1),center+DarbakUi.dp(getContext(),2),r,shadow);canvas.drawCircle(center,center,r,fill);canvas.drawCircle(center,center,r,edge);return new AndroidBitmap(base);}
