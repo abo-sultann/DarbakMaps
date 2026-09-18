@@ -3,6 +3,7 @@ package com.abosultan.darbakmaps.ui;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.view.Gravity;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -102,6 +103,12 @@ final class SavedPlacesDialog {
         op.leftMargin = DarbakUi.dp(c, 8);
         card.addView(open, op);
 
+        TextView edit = smallAction(c, "تعديل");
+        edit.setOnClickListener(v -> editPlace(c, map, holder[0], place, filter));
+        LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(DarbakUi.dp(c, 92), DarbakUi.dp(c, 46));
+        ep.leftMargin = DarbakUi.dp(c, 8);
+        card.addView(edit, ep);
+
         TextView delete = smallAction(c, "حذف");
         delete.setTextColor(DarbakUi.ACCENT);
         delete.setOnClickListener(v -> confirmDelete(c, map, holder[0], place, filter));
@@ -143,6 +150,48 @@ final class SavedPlacesDialog {
         java.util.ArrayList<Place> out = new java.util.ArrayList<>();
         for (Place p : all) if (filter.equals(p.category)) out.add(p);
         return out;
+    }
+
+    private static void editPlace(Context c, OfflineMapView map, AlertDialog parent, Place place, String filter) {
+        LinearLayout box = DarbakDialog.panel(c, "تعديل الموقع");
+        EditText name = new EditText(c);
+        name.setHint("اسم الموقع — اختياري");
+        name.setText(place.name == null ? "" : place.name);
+        name.setTextColor(DarbakUi.TEXT);
+        name.setHintTextColor(DarbakUi.TEXT_SECONDARY);
+        name.setTextSize(17);
+        name.setSingleLine(true);
+        name.setGravity(Gravity.RIGHT);
+        name.setBackground(DarbakUi.rounded(DarbakUi.CARD, DarbakUi.BORDER, 15, c));
+        name.setPadding(DarbakUi.dp(c, 14), 0, DarbakUi.dp(c, 14), 0);
+        LinearLayout.LayoutParams np = DarbakDialog.row(c, 8);
+        np.height = DarbakUi.dp(c, 52);
+        box.addView(name, np);
+
+        TextView hint = new TextView(c);
+        hint.setText("النوع الحالي: " + category(place.category) + " — الإحداثيات محفوظة كما هي");
+        hint.setTextColor(DarbakUi.TEXT_SECONDARY);
+        hint.setTextSize(14);
+        hint.setGravity(Gravity.RIGHT);
+        box.addView(hint, DarbakDialog.row(c, 8));
+
+        TextView save = DarbakUi.action(c, "حفظ التعديل");
+        LinearLayout.LayoutParams sp = DarbakDialog.row(c, 8);
+        sp.height = DarbakUi.dp(c, 48);
+        box.addView(save, sp);
+        final AlertDialog[] editDialog = new AlertDialog[1];
+        save.setOnClickListener(v -> {
+            boolean updated;
+            SqlitePlaceRepository repo = new SqlitePlaceRepository(c);
+            try { updated = repo.updateMetadata(place.id, place.category, name.getText().toString().trim(), place.note); }
+            finally { repo.close(); }
+            if (!updated) { Toast.makeText(c, "تعذر تعديل الموقع", Toast.LENGTH_SHORT).show(); return; }
+            if (editDialog[0] != null) editDialog[0].dismiss();
+            if (parent != null) parent.dismiss();
+            Toast.makeText(c, "تم حفظ التعديل", Toast.LENGTH_SHORT).show();
+            show(c, map, filter);
+        });
+        editDialog[0] = DarbakDialog.show(c, box);
     }
 
     private static void confirmDelete(Context c, OfflineMapView map, AlertDialog parent, Place place, String filter) {
