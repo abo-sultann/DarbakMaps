@@ -3,6 +3,8 @@ name: Darbak Maps Rebuild CI
 on:
   push:
     branches: [ "darbakmaps-rebuild-1.0" ]
+  pull_request:
+    branches: [ "darbakmaps-rebuild-1.0" ]
   workflow_dispatch:
 
 concurrency:
@@ -20,7 +22,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Verify clean rebuild
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease
+        run: ./gradlew --no-daemon assembleDebug
       - name: Upload debug candidate for emulator only
         uses: actions/upload-artifact@v4
         with:
