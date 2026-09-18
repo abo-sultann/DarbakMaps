@@ -10,3 +10,5 @@
 - لا تعتبر النسخة رسمية قبل اجتياز clean build + lint + Visual QA على Android 7.1 بدقة 1024×600، ثم إصدار موقّع بالمفتاح المعتمد.
 
 راجع `docs/PROJECT_PLAN.md` و`docs/IDENTITY_CONTRACT.md` و`docs/REFERENCES.md`.
+
+<!-- apk-build-trigger: 2026-09-18 -->
