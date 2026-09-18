@@ -12,6 +12,7 @@ import android.widget.TextView;
 
 /** Shared Darbak desert identity: charcoal surfaces, warm gold accents, high-contrast text. */
 public final class DarbakUi {
+    // APK rebuild trigger 2026-09-18
     public static final int BG = Color.rgb(11, 15, 18);
     public static final int SURFACE = Color.rgb(18, 25, 31);
     public static final int CARD = Color.rgb(23, 32, 39);
