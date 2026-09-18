@@ -19,7 +19,7 @@ public final class DarbakUi {
     public static final int BORDER = Color.rgb(92, 75, 42);
     public static final int ACCENT = Color.rgb(222, 174, 78);
     public static final int TEXT = Color.rgb(247, 244, 236);
-    public static final int TEXT_SECONDARY = Color.rgb(205, 197, 179);
+    public static final int TEXT_SECONDARY = Color.rgb(205, 197, 179); // build repair candidate
 
     private static final int IMMERSIVE_FLAGS = View.SYSTEM_UI_FLAG_FULLSCREEN
             | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
