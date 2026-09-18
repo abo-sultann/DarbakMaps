@@ -58,9 +58,9 @@ grep -q 'content-desc="حفظ موقع"' "$OUT/window.xml" || { echo 'ERROR: sav
 grep -q 'content-desc="المزيد"' "$OUT/window.xml" || { echo 'ERROR: more control missing.' >&2; exit 32; }
 snapshot 01-home
 
-tap_desc "المزيد"; dump_ui; grep -q 'الإعدادات' "$OUT/window.xml" || { echo 'ERROR: More dialog did not open.' >&2; exit 34; }; snapshot 02-more
-tap_text "الإعدادات"; snapshot 03-settings; adb shell input keyevent 4; sleep 1
-tap_desc "المزيد"; tap_text "حول دربك للخرائط"; snapshot 04-about; adb shell input keyevent 4; sleep 1
+tap_desc "المزيد"; dump_ui; grep -q 'فتح الإعدادات' "$OUT/window.xml" || { echo 'ERROR: Status dialog did not open.' >&2; exit 34; }; snapshot 02-more
+tap_text "فتح الإعدادات"; snapshot 03-settings; adb shell input keyevent 4; sleep 1
+tap_desc "المزيد"; tap_text "عن التطبيق"; snapshot 04-about; adb shell input keyevent 4; sleep 1
 tap_desc "المسارات"; snapshot 05-tracks; adb shell input keyevent 4; sleep 1
 tap_desc "حفظ موقع"; snapshot 06-save-place; adb shell input keyevent 4; sleep 1
 tap_desc "بحث"; snapshot 07-search; adb shell input keyevent 4; sleep 1
