@@ -81,6 +81,16 @@ public final class SqlitePlaceRepository extends SQLiteOpenHelper implements Pla
         return getWritableDatabase().insertOrThrow("places", null, v);
     }
 
+    /** Updates user-editable metadata without changing the saved coordinates or stable UUID. */
+    public boolean updateMetadata(long id, String category, String name, String note) {
+        if (id <= 0L) return false;
+        ContentValues v = new ContentValues();
+        v.put("category", safe(category));
+        v.put("name", name);
+        v.put("note", note);
+        return getWritableDatabase().update("places", v, "id=?", new String[]{Long.toString(id)}) == 1;
+    }
+
     /** Deletes exactly one saved place by its stable database id. */
     public boolean delete(long id) {
         if (id <= 0L) return false;
