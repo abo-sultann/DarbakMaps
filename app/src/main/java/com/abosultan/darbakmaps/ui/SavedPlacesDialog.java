@@ -99,20 +99,20 @@ final class SavedPlacesDialog {
 
         TextView open = smallAction(c, "فتح");
         open.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); map.showPlaceActions(place); });
-        LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(DarbakUi.dp(c, 92), DarbakUi.dp(c, 46));
+        LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(DarbakUi.dp(c, 78), DarbakUi.dp(c, 46));
         op.leftMargin = DarbakUi.dp(c, 8);
         card.addView(open, op);
 
         TextView edit = smallAction(c, "تعديل");
         edit.setOnClickListener(v -> editPlace(c, map, holder[0], place, filter));
-        LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(DarbakUi.dp(c, 92), DarbakUi.dp(c, 46));
+        LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(DarbakUi.dp(c, 78), DarbakUi.dp(c, 46));
         ep.leftMargin = DarbakUi.dp(c, 8);
         card.addView(edit, ep);
 
         TextView delete = smallAction(c, "حذف");
         delete.setTextColor(DarbakUi.ACCENT);
         delete.setOnClickListener(v -> confirmDelete(c, map, holder[0], place, filter));
-        LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(DarbakUi.dp(c, 92), DarbakUi.dp(c, 46));
+        LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(DarbakUi.dp(c, 78), DarbakUi.dp(c, 46));
         dp.leftMargin = DarbakUi.dp(c, 8);
         card.addView(delete, dp);
 
