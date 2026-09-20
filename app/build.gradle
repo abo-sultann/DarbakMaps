@@ -11,8 +11,8 @@ android {
         applicationId 'com.abosultan.darbakmaps.debug'
         minSdk 25
         targetSdk 35
-        versionCode 100
-        versionName '1.0.0'
+        versionCode 101
+        versionName '1.0.1'
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', '"https://github.com/abo-sultann/DarbakMaps/releases/latest/download/update-manifest.json"'
     }
 
