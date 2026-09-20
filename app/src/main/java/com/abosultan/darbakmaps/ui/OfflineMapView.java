@@ -49,7 +49,8 @@ public final class OfflineMapView extends FrameLayout {
     private static final long LIVE_DRAW_MAX_INTERVAL_MS = 15000L;
     private static final double LIVE_DRAW_MIN_DISTANCE_METERS = 10d;
     private static final double DIRECT_GUIDANCE_REACHED_METERS = 30d;
-    private static final float MIN_HEADING_SPEED_KMH = 4f;\n    private static final float HEADING_OVERSCAN = 1.42f;
+    private static final float MIN_HEADING_SPEED_KMH = 4f;
+    private static final float HEADING_OVERSCAN = 1.42f;
 
     private MapView mapView;
     private TileCache tileCache;
