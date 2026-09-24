@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Darbak visual identity mirrored from Launcher.2026.
+         Names are prefixed to avoid collisions with upstream OsmAnd resources. -->
+    <color name="darbak_carbon_dark">#07111D</color>
+    <color name="darbak_carbon_surface">#111D2B</color>
+    <color name="darbak_carbon_card">#101E2C</color>
+    <color name="darbak_carbon_card_border">#2D5573</color>
+
+    <color name="darbak_cyan_neon">#39A9FF</color>
+    <color name="darbak_amber_racing">#FFC857</color>
+    <color name="darbak_crimson_sport">#FF647C</color>
+    <color name="darbak_emerald_safe">#4CD989</color>
+    <color name="darbak_purple_neon">#8F83FF</color>
+    <color name="darbak_gold">#D7AD55</color>
+
+    <color name="darbak_text_primary">#FFFFFF</color>
+    <color name="darbak_text_secondary">#D0E2F1</color>
+    <color name="darbak_text_muted">#8299AA</color>
+</resources>
