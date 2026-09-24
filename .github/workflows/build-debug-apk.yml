@@ -7,6 +7,10 @@ on:
       - osmand-base
     paths:
       - '.github/workflows/build-debug-apk.yml'
+      - 'OsmAnd/**'
+      - 'versions.gradle'
+      - 'gradle.properties'
+      - 'build.gradle'
 
 permissions:
   contents: read
