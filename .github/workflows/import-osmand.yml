@@ -1,0 +1,51 @@
+name: Import OsmAnd into osmand-base
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout DarbakMaps osmand-base
+        uses: actions/checkout@v4
+        with:
+          ref: osmand-base
+          fetch-depth: 0
+          path: darbak
+
+      - name: Checkout OsmAnd upstream
+        uses: actions/checkout@v4
+        with:
+          repository: osmandapp/OsmAnd
+          ref: master
+          path: upstream
+          fetch-depth: 1
+
+      - name: Preserve migration note and replace branch contents
+        shell: bash
+        run: |
+          set -e
+          cp darbak/OSMAND_MIGRATION.md /tmp/OSMAND_MIGRATION.md
+          find darbak -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a upstream/. darbak/
+          rm -rf darbak/.git
+          cp /tmp/OSMAND_MIGRATION.md darbak/OSMAND_MIGRATION.md
+
+      - name: Commit imported source
+        working-directory: darbak
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to import"
+          else
+            git commit -m "chore: import OsmAnd upstream source as Darbak Maps base"
+            git push origin osmand-base
+          fi
