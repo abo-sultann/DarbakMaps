@@ -1,6 +1,10 @@
 name: Import OsmAnd into osmand-base
 
 on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/import-osmand.yml'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +20,6 @@ jobs:
           ref: osmand-base
           fetch-depth: 0
           path: darbak
-
       - name: Checkout OsmAnd upstream
         uses: actions/checkout@v4
         with:
@@ -24,8 +27,7 @@ jobs:
           ref: master
           path: upstream
           fetch-depth: 1
-
-      - name: Preserve migration note and replace branch contents
+      - name: Replace osmand-base contents with OsmAnd
         shell: bash
         run: |
           set -e
@@ -34,7 +36,6 @@ jobs:
           cp -a upstream/. darbak/
           rm -rf darbak/.git
           cp /tmp/OSMAND_MIGRATION.md darbak/OSMAND_MIGRATION.md
-
       - name: Commit imported source
         working-directory: darbak
         shell: bash
