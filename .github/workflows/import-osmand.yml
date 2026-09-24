@@ -3,8 +3,6 @@ name: Import OsmAnd into osmand-base
 on:
   push:
     branches: [ main ]
-    paths:
-      - '.github/workflows/import-osmand.yml'
   workflow_dispatch:
 
 permissions:
