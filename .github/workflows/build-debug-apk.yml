@@ -12,6 +12,10 @@ on:
       - 'gradle.properties'
       - 'build.gradle'
 
+concurrency:
+  group: darbak-osmand-base-apk
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
