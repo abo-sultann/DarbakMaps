@@ -55,7 +55,10 @@
     </style>
 
     <style name="FirstSplashScreenNightlyFree" parent="SplashScreenBaseTheme">
-        <item name="android:windowBackground">@drawable/first_splash_screen_free_dev</item>
+        <item name="android:windowBackground">@drawable/darbak_splash_screen</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:colorAccent">@color/darbak_cyan_neon</item>
     </style>
 
     <style name="TextAppearance.App.DarkTextInputLayout" parent="@android:style/TextAppearance">
