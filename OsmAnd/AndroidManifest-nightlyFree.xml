@@ -3,8 +3,10 @@
           xmlns:tools="http://schemas.android.com/tools">
 	
     <application
-        android:icon="@mipmap/icon_nightly"
-        tools:replace="android:icon">
+        android:icon="@drawable/darbak_app_icon"
+        android:label="دربك خرائط"
+        android:theme="@style/OsmandDarkTheme"
+        tools:replace="android:icon,android:label,android:theme">
         <activity
             android:name="net.osmand.plus.activities.MapActivity"
             android:theme="@style/FirstSplashScreenNightlyFree"
