@@ -4,7 +4,7 @@
 	xmlns:tools="http://schemas.android.com/tools"
 	android:layout_width="match_parent"
 	android:layout_height="wrap_content"
-	android:background="?attr/list_background_color"
+	android:background="@color/darbak_carbon_dark"
 	android:gravity="center_vertical"
 	android:minHeight="@dimen/bottom_sheet_cancel_button_height_small"
 	android:orientation="horizontal">
@@ -36,7 +36,7 @@
 			android:letterSpacing="@dimen/description_letter_spacing"
 			android:paddingTop="@dimen/list_header_settings_top_margin"
 			android:singleLine="true"
-			android:textColor="@color/preference_category_title"
+			android:textColor="@color/darbak_cyan_neon"
 			android:textSize="@dimen/default_desc_text_size"
 			app:typefaceWeight="medium"
 			tools:text="@string/plugin_settings" />
@@ -47,7 +47,7 @@
 			android:layout_height="wrap_content"
 			android:letterSpacing="@dimen/description_letter_spacing"
 			android:paddingBottom="@dimen/list_header_settings_top_margin"
-			android:textColor="?android:textColorSecondary"
+			android:textColor="@color/darbak_text_muted"
 			android:textSize="@dimen/default_desc_text_size"
 			android:textStyle="normal"
 			tools:text="@string/list_of_installed_plugins" />
