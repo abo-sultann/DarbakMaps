@@ -34,3 +34,14 @@ Source of truth: `abo-sultann/Launcher.2026` current main branch.
 - Avoid expensive blur, continuous animation, and GPU-heavy decoration.
 - Keep map canvas dominant; controls should not obscure navigation context.
 - Sensitive/destructive actions require deliberate interaction.
+
+
+## Approved functional backlog
+- Automatic continuous route/track recording while driving.
+- Recording must continue reliably when DarbakMaps is in the background.
+- Start recording automatically without requiring a manual GPX-record button.
+- Persist track data frequently so vehicle/head-unit power-off does not lose the driven route.
+- Resume automatically after the head unit/vehicle starts again.
+- Keep a rolling history of the latest 1000 km and prune older track data progressively.
+- Show the recorded driven path continuously on the map.
+- Build this on top of OsmAnd's GPX/track-recording engine where practical, while keeping Darbak automation separate and lightweight for the T3.
